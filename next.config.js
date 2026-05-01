@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-    output: 'export', // This tells Next.js to generate the 'out' folder
-    images: { unoptimized: true }, // GitHub Pages doesn't support the Next.js Image Optimization API
+    // REMOVE output: 'export'
+    images: { unoptimized: true },
     eslint: {
         ignoreDuringBuilds: true,
     },

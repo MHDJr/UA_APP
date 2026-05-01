@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { SalesOversight } from "@/components/sales-oversight";
 
 export default function CEOSalesPage() {
     const { user, profile, loading } = useAuth();
@@ -23,5 +22,5 @@ export default function CEOSalesPage() {
         );
     }
 
-    return <SalesOversight />;
+    return <div>Sales Page Coming Soon</div>;
 }

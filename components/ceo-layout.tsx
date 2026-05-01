@@ -29,8 +29,6 @@ export function CEOLayout({ children, defaultView = "command-center" }: CEOLayou
             <CEOSidebar
                 activeView={activeView}
                 onViewChange={handleViewChange}
-                userRole={userRole}
-                onRoleChange={handleRoleChange}
             />
             <main
                 className={cn(

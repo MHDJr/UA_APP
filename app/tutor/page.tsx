@@ -1,5 +1,3 @@
-import { TutorCommandPage } from "@/components/tutor/TutorCommandPage";
-
 export default function TutorPage() {
-    return <TutorCommandPage />;
+    return <div>Tutor Dashboard Coming Soon</div>;
 }

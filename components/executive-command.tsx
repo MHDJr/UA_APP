@@ -303,7 +303,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     category: "completed",
                     title: "Mission Complete",
                     description: `${t.title} completed by ${staff.find((s) => s.id === t.assigned_to)?.full_name || "Operative"}`,
-                    time: t.updated_at || t.completed_at,
+                    time: t.updated_at,
                     icon: CheckCircle,
                     color: "#10b981",
                     colorType: "green",
@@ -317,7 +317,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     id: `lead-${l.id}`,
                     category: "lead",
                     title: "New Lead",
-                    description: `${l.lead_name} - ${l.lead_source}`,
+                    description: `${l.lead_name}`,
                     time: l.created_at,
                     icon: UserPlus,
                     color: "#f59e0b",
@@ -422,8 +422,8 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             .sort((a, b) => {
                 // Sort by priority first, then by time
                 const priorityOrder = { high: 3, medium: 2, low: 1 };
-                const aPriority = priorityOrder[a.priority] || 1;
-                const bPriority = priorityOrder[b.priority] || 1;
+                const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] || 1;
+                const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] || 1;
                 
                 if (aPriority !== bPriority) {
                     return bPriority - aPriority;
@@ -452,52 +452,45 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     supabase
                         .from("tasks")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
                 case 'pay': // Payments (converted leads)
                 case 'lead': // New leads
                     supabase
                         .from("leads")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
                 case 'leave': // Leave requests
                 case 'req': // Other requests
                     supabase
                         .from("requests")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
                 case 'idea': // Ideas
                     supabase
                         .from("ideas")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
                 case 'demo': // Demo requests
                     supabase
                         .from("demo_requests")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
                 case 'staff': // New staff members
                     supabase
                         .from("profiles")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
                 case 'meeting': // Upcoming meetings
                     supabase
                         .from("meetings")
                         .update({ signal_cleared: true })
-                        .eq("id", id)
-                        .catch(() => {}); // Silently ignore errors
+                        .eq("id", id); // Fire and forget
                     break;
             }
         });
@@ -651,16 +644,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     {
                         event: "*",
                         schema: "public",
-                        table: [
-                            "profiles",
-                            "tasks", 
-                            "requests",
-                            "programmes",
-                            "meetings",
-                            "demo_requests",
-                            "leads",
-                            "ideas",
-                        ],
+                        table: "tasks",
                     },
                     (payload: any) => {
                         // Immediately refresh for real-time updates
@@ -1014,7 +998,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             console.log("Error1 details:", JSON.stringify(error1, null, 2));
             console.log("Count1:", count1);
             
-            if (!error1 && count1 > 0) {
+            if (!error1 && count1 !== null && count1 > 0) {
                 console.log("Task successfully deleted with approach 1");
                 toast.success("TASK ANNULLED");
                 return;
@@ -1352,7 +1336,8 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             fullAgenda += meetingDetails;
 
             // 1. Create meeting with basic fields first
-            let meeting, meetingError;
+            let meeting: any = null;
+let meetingError: any = null;
             
             // Calculate start and end times
             const startTime = scheduledAt;
@@ -1490,7 +1475,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 location: "Virtual HQ",
                 agendaItems: [],
                 preMeetingTasks: [],
-                notifications: { email: true, push: true, sms: false },
+               notifications: { dashboard: true, email: true, push: true, sms: false },
                 reminder: "15",
                 notes: "",
                 agenda: "",

@@ -1723,7 +1723,7 @@ export default function StaffPortal() {
                                             className={`w-10 h-10 md:w-14 md:h-14 rounded-2xl md:rounded-3xl flex items-center justify-center relative shrink-0 ${
                                                 showCompleted
                                                     ? "bg-emerald-50 text-emerald-500"
-                                                    : (task.priority === "urgent" || task.category === "URGENT")
+                                                   : (task.priority === "urgent" || (task as any).category === "URGENT")
                                                         ? "bg-red-50 text-red-500"
                                                         : "bg-slate-50 text-slate-400"
                                             }`}

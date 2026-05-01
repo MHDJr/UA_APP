@@ -1363,7 +1363,7 @@ export default function ScheduledMeetings() {
                               }
                             : null;
                     })
-                    .filter((p): p is Participant => p !== null);
+                    .filter((p: any): p is Participant => p !== null);
 
                 // Determine priority based on meeting time proximity
                 const hoursUntilMeeting = (startTime.getTime() - new Date().getTime()) / (1000 * 60 * 60);
