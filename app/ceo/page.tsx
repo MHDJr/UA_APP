@@ -1,0 +1,69 @@
+"use client";
+
+import { ExecutiveCommand } from "@/components/executive-command";
+import { CEOSidebar } from "@/components/ceo-sidebar";
+import { StaffManagement } from "@/components/staff-management";
+import ScheduledMeetings from "@/components/scheduled-meetings";
+import { CEOInbox } from "@/components/ceo-inbox";
+import { ExecutiveSalesOverview } from "@/components/executive-sales-overview";
+import { useAuth } from "@/lib/auth-context";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { TooltipProvider } from "@/components/ui/tooltip";
+
+type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence";
+
+export default function CEOPage() {
+    const { profile, loading } = useAuth();
+    const router = useRouter();
+    const [activeView, setActiveView] = useState<CEOView>("command-center");
+    const [isSidebarMinimized, setIsSidebarMinimized] = useState(true);
+
+    useEffect(() => {
+        if (!loading && profile && profile.role !== "ceo") {
+            router.replace("/");
+        }
+    }, [profile, loading, router]);
+
+    if (loading || !profile || profile.role !== "ceo") {
+        return (
+            <div className="min-h-screen bg-[#050505] flex items-center justify-center">
+                <div className="animate-spin h-8 w-8 border-2 border-white/20 border-t-white rounded-full" />
+            </div>
+        );
+    }
+
+    const renderContent = () => {
+        switch (activeView) {
+            case "inbox":
+                return <CEOInbox />;
+            case "staff-management":
+                return <StaffManagement />;
+            case "scheduled-meetings":
+                return <ScheduledMeetings />;
+            case "sales-intelligence":
+                return <ExecutiveSalesOverview />;
+            case "command-center":
+            default:
+                return <ExecutiveCommand currentView={activeView} />;
+        }
+    };
+
+    return (
+        <TooltipProvider>
+            <div className="min-h-screen bg-[#F9FAFB]">
+                <CEOSidebar
+                    activeView={activeView}
+                    onViewChange={(view) => setActiveView(view as CEOView)}
+                    onMinimizedChange={setIsSidebarMinimized}
+                />
+                <main 
+                    className="min-h-screen transition-all duration-300 ease-out"
+                    style={{ marginLeft: isSidebarMinimized ? 80 : 260 }}
+                >
+                    {renderContent()}
+                </main>
+            </div>
+        </TooltipProvider>
+    );
+}

@@ -1,0 +1,19 @@
+
+{
+  "name": "Usthad Academy CEO Command",
+  "short_name": "UA Command",
+  "description": "Executive Command Center for Usthad Academy",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#030712",
+  "theme_color": "#00f2ea",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/images/Usthad Logo Symbol - White.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
