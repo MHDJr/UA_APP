@@ -94,6 +94,24 @@ export default function AddStaffDialog({
 
         setLoading(true);
         try {
+            // Check if profile already exists in profiles table
+            const { data: existingProfile, error: profileCheckError } = await supabase
+                .from("profiles")
+                .select("email, username")
+                .or(`email.eq.${email},username.eq.${username}`)
+                .maybeSingle();
+                
+            if (existingProfile && !profileCheckError) {
+                if (existingProfile.email === email) {
+                    throw new Error(`User with email ${email} already exists. Please use a different email.`);
+                }
+                if (existingProfile.username === username) {
+                    throw new Error(`Username ${username} is already taken. Please choose a different username.`);
+                }
+            }
+
+            console.log("Creating new user:", { email, username, fullName });
+            
             // Create the user in Supabase Auth
             const { data: authData, error: authError } = await supabase.auth.signUp({
                 email,
@@ -107,6 +125,9 @@ export default function AddStaffDialog({
             });
 
             if (authError) {
+                if (authError.message.includes("already registered")) {
+                    throw new Error(`User with email ${email} is already registered. Please use a different email or contact admin to reset the existing account.`);
+                }
                 throw new Error(authError.message);
             }
 
@@ -115,7 +136,8 @@ export default function AddStaffDialog({
             }
 
             // Create the user's profile in the profiles table
-            const { error: profileError } = await supabase.from("profiles").insert({
+            console.log("Creating profile for user:", authData.user.id, formData);
+            const { data: profileData, error: profileError } = await supabase.from("profiles").insert({
                 id: authData.user.id,
                 email: email,
                 full_name: fullName,
@@ -124,9 +146,9 @@ export default function AddStaffDialog({
                 role: formData.role,
                 department: formData.role === "sales" ? "Sales" : formData.role === "tutor" ? "Education" : "Staff",
                 status: "offline",
-                require_password_reset: formData.requireReset,
-                has_manager_access: formData.hasManagerAccess,
-            });
+            }).select();
+
+            console.log("Profile creation result:", { profileData, profileError });
 
             if (profileError) {
                 // If profile creation fails, we can't delete the auth user with anon client
@@ -155,7 +177,13 @@ export default function AddStaffDialog({
                 requireReset: true,
                 hasManagerAccess: false,
             });
+            
+            // Trigger a refresh of the staff list in the parent component
+            setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('staff-created', { detail: { username, role: formData.role } }));
+            }, 100);
         } catch (error: any) {
+            console.error("Staff creation error:", error);
             toast.error(error.message || "Failed to create staff account");
         } finally {
             setLoading(false);

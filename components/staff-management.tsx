@@ -164,6 +164,18 @@ export function StaffManagement() {
     useEffect(() => {
         fetchStaffData();
         fetchPendingRequests();
+        
+        // Listen for staff creation events
+        const handleStaffCreated = () => {
+            console.log('Staff created event received, refreshing data');
+            fetchStaffData();
+        };
+        
+        window.addEventListener('staff-created', handleStaffCreated);
+        
+        return () => {
+            window.removeEventListener('staff-created', handleStaffCreated);
+        };
     }, []);
 
     const fetchPendingRequests = async () => {
@@ -282,7 +294,7 @@ export function StaffManagement() {
             const { data: profiles, error: profilesError } = await supabase
                 .from("profiles")
                 .select("*")
-                .in("role", ["staff", "sales"])
+                .in("role", ["staff", "sales", "tutor"])
                 .order("created_at", { ascending: false });
 
             if (profilesError) throw profilesError;
