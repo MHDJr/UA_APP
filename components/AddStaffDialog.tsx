@@ -28,6 +28,11 @@ import {
     AtSign,
 } from "lucide-react";
 import { toast } from "sonner";
+import { createClient } from "@supabase/supabase-js";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface AddStaffDialogProps {
     open: boolean;
@@ -89,21 +94,55 @@ export default function AddStaffDialog({
 
         setLoading(true);
         try {
-            let redirect = "staff";
-            if (formData.role === "sales") redirect = "sales";
-            if (formData.role === "ceo") redirect = "ceo";
-
-            const res = await fetch("/api/admin/create-staff", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ ...formData, redirect }),
+            // Create the user in Supabase Auth
+            const { data: authData, error: authError } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: fullName,
+                        username: username,
+                    },
+                },
             });
 
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.error || "Provisioning failed");
+            if (authError) {
+                throw new Error(authError.message);
+            }
+
+            if (!authData.user) {
+                throw new Error("Failed to create user account");
+            }
+
+            // Create the user's profile in the profiles table
+            const { error: profileError } = await supabase.from("profiles").insert({
+                id: authData.user.id,
+                email: email,
+                full_name: fullName,
+                username: username,
+                designation: designation,
+                role: formData.role,
+                department: formData.role === "sales" ? "Sales" : formData.role === "tutor" ? "Education" : "Staff",
+                status: "offline",
+                require_password_reset: formData.requireReset,
+                has_manager_access: formData.hasManagerAccess,
+            });
+
+            if (profileError) {
+                // If profile creation fails, we can't delete the auth user with anon client
+                // Just log the error and let the admin handle cleanup if needed
+                throw new Error(`Profile creation failed: ${profileError.message}`);
+            }
+
+            // Log the activity
+            await supabase.from("activity_feed").insert({
+                action_type: "staff_created",
+                description: `New staff member ${fullName} (${username}) was added by admin`,
+                user_id: authData.user.id,
+            });
 
             toast.success(
-                `Personnel @${data.username} successfully provisioned.`,
+                `Personnel @${username} successfully provisioned.`,
             );
             onOpenChange(false);
             setFormData({
@@ -117,7 +156,7 @@ export default function AddStaffDialog({
                 hasManagerAccess: false,
             });
         } catch (error: any) {
-            toast.error(error.message);
+            toast.error(error.message || "Failed to create staff account");
         } finally {
             setLoading(false);
         }
