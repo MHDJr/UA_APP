@@ -24,6 +24,9 @@ import {
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { MobileFAB } from "@/components/mobile-fab";
+import { CEOSidebar } from "@/components/ceo-sidebar";
 
 // Types
 interface DailyMetrics {
@@ -153,10 +156,10 @@ const MetricCard = ({
     const styles = getIconStyles();
 
     return (
-        <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6 hover:shadow-lg transition-all duration-300 group">
-            <div className="flex items-start justify-between mb-4">
-                <div className={`rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-105 overflow-hidden ${
-                    imageUrl?.includes('uloomx') ? 'w-16 h-16' : 'w-14 h-14'
+        <div className="bg-white rounded-[20px] md:rounded-[24px] border border-gray-100 shadow-sm p-4 md:p-6 hover:shadow-lg transition-all duration-300 group">
+            <div className="flex items-start justify-between mb-3 md:mb-4">
+                <div className={`rounded-xl md:rounded-2xl flex items-center justify-center transition-all duration-300 group-hover:scale-105 overflow-hidden flex-shrink-0 ${
+                    imageUrl?.includes('uloomx') ? 'w-12 h-12 md:w-16 md:h-16' : 'w-10 h-10 md:w-14 md:h-14'
                 }`}
                      style={{ 
                          background: imageUrl ? 'transparent' : styles.bg,
@@ -169,22 +172,22 @@ const MetricCard = ({
                             className={`object-contain ${imageUrl?.includes('uloomx') ? 'w-[110%] h-[110%]' : 'w-full h-full'}`}
                         />
                     ) : Icon ? (
-                        <Icon className="w-6 h-6" style={{ color: styles.iconColor }} />
+                        <Icon className="w-4 h-4 md:w-6 md:h-6" style={{ color: styles.iconColor }} />
                     ) : null}
                 </div>
                 {trend && trendValue && (
-                    <div className={`flex items-center gap-1 text-sm font-bold px-3 py-1.5 rounded-full ${
+                    <div className={`flex items-center gap-0.5 md:gap-1 text-xs md:text-sm font-bold px-2 md:px-3 py-1 md:py-1.5 rounded-full flex-shrink-0 ${
                         trend === "up" 
                             ? "bg-green-50 text-green-600 border border-green-200" 
                             : "bg-red-50 text-red-500 border border-red-200"
                     }`}>
-                        {trend === "up" ? <ArrowUpRight className="w-4 h-4" /> : <ArrowDownRight className="w-4 h-4" />}
+                        {trend === "up" ? <ArrowUpRight className="w-3 h-3 md:w-4 md:h-4" /> : <ArrowDownRight className="w-3 h-3 md:w-4 md:h-4" />}
                         {trendValue}
                     </div>
                 )}
             </div>
-            <p className="text-sm text-[#64748b] font-medium mb-2">{title}</p>
-            <p className="text-3xl font-black text-[#1e293b]">{value}</p>
+            <p className="text-xs md:text-sm text-[#64748b] font-medium mb-1 md:mb-2 truncate">{title}</p>
+            <p className="text-xl md:text-3xl font-black text-[#1e293b] truncate">{value}</p>
         </div>
     );
 };
@@ -211,6 +214,8 @@ const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
     const width = 900;
     const padding = { top: 40, right: 40, bottom: 60, left: 80 };
     const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+    const [svgWidth, setSvgWidth] = useState(width);
+    const containerRef = React.useRef<HTMLDivElement>(null);
 
     const createStackedPaths = () => {
         // Usthad layer (bottom - lighter orange)
@@ -243,13 +248,29 @@ const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
 
     const { usthadAreaPath, uloomxAreaPath, uloomxPoints } = createStackedPaths();
 
+    // Update SVG width on resize for mobile responsiveness
+    React.useEffect(() => {
+        const updateWidth = () => {
+            if (containerRef.current) {
+                const containerWidth = containerRef.current.clientWidth;
+                setSvgWidth(Math.min(width, containerWidth));
+            }
+        };
+        
+        updateWidth();
+        window.addEventListener('resize', updateWidth);
+        return () => window.removeEventListener('resize', updateWidth);
+    }, []);
+
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
         if (data.length === 0) return;
         
         const svgRect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - svgRect.left;
-        const chartWidth = width - padding.left - padding.right;
-        const index = Math.round(((x - padding.left) / chartWidth) * (data.length - 1));
+        const scaleFactor = svgRect.width / width;
+        const chartWidth = (width - padding.left - padding.right) * scaleFactor;
+        const scaledPaddingLeft = padding.left * scaleFactor;
+        const index = Math.round(((x - scaledPaddingLeft) / chartWidth) * (data.length - 1));
         
         if (index >= 0 && index < data.length) {
             setHoveredIndex(index);
@@ -261,11 +282,12 @@ const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
     };
 
     return (
-        <div className="relative">
+        <div ref={containerRef} className="relative w-full overflow-hidden">
             <svg 
-                width={width} 
+                width="100%" 
                 height={height} 
                 viewBox={`0 0 ${width} ${height}`} 
+                preserveAspectRatio="xMidYMid meet"
                 className="w-full cursor-crosshair"
                 onMouseMove={handleMouseMove}
                 onMouseLeave={handleMouseLeave}
@@ -439,8 +461,27 @@ const DonutChart = ({
     const uloomxPercentage = (uloomxValue / total) * 100;
     const usthadPercentage = (usthadValue / total) * 100;
     
-    const size = 180;
-    const strokeWidth = 24;
+    // Responsive size based on container width
+    const [chartSize, setChartSize] = React.useState(180);
+    const containerRef = React.useRef<HTMLDivElement>(null);
+    
+    React.useEffect(() => {
+        const updateSize = () => {
+            if (containerRef.current) {
+                const containerWidth = containerRef.current.clientWidth;
+                // Use smaller size on mobile, larger on desktop
+                const newSize = Math.min(180, containerWidth - 32);
+                setChartSize(Math.max(140, newSize));
+            }
+        };
+        
+        updateSize();
+        window.addEventListener('resize', updateSize);
+        return () => window.removeEventListener('resize', updateSize);
+    }, []);
+    
+    const size = chartSize;
+    const strokeWidth = Math.max(18, size * 0.13);
     const radius = (size - strokeWidth) / 2;
     const circumference = radius * 2 * Math.PI;
     
@@ -448,72 +489,74 @@ const DonutChart = ({
     const usthadOffset = circumference - (usthadPercentage / 100) * circumference;
     
     return (
-        <div className="relative flex flex-col items-center">
-            <svg width={size} height={size} className="transform -rotate-90">
-                {/* Background circle */}
-                <circle
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    fill="none"
-                    stroke="#f1f5f9"
-                    strokeWidth={strokeWidth}
-                />
+        <div ref={containerRef} className="relative flex flex-col items-center w-full">
+            <div className="relative" style={{ width: size, height: size }}>
+                <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90">
+                    {/* Background circle */}
+                    <circle
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        fill="none"
+                        stroke="#f1f5f9"
+                        strokeWidth={strokeWidth}
+                    />
+                    
+                    {/* UloomX segment (Deep Orange) */}
+                    <circle
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        fill="none"
+                        stroke="#ff4d00"
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={circumference}
+                        strokeDashoffset={uloomxOffset}
+                        strokeLinecap="round"
+                        className="transition-all duration-500"
+                    />
+                    
+                    {/* Usthad segment (Light Orange) */}
+                    <circle
+                        cx={size / 2}
+                        cy={size / 2}
+                        r={radius}
+                        fill="none"
+                        stroke="#ffb088"
+                        strokeWidth={strokeWidth}
+                        strokeDasharray={circumference}
+                        strokeDashoffset={usthadOffset}
+                        strokeLinecap="round"
+                        className="transition-all duration-500"
+                        style={{
+                            transform: `rotate(${(uloomxPercentage / 100) * 360}deg)`,
+                            transformOrigin: 'center'
+                        }}
+                    />
+                </svg>
                 
-                {/* UloomX segment (Deep Orange) */}
-                <circle
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    fill="none"
-                    stroke="#ff4d00"
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={circumference}
-                    strokeDashoffset={uloomxOffset}
-                    strokeLinecap="round"
-                    className="transition-all duration-500"
-                />
-                
-                {/* Usthad segment (Light Orange) */}
-                <circle
-                    cx={size / 2}
-                    cy={size / 2}
-                    r={radius}
-                    fill="none"
-                    stroke="#ffb088"
-                    strokeWidth={strokeWidth}
-                    strokeDasharray={circumference}
-                    strokeDashoffset={usthadOffset}
-                    strokeLinecap="round"
-                    className="transition-all duration-500"
-                    style={{
-                        transform: `rotate(${(uloomxPercentage / 100) * 360}deg)`,
-                        transformOrigin: 'center'
-                    }}
-                />
-            </svg>
-            
-            {/* Center text */}
-            <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <p className="text-xs text-[#64748b] font-medium">Total Revenue</p>
-                <p className="text-lg font-black text-[#1e293b]">{formatCurrency(total)}</p>
+                {/* Center text */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <p className="text-[10px] md:text-xs text-[#64748b] font-medium">Total Revenue</p>
+                    <p className="text-sm md:text-lg font-black text-[#1e293b]">{formatCurrency(total)}</p>
+                </div>
             </div>
             
             {/* Legend */}
-            <div className="mt-4 space-y-2 w-full">
+            <div className="mt-4 space-y-2 w-full px-2">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#ff4d00]"></span>
-                        <span className="text-sm text-[#64748b]">UloomX</span>
+                        <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-[#ff4d00]"></span>
+                        <span className="text-xs md:text-sm text-[#64748b]">UloomX</span>
                     </div>
-                    <span className="text-sm font-bold text-[#1e293b]">{uloomxPercentage.toFixed(1)}%</span>
+                    <span className="text-xs md:text-sm font-bold text-[#1e293b]">{uloomxPercentage.toFixed(1)}%</span>
                 </div>
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full bg-[#ffb088]"></span>
-                        <span className="text-sm text-[#64748b]">Usthad Academy</span>
+                        <span className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-[#ffb088]"></span>
+                        <span className="text-xs md:text-sm text-[#64748b]">Usthad Academy</span>
                     </div>
-                    <span className="text-sm font-bold text-[#1e293b]">{usthadPercentage.toFixed(1)}%</span>
+                    <span className="text-xs md:text-sm font-bold text-[#1e293b]">{usthadPercentage.toFixed(1)}%</span>
                 </div>
             </div>
         </div>
@@ -706,60 +749,85 @@ export default function CEOFinancialIntelligence() {
     };
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] p-4 md:p-6 lg:p-8">
-            <div className="max-w-7xl mx-auto">
+        <div className="min-h-screen bg-[#f8fafc]">
+            {/* Desktop Sidebar - Hidden on mobile */}
+            <div className="hidden md:block">
+                <CEOSidebar
+                    activeView="financial-intelligence"
+                    onViewChange={(view) => {
+                        if (view === "financial-intelligence") {
+                            // Already on this page
+                            return;
+                        } else if (view === "sales-intelligence") {
+                            router.push("/ceo/sales");
+                        } else if (view === "directive-intelligence") {
+                            router.push("/ceo/directive-intelligence");
+                        } else {
+                            router.push("/ceo");
+                        }
+                    }}
+                />
+            </div>
+
+            {/* Main Content Area */}
+            <div className="ml-0 md:ml-[80px] pt-[60px] md:pt-3 p-3 md:p-6 lg:p-8 pb-24 md:pb-8">
+                <div className="max-w-7xl mx-auto">
                 {/* Premium Glass-Morphism Header */}
-                <div className="mb-8 bg-white/80 backdrop-blur-xl border border-slate-200 rounded-[24px] shadow-lg p-6 md:p-8">
-                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
+                <div className="mb-6 md:mb-8 bg-white/80 backdrop-blur-xl border border-slate-200 rounded-[20px] md:rounded-[24px] shadow-lg p-4 md:p-6 lg:p-8">
+                    <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 md:gap-6">
                         {/* Left Side: Brand Section */}
-                        <div className="flex items-center gap-5">
+                        <div className="flex items-center gap-3 md:gap-5 w-full lg:w-auto">
                             {/* Gradient Icon Box */}
                             <div 
-                                className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-xl"
+                                className="w-14 h-14 md:w-20 md:h-20 rounded-xl md:rounded-2xl flex items-center justify-center shadow-xl flex-shrink-0"
                                 style={{
                                     background: 'linear-gradient(135deg, #ff4d00 0%, #dc2626 100%)',
                                     boxShadow: '0 12px 40px rgba(255, 77, 0, 0.35)'
                                 }}
                             >
-                                <BarChart3 className="w-10 h-10 text-white" />
+                                <BarChart3 className="w-7 h-7 md:w-10 md:h-10 text-white" />
                             </div>
                             
                             {/* Title and Quote */}
-                            <div>
-                                <h1 className="text-3xl md:text-4xl font-black text-[#1e293b] uppercase tracking-tight leading-tight">
-                                    FINANCIAL COMMAND CENTER
+                            <div className="min-w-0 flex-1">
+                                <h1 className="text-xl md:text-3xl lg:text-4xl font-black text-[#1e293b] uppercase tracking-tight leading-tight truncate">
+                                    FINANCIAL COMMAND
                                 </h1>
-                                <p className="text-sm italic text-[#64748b] mt-1">
-                                    "Strategic visibility into Usthad Academy & UloomX revenue streams."
+                                <p className="text-xs md:text-sm italic text-[#64748b] mt-0.5 md:mt-1 line-clamp-2">
+                                    "Strategic visibility into Usthad Academy & UloomX revenue."
                                 </p>
                             </div>
                         </div>
 
                         {/* Right Side: Home Icon, Status and Time */}
-                        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                        <div className="flex flex-row items-center gap-2 md:gap-4 w-full lg:w-auto justify-between lg:justify-start">
                             {/* Home Icon Button */}
                             <button
                                 onClick={handleGoHome}
-                                className="w-10 h-10 rounded-full bg-[#ff4d00]/10 hover:bg-[#ff4d00] flex items-center justify-center transition-all duration-200 group"
+                                className="w-9 h-9 md:w-10 md:h-10 rounded-full bg-[#ff4d00]/10 hover:bg-[#ff4d00] flex items-center justify-center transition-all duration-200 group flex-shrink-0"
                                 title="Go to Home"
+                                style={{ touchAction: "manipulation" }}
                             >
-                                <Home className="w-5 h-5 text-[#ff4d00] group-hover:text-white transition-colors" />
+                                <Home className="w-4 h-4 md:w-5 md:h-5 text-[#ff4d00] group-hover:text-white transition-colors" />
                             </button>
 
                             {/* Live System Status */}
-                            <div className="flex items-center gap-2 px-4 py-2.5 rounded-full bg-green-50 border border-green-200">
+                            <div className="flex items-center gap-1.5 md:gap-2 px-2.5 md:px-4 py-1.5 md:py-2.5 rounded-full bg-green-50 border border-green-200 flex-shrink-0">
                                 <div className="relative">
-                                    <div className="w-2.5 h-2.5 bg-green-500 rounded-full"></div>
-                                    <div className="absolute inset-0 w-2.5 h-2.5 bg-green-500 rounded-full animate-ping"></div>
+                                    <div className="w-2 h-2 md:w-2.5 md:h-2.5 bg-green-500 rounded-full"></div>
+                                    <div className="absolute inset-0 w-2 h-2 md:w-2.5 md:h-2.5 bg-green-500 rounded-full animate-ping"></div>
                                 </div>
-                                <span className="text-sm font-bold text-green-700 tracking-wide">
+                                <span className="text-xs md:text-sm font-bold text-green-700 tracking-wide hidden sm:inline">
                                     LIVE SYSTEM ACTIVE
+                                </span>
+                                <span className="text-xs font-bold text-green-700 tracking-wide sm:hidden">
+                                    LIVE
                                 </span>
                             </div>
                             
                             {/* Date/Time Stamp */}
-                            <div className="px-4 py-2.5 rounded-full bg-slate-100 border border-slate-200">
-                                <span className="text-sm font-medium text-[#64748b]">
+                            <div className="px-2.5 md:px-4 py-1.5 md:py-2.5 rounded-full bg-slate-100 border border-slate-200 flex-shrink-0 hidden xs:block">
+                                <span className="text-xs md:text-sm font-medium text-[#64748b] truncate">
                                     {currentDateTime}
                                 </span>
                             </div>
@@ -779,8 +847,8 @@ export default function CEOFinancialIntelligence() {
                     <>
                 {/* Tier 1: Real-Time Daily Transmission */}
                 <div className="mb-8">
-                    <h2 className="text-xl font-semibold text-[#1e293b] mb-4">Real-Time Daily Transmission</h2>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <h2 className="text-lg md:text-xl font-semibold text-[#1e293b] mb-4">Real-Time Daily Transmission</h2>
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
                         <MetricCard
                             title="Today's UloomX Income"
                             value={formatCurrency(animatedUloomxIncome.currentValue)}
@@ -818,50 +886,50 @@ export default function CEOFinancialIntelligence() {
 
                 {/* Tier 2: Monthly Cumulative Overview */}
                 <div className="mb-8">
-                    <h2 className="text-xl font-semibold text-[#1e293b] mb-4">Monthly Cumulative Overview</h2>
-                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-lg p-6 md:p-10">
-                        <div className="flex flex-col lg:flex-row gap-10">
+                    <h2 className="text-lg md:text-xl font-semibold text-[#1e293b] mb-4">Monthly Cumulative Overview</h2>
+                    <div className="bg-white rounded-[20px] md:rounded-[24px] border border-gray-100 shadow-lg p-4 md:p-6 lg:p-10">
+                        <div className="flex flex-col lg:flex-row gap-6 lg:gap-10">
                             {/* Left Side: Statistical Blocks */}
                             <div className="flex-1">
-                                <h3 className="text-xl font-bold text-[#1e293b] mb-8">Monthly Fiscal Performance</h3>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                                    <div className="p-6 rounded-[20px] bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 hover:shadow-md transition-all">
-                                        <div className="w-10 h-10 rounded-xl bg-[#ff4d00]/10 flex items-center justify-center mb-3">
-                                            <Building className="w-5 h-5 text-[#ff4d00]" />
+                                <h3 className="text-lg md:text-xl font-bold text-[#1e293b] mb-4 md:mb-8">Monthly Fiscal Performance</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 md:gap-6">
+                                    <div className="p-4 md:p-6 rounded-[16px] md:rounded-[20px] bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 hover:shadow-md transition-all">
+                                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-[#ff4d00]/10 flex items-center justify-center mb-2 md:mb-3">
+                                            <Building className="w-4 h-4 md:w-5 md:h-5 text-[#ff4d00]" />
                                         </div>
-                                        <p className="text-sm text-[#64748b] mb-1">Monthly UloomX Total</p>
-                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyUloomx.currentValue)}</p>
+                                        <p className="text-xs md:text-sm text-[#64748b] mb-1">Monthly UloomX Total</p>
+                                        <p className="text-xl md:text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyUloomx.currentValue)}</p>
                                     </div>
-                                    <div className="p-6 rounded-[20px] bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 hover:shadow-md transition-all">
-                                        <div className="w-10 h-10 rounded-xl bg-[#ffb088]/20 flex items-center justify-center mb-3">
-                                            <Landmark className="w-5 h-5 text-[#ff6b35]" />
+                                    <div className="p-4 md:p-6 rounded-[16px] md:rounded-[20px] bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 hover:shadow-md transition-all">
+                                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-[#ffb088]/20 flex items-center justify-center mb-2 md:mb-3">
+                                            <Landmark className="w-4 h-4 md:w-5 md:h-5 text-[#ff6b35]" />
                                         </div>
-                                        <p className="text-sm text-[#64748b] mb-1">Monthly Usthad Total</p>
-                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyUsthad.currentValue)}</p>
+                                        <p className="text-xs md:text-sm text-[#64748b] mb-1">Monthly Usthad Total</p>
+                                        <p className="text-xl md:text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyUsthad.currentValue)}</p>
                                     </div>
-                                    <div className="p-6 rounded-[20px] bg-gradient-to-br from-red-50 to-red-100 border border-red-200 hover:shadow-md transition-all">
-                                        <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center mb-3">
-                                            <Wallet className="w-5 h-5 text-red-500" />
+                                    <div className="p-4 md:p-6 rounded-[16px] md:rounded-[20px] bg-gradient-to-br from-red-50 to-red-100 border border-red-200 hover:shadow-md transition-all">
+                                        <div className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-red-100 flex items-center justify-center mb-2 md:mb-3">
+                                            <Wallet className="w-4 h-4 md:w-5 md:h-5 text-red-500" />
                                         </div>
-                                        <p className="text-sm text-[#64748b] mb-1">Monthly Total Expense</p>
-                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyExpense.currentValue)}</p>
+                                        <p className="text-xs md:text-sm text-[#64748b] mb-1">Monthly Total Expense</p>
+                                        <p className="text-xl md:text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyExpense.currentValue)}</p>
                                     </div>
                                 </div>
                             </div>
 
                             {/* Right Side: Current Monthly Balance */}
                             <div className="lg:w-[420px]">
-                                <div className="h-full p-8 rounded-[20px] border-2 flex flex-col justify-center" 
+                                <div className="h-full p-4 md:p-8 rounded-[16px] md:rounded-[20px] border-2 flex flex-col justify-center" 
                                      style={{ 
                                          borderColor: "#ff4d00", 
                                          background: "linear-gradient(135deg, rgba(255,77,0,0.08) 0%, rgba(255,107,53,0.03) 100%)" 
                                      }}>
-                                    <p className="text-sm text-[#64748b] font-medium mb-2">Current Monthly Balance</p>
-                                    <p className="text-4xl font-black" style={{ color: "#ff4d00" }}>
+                                    <p className="text-xs md:text-sm text-[#64748b] font-medium mb-1 md:mb-2">Current Monthly Balance</p>
+                                    <p className="text-2xl md:text-4xl font-black" style={{ color: "#ff4d00" }}>
                                         {formatCurrency(monthlyMetrics.balance)}
                                     </p>
-                                    <div className="mt-6 flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-2 rounded-full w-fit">
-                                        <ArrowUpRight className="w-4 h-4" />
+                                    <div className="mt-4 md:mt-6 flex items-center gap-2 text-xs md:text-sm text-green-600 bg-green-50 px-3 py-2 rounded-full w-fit">
+                                        <ArrowUpRight className="w-3 h-3 md:w-4 md:h-4" />
                                         <span className="font-semibold">18% growth from last month</span>
                                     </div>
                                 </div>
@@ -872,11 +940,11 @@ export default function CEOFinancialIntelligence() {
 
                 {/* Tier 3: Growth Analytics & Insight Engine */}
                 <div>
-                    <h2 className="text-xl font-semibold text-[#1e293b] mb-4">Growth Analytics & Insight Engine</h2>
-                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+                    <h2 className="text-lg md:text-xl font-semibold text-[#1e293b] mb-4">Growth Analytics & Insight Engine</h2>
+                    <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 md:gap-6">
                         {/* Stacked Area Chart */}
-                        <div className="lg:col-span-3 bg-white rounded-[24px] border border-gray-100 shadow-lg p-8">
-                            <h3 className="text-lg font-bold text-[#1e293b] mb-6">30-Day Revenue Streams</h3>
+                        <div className="lg:col-span-3 bg-white rounded-[20px] md:rounded-[24px] border border-gray-100 shadow-lg p-4 md:p-8">
+                            <h3 className="text-base md:text-lg font-bold text-[#1e293b] mb-4 md:mb-6">30-Day Revenue Streams</h3>
                             <StackedAreaChart data={chartData} />
                             <div className="mt-6 flex items-center justify-center gap-8 text-sm">
                                 <div className="flex items-center gap-2">
@@ -891,10 +959,10 @@ export default function CEOFinancialIntelligence() {
                         </div>
 
                         {/* Insight Engine - Strategic Revenue Split */}
-                        <div className="lg:col-span-2 space-y-6">
+                        <div className="lg:col-span-2 space-y-4 md:space-y-6">
                             {/* Donut Chart Card */}
-                            <div className="bg-white rounded-[24px] border border-gray-100 shadow-lg p-8">
-                                <h3 className="text-lg font-bold text-[#1e293b] mb-6">Strategic Revenue Split</h3>
+                            <div className="bg-white rounded-[20px] md:rounded-[24px] border border-gray-100 shadow-lg p-4 md:p-8">
+                                <h3 className="text-base md:text-lg font-bold text-[#1e293b] mb-4 md:mb-6">Strategic Revenue Split</h3>
                                 <DonutChart 
                                     uloomxValue={monthlyMetrics.uloomxTotal} 
                                     usthadValue={monthlyMetrics.usthadTotal} 
@@ -904,25 +972,25 @@ export default function CEOFinancialIntelligence() {
                             {/* Anomaly Detection Cards */}
                             <div className="space-y-4">
                                 {/* Expense Alert */}
-                                <div className={`p-5 rounded-[20px] border transition-all ${
+                                <div className={`p-4 md:p-5 rounded-[16px] md:rounded-[20px] border transition-all ${
                                     expenseRatio > 35 
                                         ? 'bg-amber-50 border-amber-200' 
                                         : 'bg-green-50 border-green-200'
                                 }`}>
                                     <div className="flex items-start gap-3">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                                             expenseRatio > 35 
                                                 ? 'bg-amber-100' 
                                                 : 'bg-green-100'
                                         }`}>
                                             {expenseRatio > 35 ? (
-                                                <AlertTriangle className="w-5 h-5 text-amber-600" />
+                                                <AlertTriangle className="w-4 h-4 md:w-5 md:h-5 text-amber-600" />
                                             ) : (
-                                                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                                                <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
                                             )}
                                         </div>
-                                        <div>
-                                            <p className={`text-sm font-bold ${
+                                        <div className="min-w-0">
+                                            <p className={`text-xs md:text-sm font-bold ${
                                                 expenseRatio > 35 ? 'text-amber-700' : 'text-green-700'
                                             }`}>
                                                 {expenseRatio > 35 ? 'Expense Alert' : 'Expense Normal'}
@@ -938,7 +1006,7 @@ export default function CEOFinancialIntelligence() {
                                 </div>
 
                                 {/* Revenue Milestone */}
-                                <div className={`p-5 rounded-[20px] border transition-all ${
+                                <div className={`p-4 md:p-5 rounded-[16px] md:rounded-[20px] border transition-all ${
                                     targetAchievement >= 90 
                                         ? 'bg-green-50 border-green-200' 
                                         : targetAchievement >= 75 
@@ -946,7 +1014,7 @@ export default function CEOFinancialIntelligence() {
                                             : 'bg-orange-50 border-orange-200'
                                 }`}>
                                     <div className="flex items-start gap-3">
-                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                                        <div className={`w-8 h-8 md:w-10 md:h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                                             targetAchievement >= 90 
                                                 ? 'bg-green-100' 
                                                 : targetAchievement >= 75 
@@ -954,15 +1022,15 @@ export default function CEOFinancialIntelligence() {
                                                     : 'bg-orange-100'
                                         }`}>
                                             {targetAchievement >= 90 ? (
-                                                <Sparkles className="w-5 h-5 text-green-600" />
+                                                <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-green-600" />
                                             ) : targetAchievement >= 75 ? (
-                                                <Target className="w-5 h-5 text-blue-600" />
+                                                <Target className="w-4 h-4 md:w-5 md:h-5 text-blue-600" />
                                             ) : (
-                                                <Zap className="w-5 h-5 text-orange-600" />
+                                                <Zap className="w-4 h-4 md:w-5 md:h-5 text-orange-600" />
                                             )}
                                         </div>
-                                        <div>
-                                            <p className={`text-sm font-bold ${
+                                        <div className="min-w-0">
+                                            <p className={`text-xs md:text-sm font-bold ${
                                                 targetAchievement >= 90 
                                                     ? 'text-green-700' 
                                                     : targetAchievement >= 75 
@@ -989,7 +1057,32 @@ export default function CEOFinancialIntelligence() {
                 </div>
                     </>
                 )}
+                </div>
             </div>
+            
+            {/* Mobile Bottom Navigation */}
+            <MobileBottomNav
+                activeView="financial-intelligence"
+                onViewChange={(view) => {
+                    if (view === "command-center") {
+                        router.push("/ceo");
+                    } else if (view === "financial-intelligence") {
+                        // Already on this page
+                        return;
+                    } else if (view === "sales-intelligence") {
+                        router.push("/ceo/sales");
+                    } else if (view === "staff-management") {
+                        router.push("/ceo");
+                    } else if (view === "inbox") {
+                        router.push("/ceo");
+                    } else {
+                        router.push("/ceo");
+                    }
+                }}
+            />
+            
+            {/* Mobile FAB */}
+            <MobileFAB variant="default" />
         </div>
     );
 }

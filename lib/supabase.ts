@@ -316,6 +316,10 @@ export type Idea = {
     title?: string;
     content: string;
     priority?: "low" | "medium" | "high" | "urgent";
+    status?: "reminder" | "directive" | "high_priority";
+    tags?: string[];
+    follow_up_date?: string;
+    auto_tagged?: boolean;
     created_by: string;
     shared_with: string[];
     archived: boolean;

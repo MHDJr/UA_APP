@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { ExecutiveSalesOverview } from "@/components/executive-sales-overview";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { MobileFAB } from "@/components/mobile-fab";
 
 export default function CEOSalesPage() {
     const { user, profile, loading } = useAuth();
@@ -22,5 +25,36 @@ export default function CEOSalesPage() {
         );
     }
 
-    return <div>Sales Page Coming Soon</div>;
+    return (
+        <div className="min-h-screen bg-[#f8fafc] pb-24 md:pb-8">
+            {/* Main Content */}
+            <div className="pt-[60px] md:pt-0">
+                <ExecutiveSalesOverview />
+            </div>
+            
+            {/* Mobile Bottom Navigation */}
+            <MobileBottomNav
+                activeView="sales-intelligence"
+                onViewChange={(view) => {
+                    if (view === "command-center") {
+                        router.push("/ceo");
+                    } else if (view === "sales-intelligence") {
+                        // Already on this page
+                        return;
+                    } else if (view === "financial-intelligence") {
+                        router.push("/ceo/financial-intelligence");
+                    } else if (view === "staff-management") {
+                        router.push("/ceo");
+                    } else if (view === "inbox") {
+                        router.push("/ceo");
+                    } else {
+                        router.push("/ceo");
+                    }
+                }}
+            />
+            
+            {/* Mobile FAB */}
+            <MobileFAB variant="default" />
+        </div>
+    );
 }

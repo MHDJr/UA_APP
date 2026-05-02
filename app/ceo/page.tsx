@@ -6,12 +6,14 @@ import { StaffManagement } from "@/components/staff-management";
 import ScheduledMeetings from "@/components/scheduled-meetings";
 import { CEOInbox } from "@/components/ceo-inbox";
 import { ExecutiveSalesOverview } from "@/components/executive-sales-overview";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { MobileFAB } from "@/components/mobile-fab";
 import { useAuth } from "@/lib/auth-context";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence" | "financial-intelligence";
+type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence" | "financial-intelligence" | "directive-intelligence";
 
 export default function CEOPage() {
     const { profile, loading } = useAuth();
@@ -25,10 +27,14 @@ export default function CEOPage() {
         }
     }, [profile, loading, router]);
 
-    // Navigate to financial intelligence page when that view is selected
+    // Navigate to external pages when specific views are selected
     useEffect(() => {
         if (activeView === "financial-intelligence") {
             router.push("/ceo/financial-intelligence");
+        } else if (activeView === "sales-intelligence") {
+            router.push("/ceo/sales");
+        } else if (activeView === "directive-intelligence") {
+            router.push("/ceo/directive-intelligence");
         }
     }, [activeView, router]);
 
@@ -58,15 +64,28 @@ export default function CEOPage() {
 
     return (
         <TooltipProvider>
-            <div className="min-h-screen bg-[#F9FAFB]">
-                <CEOSidebar
+            <div className="min-h-screen bg-[#F9FAFB] overflow-x-hidden">
+                {/* Desktop Sidebar - Hidden on mobile */}
+                <div className="hidden md:block">
+                    <CEOSidebar
+                        activeView={activeView}
+                        onViewChange={(view) => setActiveView(view as CEOView)}
+                        onMinimizedChange={setIsSidebarMinimized}
+                    />
+                </div>
+
+                {/* Mobile Bottom Navigation */}
+                <MobileBottomNav
                     activeView={activeView}
                     onViewChange={(view) => setActiveView(view as CEOView)}
-                    onMinimizedChange={setIsSidebarMinimized}
                 />
+
+                {/* Mobile FAB */}
+                <MobileFAB variant="default" />
+
+                {/* Main Content Area */}
                 <main 
-                    className="min-h-screen transition-all duration-300 ease-out"
-                    style={{ marginLeft: isSidebarMinimized ? 80 : 260 }}
+                    className="min-h-screen transition-all duration-300 ease-out ml-0 md:ml-[80px] pt-[60px] md:pt-0"
                 >
                     {renderContent()}
                 </main>

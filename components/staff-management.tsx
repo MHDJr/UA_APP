@@ -178,6 +178,21 @@ export function StaffManagement() {
         };
     }, []);
 
+    // Listen for FAB actions from mobile FAB component
+    useEffect(() => {
+        const handleFabAction = (event: CustomEvent) => {
+            const { action } = event.detail;
+            if (action === "add-staff") {
+                setIsAddStaffOpen(true);
+            }
+        };
+
+        window.addEventListener("fab-action", handleFabAction as EventListener);
+        return () => {
+            window.removeEventListener("fab-action", handleFabAction as EventListener);
+        };
+    }, []);
+
     const fetchPendingRequests = async () => {
         try {
             // Fetch pending requests with staff profile data (excluding ideas)
@@ -405,16 +420,16 @@ export function StaffManagement() {
     }
 
     return (
-        <div className="min-h-[calc(100vh-80px)] bg-[#F9FAFB] overflow-y-auto">
-            <div className="max-w-[1600px] mx-auto px-6 lg:px-8 py-8">
+        <div className="min-h-[calc(100vh-80px)] bg-[#F9FAFB] overflow-y-auto pb-24 md:pb-8">
+            <div className="max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-8">
                 {/* Header Section */}
-                <div className="mb-6">
-                    <div className="mb-6">
+                <div className="mb-4 md:mb-6">
+                    <div className="mb-4 md:mb-6">
                         <div>
-                            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">
+                            <h1 className="text-xl md:text-3xl font-bold text-gray-900 tracking-tight">
                                 Staff Management
                             </h1>
-                            <p className="text-gray-500 mt-1">
+                            <p className="text-sm md:text-base text-gray-500 mt-1">
                                 {stats.total} active staff member{stats.total !== 1 ? "s" : ""} across multiple departments
                             </p>
                         </div>
@@ -478,28 +493,28 @@ export function StaffManagement() {
                     />
                 </div>
 
-                {/* Staff Table Section - More Visible */}
+                {/* Staff Directory Section */}
                 <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden border border-gray-100">
-                    <div className="px-6 py-4 border-b border-gray-100 bg-gray-50/50">
-                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                    <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-gray-50/50">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
                             <div>
-                                <h2 className="text-lg font-semibold text-gray-900">Staff Directory</h2>
-                                <p className="text-sm text-gray-500">Manage and monitor all team members</p>
+                                <h2 className="text-base md:text-lg font-semibold text-gray-900">Staff Directory</h2>
+                                <p className="text-xs md:text-sm text-gray-500">Manage and monitor all team members</p>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <div className="relative">
+                            <div className="flex items-center gap-2 md:gap-3">
+                                <div className="relative flex-1 md:flex-none">
                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                     <Input
                                         type="text"
                                         placeholder="Search staff..."
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-10 pr-4 py-2.5 w-72 bg-white border-gray-200 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-[#31267D]/20 focus:border-[#31267D]"
+                                        className="pl-10 pr-4 py-2 md:py-2.5 w-full md:w-72 bg-white border-gray-200 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-[#31267D]/20 focus:border-[#31267D]"
                                     />
                                 </div>
                                 <Button
                                     onClick={() => setIsAddStaffOpen(true)}
-                                    className="px-5 py-2.5 rounded-xl text-white font-semibold text-sm flex items-center gap-2 shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 transition-all"
+                                    className="hidden md:flex px-5 py-2.5 rounded-xl text-white font-semibold text-sm items-center gap-2 shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 transition-all"
                                     style={{ backgroundColor: BRAND_COLORS.orange }}
                                 >
                                     <Plus className="w-4 h-4" />
@@ -508,7 +523,115 @@ export function StaffManagement() {
                             </div>
                         </div>
                     </div>
-                    <div className="overflow-x-auto">
+                    
+                    {/* Mobile Card View */}
+                    <div className="md:hidden">
+                        {filteredStaff.length === 0 ? (
+                            <div className="flex items-center justify-center py-12">
+                                <div className="text-center">
+                                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                        <Search className="w-6 h-6 text-gray-400" />
+                                    </div>
+                                    <p className="text-gray-500 font-medium text-sm">No staff members found</p>
+                                    <p className="text-xs text-gray-400 mt-1">Try adjusting your search</p>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="divide-y divide-gray-100">
+                                {filteredStaff.map((staff) => {
+                                    const statusStyle = statusStyles[staff.status];
+                                    const StatusIcon = statusStyle.icon;
+                                    const progressPercent = (staff.tasksCompleted / staff.tasksTotal) * 100;
+
+                                    return (
+                                        <div
+                                            key={staff.id}
+                                            className="p-4 active:bg-gray-50 transition-colors"
+                                            style={{ touchAction: "manipulation" }}
+                                        >
+                                            {/* Top Row: Avatar, Name, Status */}
+                                            <div className="flex items-start justify-between mb-3">
+                                                <div className="flex items-center gap-3">
+                                                    <Avatar className="w-12 h-12 border-2 border-white shadow-sm">
+                                                        <AvatarImage src={staff.avatar} alt={staff.name} />
+                                                        <AvatarFallback
+                                                            className="text-white text-sm font-bold"
+                                                            style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                                        >
+                                                            {staff.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="min-w-0">
+                                                        <p className="font-semibold text-gray-900 text-sm leading-tight truncate">{staff.name}</p>
+                                                        <p className="text-xs text-gray-500 truncate">{staff.role}</p>
+                                                        <div className="flex items-center gap-1.5 text-gray-400 text-xs mt-0.5">
+                                                            <Building2 className="w-3 h-3" />
+                                                            <span className="truncate">{staff.department}</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                <span
+                                                    className={cn(
+                                                        "inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0",
+                                                        statusStyle.bg,
+                                                        statusStyle.text
+                                                    )}
+                                                >
+                                                    <StatusIcon className="w-3 h-3" />
+                                                    {staff.status}
+                                                </span>
+                                            </div>
+
+                                            {/* Middle Row: Tasks & Rating */}
+                                            <div className="flex items-center justify-between mb-3">
+                                                {/* Tasks Progress */}
+                                                <div className="flex items-center gap-2 flex-1">
+                                                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[100px]">
+                                                        <div
+                                                            className="h-full rounded-full transition-all duration-500"
+                                                            style={{
+                                                                width: `${progressPercent}%`,
+                                                                backgroundColor: BRAND_COLORS.indigo,
+                                                            }}
+                                                        />
+                                                    </div>
+                                                    <span className="text-xs text-gray-500 font-medium">
+                                                        {staff.tasksCompleted}/{staff.tasksTotal}
+                                                    </span>
+                                                </div>
+
+                                                {/* Rating */}
+                                                <div className="flex items-center gap-1">
+                                                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                                    <span className="text-sm font-semibold text-gray-900">
+                                                        {staff.rating}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            {/* Bottom Row: Actions */}
+                                            <div className="flex items-center justify-end gap-2">
+                                                <button
+                                                    onClick={() => {
+                                                        setStaffToDelete(staff);
+                                                        setIsDeleteModalOpen(true);
+                                                    }}
+                                                    className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-all active:scale-95"
+                                                    style={{ touchAction: "manipulation" }}
+                                                    title="Terminate"
+                                                >
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto">
                         {filteredStaff.length === 0 ? (
                             <div className="flex items-center justify-center py-20">
                                 <div className="text-center">
@@ -632,23 +755,22 @@ export function StaffManagement() {
                                                 {/* Actions - Edit & Terminate */}
                                                 <td className="py-4 px-6">
                                                     <div className="flex items-center gap-2">
-                                                        // ✅ CORRECTED
-<button
-    onClick={() => {
-        setStaffToDelete(staff);
-        setIsDeleteModalOpen(true);
-    }}
-    className={cn(
-        "p-2 rounded-lg transition-all duration-200",
-        isHovered
-            ? "opacity-100 bg-red-50 text-red-600"
-            : "opacity-50 text-gray-400",
-        "hover:bg-red-100 hover:scale-105"
-    )}
-    title="Terminate"
->
-    <Trash2 className="w-4 h-4" />
-</button>
+                                                        <button
+                                                            onClick={() => {
+                                                                setStaffToDelete(staff);
+                                                                setIsDeleteModalOpen(true);
+                                                            }}
+                                                            className={cn(
+                                                                "p-2 rounded-lg transition-all duration-200",
+                                                                isHovered
+                                                                    ? "opacity-100 bg-red-50 text-red-600"
+                                                                    : "opacity-50 text-gray-400",
+                                                                "hover:bg-red-100 hover:scale-105"
+                                                            )}
+                                                            title="Terminate"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
                                                     </div>
                                                 </td>
                                             </tr>

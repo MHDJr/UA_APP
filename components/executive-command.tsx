@@ -77,6 +77,7 @@ import { Badge } from "@/components/ui/badge";
 import { AnimatePresence, motion } from "framer-motion";
 import AddStaffDialog from "./AddStaffDialog";
 import { NewIdeaDialog } from "./new-idea-dialog";
+import { ThoughtCapture } from "./thought-capture";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
@@ -89,7 +90,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, isPast, isToday, isTomorrow } from "date-fns";
 
 // ============================================
 // TYPES & CONSTANTS
@@ -594,11 +595,11 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     .eq("status", "accepted")
                     .order("created_at", { ascending: false }),
                 
-                // Get all active ideas
+                // Get all non-archived ideas
                 supabase
                     .from("ideas")
                     .select("*")
-                    .eq("status", "active")
+                    .eq("archived", false)
                     .order("created_at", { ascending: false }),
                 
                 // Get recent completed tasks not reviewed
@@ -698,6 +699,29 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             if (autoRefreshInterval) clearInterval(autoRefreshInterval);
         };
     }, [profile]);
+
+    // Listen for FAB actions from mobile FAB component
+    useEffect(() => {
+        const handleFabAction = (event: CustomEvent) => {
+            const { action } = event.detail;
+            switch (action) {
+                case "new-idea":
+                    setIsNewIdeaDialogOpen(true);
+                    break;
+                case "add-staff":
+                    setIsAddStaffOpen(true);
+                    break;
+                case "new-directive":
+                    setIsAssignTaskOpen(true);
+                    break;
+            }
+        };
+
+        window.addEventListener("fab-action", handleFabAction as EventListener);
+        return () => {
+            window.removeEventListener("fab-action", handleFabAction as EventListener);
+        };
+    }, []);
 
     // Computed Stats
     const stats = useMemo(() => {
@@ -1740,10 +1764,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             <main className="grid grid-cols-12 gap-6 flex-1">
                 {/* 2?????? LEFT COLUMN - EXECUTIVE AUTHORITY */}
                 <aside className="col-span-12 lg:col-span-3 flex flex-col gap-4">
-                    {/* ???? LIVE OPERATIONS SIGNAL PANEL */}
-                    <div className="bg-theme-card border border-theme-border-10 rounded-2xl overflow-hidden shadow-2xl flex flex-col w-full max-w-[300px] mx-auto lg:mx-0">
-                        {/* Today Summary Header */}
-                        <div className="p-4 bg-theme-bg-white-5 border-b border-theme-border-5">
+                    {/* ???? LIVE OPERATIONS SIGNAL PANEL - Hidden on mobile */}
+                    <div className="hidden md:flex bg-theme-card border border-theme-border-10 rounded-2xl overflow-hidden shadow-2xl flex-col w-full max-w-[300px] mx-auto lg:mx-0">
+                        {/* Today Summary Header - Hidden on mobile */}
+                        <div className="hidden md:block p-4 bg-theme-bg-white-5 border-b border-theme-border-5">
                             <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-theme-text-40 mb-3">
                                 Today Summary
                             </h4>
@@ -1911,10 +1935,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     />
 
                     {departmentFilter === "ceo" && (
-                        <div className="flex gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-fit">
+                        <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-full md:w-fit overflow-x-auto scrollbar-hide">
                             <button
                                 onClick={() => setTaskTab("active")}
-                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                     taskTab === "active"
                                         ? "bg-theme-bg-white text-theme-inv-text shadow-lg"
                                         : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1924,7 +1948,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </button>
                             <button
                                 onClick={() => setTaskTab("blocked")}
-                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                     taskTab === "blocked"
                                         ? "bg-red-500 text-theme-text shadow-lg shadow-red-500/20"
                                         : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1934,7 +1958,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </button>
                             <button
                                 onClick={() => setTaskTab("overdue")}
-                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                     taskTab === "overdue"
                                         ? "bg-amber-500 text-theme-inv-text shadow-lg shadow-amber-500/20"
                                         : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1944,7 +1968,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </button>
                             <button
                                 onClick={() => setTaskTab("completed")}
-                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                     taskTab === "completed"
                                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
                                         : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1954,7 +1978,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </button>
                             <button
                                 onClick={() => setTaskTab("daily")}
-                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                     taskTab === "daily"
                                         ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
                                         : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1966,10 +1990,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     )}
 
                     {/* Department Filters */}
-                    <div className="flex gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-fit">
+                    <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-full md:w-fit overflow-x-auto scrollbar-hide">
                         <button
                             onClick={() => setDepartmentFilter("ceo")}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "ceo"
                                     ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1979,7 +2003,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("sales")}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "sales"
                                     ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1989,7 +2013,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("marketing")}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "marketing"
                                     ? "bg-pink-500 text-white shadow-lg shadow-pink-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -1999,7 +2023,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("accounts")}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "accounts"
                                     ? "bg-green-500 text-white shadow-lg shadow-green-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
@@ -2009,13 +2033,13 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("administration")}
-                            className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "administration"
                                     ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Administration
+                            Admin
                         </button>
                     </div>
 
@@ -2254,21 +2278,27 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 {/* 4?????? RIGHT COLUMN - INTELLIGENCE & DIRECTIVES (REFINE) */}
                 <aside className="col-span-12 lg:col-span-3 flex flex-col gap-6">
                     {/* Ideas & Directives Section */}
-                    <div className="flex flex-col gap-3">
+                    <div className="flex flex-col gap-4">
                         <div className="flex items-center justify-between">
                             <SectionHeader
                                 title="CEO Command Log"
                                 color="bg-amber-500"
                             />
                             <Button
-                                onClick={() => setIsNewIdeaDialogOpen(true)}
+                                onClick={() => router.push("/ceo/directive-intelligence")}
                                 size="sm"
                                 className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 text-[8px] font-black uppercase tracking-widest h-7 px-3 rounded-lg transition-all"
                             >
                                 <Bookmark className="w-3 h-3 mr-1" />
-                                + NEW DIRECTIVE
+                                View All
                             </Button>
                         </div>
+                        
+                        {/* Thought Capture Glassmorphic Input */}
+                        <ThoughtCapture 
+                            onCapture={() => fetchData()} 
+                            compact={true}
+                        />
                         {ideas.length === 0 ? (
                             <div className="p-6 border border-dashed border-theme-border-5 text-center text-theme-text-20 text-[9px] uppercase tracking-widest rounded-2xl bg-black/20">
                                 No active reminders or directives found
@@ -2423,6 +2453,61 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </div>
                         )}
                     </div>
+
+                    {/* Due Reminders Section */}
+                    {(() => {
+                        const dueReminders = ideas.filter(idea => {
+                            if (!idea.follow_up_date) return false;
+                            const date = parseISO(idea.follow_up_date);
+                            return isPast(date) || isToday(date) || isTomorrow(date);
+                        }).slice(0, 3);
+                        
+                        if (dueReminders.length === 0) return null;
+                        
+                        return (
+                            <div className="flex flex-col gap-3">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-1 h-4 bg-red-500 rounded-full" />
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">
+                                        Due Reminders
+                                    </h3>
+                                    <span className="ml-auto text-[9px] text-red-400/60 font-bold">
+                                        {dueReminders.length} pending
+                                    </span>
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                    {dueReminders.map(idea => {
+                                        const date = parseISO(idea.follow_up_date!);
+                                        const isOverdue = isPast(date) && !isToday(date);
+                                        const isDueToday = isToday(date);
+                                        
+                                        return (
+                                            <div 
+                                                key={idea.id}
+                                                className={`
+                                                    p-3 rounded-xl border text-xs
+                                                    ${isOverdue 
+                                                        ? 'bg-red-500/10 border-red-500/30 text-red-300' 
+                                                        : isDueToday
+                                                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                                                            : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                                                    }
+                                                `}
+                                            >
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Clock className="w-3 h-3" />
+                                                    <span className="font-bold">
+                                                        {isOverdue ? 'Overdue' : isDueToday ? 'Due Today' : 'Due Tomorrow'}
+                                                    </span>
+                                                </div>
+                                                <p className="line-clamp-2 opacity-80">{idea.title || idea.content}</p>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })()}
 
                     {/* Compact Staff Visibility List */}
                     <div className="flex flex-col gap-3">
