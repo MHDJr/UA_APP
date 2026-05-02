@@ -23,7 +23,7 @@ export default function Home() {
         if (!loading && profile) {
             if (profile.role === "ceo") router.replace("/ceo");
             else if (profile.is_manager) router.replace("/manager");
-            else if (profile.role === "sales" || profile.is_tutor || profile.role === "staff")
+            else if (profile.role === "sales" || profile.is_tutor || profile.role === "accounts" || profile.role === "staff")
                 router.replace("/staff");
         }
     }, [profile, loading, router]);

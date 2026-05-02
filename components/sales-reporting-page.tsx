@@ -144,7 +144,9 @@ export function SalesReportingPage() {
     });
     const [conversions, setConversions] = useState(() => {
         if (typeof window !== 'undefined') {
-            return localStorage.getItem('sales_conversions') || "0";
+            const saved = localStorage.getItem('sales_conversions');
+            console.log('Loading conversions from localStorage:', saved);
+            return saved || "0";
         }
         return "0";
     });
@@ -187,14 +189,61 @@ export function SalesReportingPage() {
         return () => clearInterval(interval);
     }, []);
 
-    // Save form data to localStorage
+    // Update tracking data in database whenever form values change
+    useEffect(() => {
+        if (typeof window !== 'undefined' && user && profile) {
+            console.log('Updating tracking data in database:', { totalLeads, conversions, evaluations, lostLeads, leadQuality });
+            
+            const updateTrackingData = async () => {
+                try {
+                    const today = new Date().toISOString().split("T")[0];
+                    
+                    const { data, error } = await supabase
+                        .from("daily_sales_tracking")
+                        .upsert({
+                            profile_id: profile.id,
+                            tracking_date: today,
+                            total_leads: parseInt(totalLeads) || 0,
+                            conversions: parseInt(conversions) || 0,
+                            evaluations_taken: parseInt(evaluations) || 0,
+                            lost_leads: parseInt(lostLeads) || 0,
+                            lead_quality_rating: leadQuality[0] || 7,
+                            updated_at: new Date().toISOString(),
+                        })
+                        .select();
+                    
+                    if (error) {
+                        console.error('Database update error:', error);
+                        // If table doesn't exist, fall back to localStorage only
+                        if (error.message.includes('relation') && error.message.includes('does not exist')) {
+                            console.log('daily_sales_tracking table does not exist, using localStorage fallback');
+                        }
+                    } else {
+                        console.log('Database update successful:', data);
+                    }
+                } catch (err) {
+                    console.error('Unexpected error updating tracking data:', err);
+                }
+            };
+            
+            // Debounce the update to avoid too frequent database calls
+            const timeoutId = setTimeout(updateTrackingData, 1000);
+            return () => clearTimeout(timeoutId);
+        }
+    }, [totalLeads, conversions, evaluations, lostLeads, leadQuality, user, profile]);
+
+    // Also save to localStorage as backup
     useEffect(() => {
         if (typeof window !== 'undefined') {
+            console.log('Saving to localStorage:', { totalLeads, conversions, evaluations, lostLeads, leadQuality });
             localStorage.setItem('sales_totalLeads', totalLeads);
             localStorage.setItem('sales_conversions', conversions);
             localStorage.setItem('sales_evaluations', evaluations);
             localStorage.setItem('sales_lostLeads', lostLeads);
             localStorage.setItem('sales_leadQuality', JSON.stringify(leadQuality));
+            
+            // Also save a timestamp to track when data was last saved
+            localStorage.setItem('sales_lastSaved', new Date().toISOString());
         }
     }, [totalLeads, conversions, evaluations, lostLeads, leadQuality]);
 
@@ -205,36 +254,107 @@ export function SalesReportingPage() {
 
             const today = new Date().toISOString().split("T")[0];
             
-            const { data, error } = await supabase
+            // For now, use localStorage as primary storage since database table may not exist
+            // This ensures data persistence even if database operations fail
+            loadFromLocalStorage();
+            
+            // Try to use database if available, but don't depend on it
+            try {
+                const { data: trackingData, error: trackingError } = await supabase
+                    .from("daily_sales_tracking")
+                    .select("*")
+                    .eq("profile_id", profile.id)
+                    .eq("tracking_date", today)
+                    .single();
+
+                if (!trackingError && trackingData) {
+                    console.log('Loading tracking data from database:', trackingData);
+                    // Only use database data if localStorage is empty/defaults
+                    const localConversions = localStorage.getItem('sales_conversions') || "0";
+                    if (localConversions === "0" && trackingData.conversions > 0) {
+                        setConversions(trackingData.conversions.toString());
+                        setTotalLeads(trackingData.total_leads?.toString() || "");
+                        setEvaluations(trackingData.evaluations_taken?.toString() || "");
+                        setLostLeads(trackingData.lost_leads?.toString() || "");
+                        setLeadQuality([trackingData.lead_quality_rating || 7]);
+                    }
+                }
+            } catch (err) {
+                console.log('Database tracking not available, using localStorage only');
+            }
+            
+            // Check if report has been submitted today (separate from tracking)
+            const { data: reportData, error: reportError } = await supabase
                 .from("daily_reports")
                 .select("id, submitted_at")
                 .eq("profile_id", profile.id)
                 .eq("report_date", today)
                 .single();
 
-            if (data && !error) {
+            if (reportData && !reportError) {
                 setHasSubmittedToday(true);
-                setTodayReportId(data.id);
-                
-                // Load today's report data into form
-                const { data: reportData } = await supabase
-                    .from("daily_reports")
-                    .select("*")
-                    .eq("id", data.id)
-                    .single();
-                
-                if (reportData) {
-                    setTotalLeads(reportData.total_leads?.toString() || "");
-                    setConversions(reportData.conversions?.toString() || "0");
-                    setEvaluations(reportData.evaluations_taken?.toString() || "");
-                    setLostLeads(reportData.lost_leads?.toString() || "");
-                    setLeadQuality([reportData.lead_quality_rating || 7]);
-                }
+                setTodayReportId(reportData.id);
             }
+        };
+
+        const loadFromLocalStorage = () => {
+            const localConversions = localStorage.getItem('sales_conversions') || "0";
+            const localTotalLeads = localStorage.getItem('sales_totalLeads') || "";
+            const localEvaluations = localStorage.getItem('sales_evaluations') || "";
+            const localLostLeads = localStorage.getItem('sales_lostLeads') || "";
+            const localLeadQuality = JSON.parse(localStorage.getItem('sales_leadQuality') || "[7]");
+            
+            console.log('Loading from localStorage:', { localConversions, localTotalLeads, localEvaluations, localLostLeads, localLeadQuality });
+            
+            setTotalLeads(localTotalLeads);
+            setConversions(localConversions);
+            setEvaluations(localEvaluations);
+            setLostLeads(localLostLeads);
+            setLeadQuality(localLeadQuality);
         };
 
         checkTodaySubmission();
     }, [user, profile]);
+
+    // Daily reset at midnight
+    useEffect(() => {
+        const checkMidnightReset = () => {
+            const now = new Date();
+            const tomorrow = new Date(now);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(0, 0, 0, 0);
+            
+            const msUntilMidnight = tomorrow.getTime() - now.getTime();
+            
+            const resetTimer = setTimeout(() => {
+                // Clear localStorage for new day
+                localStorage.removeItem('sales_totalLeads');
+                localStorage.removeItem('sales_conversions');
+                localStorage.removeItem('sales_evaluations');
+                localStorage.removeItem('sales_lostLeads');
+                localStorage.removeItem('sales_leadQuality');
+                localStorage.removeItem('sales_lastSaved');
+                
+                // Reset form values
+                setTotalLeads("");
+                setConversions("0");
+                setEvaluations("");
+                setLostLeads("");
+                setLeadQuality([7]);
+                setHasSubmittedToday(false);
+                setTodayReportId(null);
+                
+                toast.success("New day started! Sales metrics reset.");
+                
+                // Set up next day's reset
+                checkMidnightReset();
+            }, msUntilMidnight);
+            
+            return () => clearTimeout(resetTimer);
+        };
+        
+        checkMidnightReset();
+    }, []);
 
     // Calculate conversion rate
     const conversionRate = useMemo(() => {
@@ -279,16 +399,18 @@ export function SalesReportingPage() {
         setIsSubmitting(true);
 
         try {
+            // Use localStorage values as primary source since database table may not exist
+            const today = new Date().toISOString().split("T")[0];
             const reportData = {
                 user_id: user.id,
                 profile_id: profile.id,
                 reporter_name: profile.full_name || profile.email || "Sales Agent",
-                report_date: new Date().toISOString().split("T")[0],
-                total_leads: parseInt(totalLeads),
-                conversions: parseInt(conversions),
-                evaluations_taken: parseInt(evaluations),
-                lost_leads: parseInt(lostLeads),
-                lead_quality_rating: leadQuality[0],
+                report_date: today,
+                total_leads: parseInt(totalLeads) || 0,
+                conversions: parseInt(conversions) || 0,
+                evaluations_taken: parseInt(evaluations) || 0,
+                lost_leads: parseInt(lostLeads) || 0,
+                lead_quality_rating: leadQuality[0] || 7,
                 conversion_rate: conversionRate,
                 efficiency_score: efficiencyScore,
                 submitted_at: new Date().toISOString(),

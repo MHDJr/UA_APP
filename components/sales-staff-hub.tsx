@@ -42,18 +42,9 @@ const BRAND_COLORS = {
 const MOCK_SALES_DATA = {
     dailyGoal: 20,
     contactedToday: 12,
-    weeklyConversion: 24,
     rank: 2,
     totalReps: 4,
 };
-
-// Leaderboard data
-const leaderboardData = [
-    { rank: 1, name: "Muhammed Faiz", closed: 14, trend: "+3" },
-    { rank: 2, name: "Amina Hussain", closed: 11, trend: "+2" },
-    { rank: 3, name: "Rashid Khan", closed: 10, trend: "+1" },
-    { rank: 4, name: "Sarah Joseph", closed: 7, trend: "+1" },
-];
 
 // Confetti effect function
 const triggerConfetti = () => {
@@ -230,7 +221,7 @@ export function SalesStaffHub() {
                             <div className="flex items-center gap-2">
                                 <Trophy className="w-4 h-4" style={{ color: BRAND_COLORS.orange }} />
                                 <span className="text-xl font-bold" style={{ color: BRAND_COLORS.indigo }}>
-                                    {MOCK_SALES_DATA.weeklyConversion}%
+                                    {MOCK_SALES_DATA.contactedToday || 0}%
                                 </span>
                             </div>
                         </div>
@@ -505,66 +496,6 @@ export function SalesStaffHub() {
                     </div>
                 </motion.div>
             </div>
-
-            {/* Leaderboard Strip */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="mt-6 glass-card-ua rounded-2xl p-4"
-            >
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <TrendingUp className="w-5 h-5" style={{ color: BRAND_COLORS.indigo }} />
-                        <span className="text-sm font-bold text-gray-700">Weekly Leaderboard</span>
-                    </div>
-                    <div className="flex items-center gap-6">
-                        {leaderboardData.map((agent) => (
-                            <div key={agent.rank} className="flex items-center gap-3">
-                                <div
-                                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold"
-                                    style={{
-                                        backgroundColor:
-                                            agent.rank === 1
-                                                ? "#fef3c7"
-                                                : agent.rank === 2
-                                                ? "#f3f4f6"
-                                                : agent.rank === 3
-                                                ? "#fff7ed"
-                                                : "#f9fafb",
-                                        color:
-                                            agent.rank === 1
-                                                ? "#d97706"
-                                                : agent.rank === 2
-                                                ? "#6b7280"
-                                                : agent.rank === 3
-                                                ? "#c2410c"
-                                                : "#9ca3af",
-                                    }}
-                                >
-                                    {agent.rank === 1 && <Crown className="w-4 h-4" />}
-                                    {agent.rank !== 1 && agent.rank}
-                                </div>
-                                <div>
-                                    <p className="text-sm font-medium text-gray-900">{agent.name}</p>
-                                    <p className="text-xs text-gray-500">
-                                        {agent.closed} closed{" "}
-                                        <span className="text-green-500">{agent.trend}</span>
-                                    </p>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 text-xs text-gray-500 hover:text-gray-700"
-                    >
-                        Full Standings
-                        <ChevronRight className="w-4 h-4 ml-1" />
-                    </Button>
-                </div>
-            </motion.div>
         </div>
     );
 }

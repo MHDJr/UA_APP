@@ -51,6 +51,7 @@ import {
     BarChart3,
     Home,
     User,
+    Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -1165,6 +1166,23 @@ export default function StaffPortal() {
                             <BarChart3 className="w-4 h-4 text-white" />
                             <span className="text-[10px] font-black text-white uppercase tracking-widest">
                                 Sales Page
+                            </span>
+                        </a>
+                    )}
+
+                    {/* Accounts Button - Only for Accounts Staff without Manager Access */}
+                    {profile?.role === "accounts" && !profile?.is_manager && (
+                        <a
+                            href="/accounts"
+                            className="relative group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-[1.02]"
+                            style={{
+                                backgroundColor: "#ff4d00",
+                                boxShadow: `0 4px 14px rgba(255, 77, 0, 0.4)`,
+                            }}
+                        >
+                            <Wallet className="w-4 h-4 text-white" />
+                            <span className="text-[10px] font-black text-white uppercase tracking-widest">
+                                Accounts
                             </span>
                         </a>
                     )}

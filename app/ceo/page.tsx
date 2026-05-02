@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence";
+type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence" | "financial-intelligence";
 
 export default function CEOPage() {
     const { profile, loading } = useAuth();
@@ -24,6 +24,13 @@ export default function CEOPage() {
             router.replace("/");
         }
     }, [profile, loading, router]);
+
+    // Navigate to financial intelligence page when that view is selected
+    useEffect(() => {
+        if (activeView === "financial-intelligence") {
+            router.push("/ceo/financial-intelligence");
+        }
+    }, [activeView, router]);
 
     if (loading || !profile || profile.role !== "ceo") {
         return (

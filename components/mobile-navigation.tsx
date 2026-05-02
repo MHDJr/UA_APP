@@ -11,6 +11,7 @@ import {
     User,
     BarChart3,
     Calendar,
+    Wallet,
 } from "lucide-react";
 
 interface MobileNavigationProps {
@@ -71,7 +72,7 @@ export default function MobileNavigation({ currentPage }: MobileNavigationProps)
         },
         ...(profile?.role === "sales" || profile?.role === "ceo"
             ? [{ id: "sales", label: "Sales", icon: BarChart3, href: "/sales" }]
-            : [{ id: "messages", label: "Messages", icon: MessageSquare, action: () => toast.info("Messages coming soon!") }]),
+            : [{ id: "accounts", label: "Accounts", icon: Wallet, href: "/accounts" }]),
         { id: "profile", label: "Profile", icon: User, action: () => toast.info("Profile coming soon!") },
     ];
 

@@ -23,7 +23,7 @@ import {
     Eye,
     EyeOff,
     ShieldCheck,
-    GraduationCap,
+    Wallet,
     TrendingUp,
     AtSign,
 } from "lucide-react";
@@ -47,10 +47,10 @@ const ROLES = [
         Icon: ShieldCheck,
     },
     {
-        value: "tutor",
-        label: "Tutor",
-        desc: "Teaching Role",
-        Icon: GraduationCap,
+        value: "accounts",
+        label: "Accounts",
+        desc: "Financial Access",
+        Icon: Wallet,
     },
     {
         value: "sales",
@@ -144,7 +144,7 @@ export default function AddStaffDialog({
                 username: username,
                 designation: designation,
                 role: formData.role,
-                department: formData.role === "sales" ? "Sales" : formData.role === "tutor" ? "Education" : "Staff",
+                department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : "Staff",
                 status: "offline",
             }).select();
 
