@@ -22,6 +22,8 @@ import {
     Zap,
     Home,
 } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 
 // Types
 interface DailyMetrics {
@@ -66,78 +68,34 @@ const formatCurrency = (amount: number) => {
     }).format(amount);
 };
 
-// Sample data
-const sampleTransmissions: Transmission[] = [
-    {
-        id: "1",
-        date: "2024-05-01",
-        uloomxIncome: 125000,
-        usthadIncome: 83000,
-        expenses: 42000,
-        revenue: 166000,
-        status: "approved",
-    },
-    {
-        id: "2",
-        date: "2024-04-30",
-        uloomxIncome: 152000,
-        usthadIncome: 98000,
-        expenses: 51000,
-        revenue: 199000,
-        status: "approved",
-    },
-    {
-        id: "3",
-        date: "2024-04-29",
-        uloomxIncome: 118000,
-        usthadIncome: 72000,
-        expenses: 38000,
-        revenue: 152000,
-        status: "approved",
-    },
-    {
-        id: "4",
-        date: "2024-04-28",
-        uloomxIncome: 145000,
-        usthadIncome: 89000,
-        expenses: 45000,
-        revenue: 189000,
-        status: "pending",
-    },
-    {
-        id: "5",
-        date: "2024-04-27",
-        uloomxIncome: 132000,
-        usthadIncome: 78000,
-        expenses: 41000,
-        revenue: 169000,
-        status: "approved",
-    },
-];
-
-// Generate 30-day chart data
-const generateChartData = (): ChartData[] => {
+// Generate chart data from real financial entries
+const generateChartData = (entries: any[]): ChartData[] => {
     const data: ChartData[] = [];
     const today = new Date();
     
     for (let i = 29; i >= 0; i--) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
+        const dateStr = date.toISOString().split('T')[0];
         
-        const baseUloomx = 120000;
-        const baseUsthad = 80000;
-        const variation = Math.random() * 40000 - 20000;
-        const uloomxValue = baseUloomx + variation;
-        const usthadValue = baseUsthad + (variation * 0.7);
-        const totalIncome = uloomxValue + usthadValue;
-        const expenses = totalIncome * 0.35; // 35% expense ratio
+        // Find entries for this date
+        const dayEntries = entries.filter(entry => 
+            new Date(entry.entry_date).toISOString().split('T')[0] === dateStr
+        );
+        
+        // Sum up values for this date
+        const uloomx = dayEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
+        const usthad = dayEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
+        const total = uloomx + usthad;
+        const expenses = dayEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
+        const netBalance = total - expenses;
         
         data.push({
-            date: date.toISOString().split('T')[0],
-            uloomx: uloomxValue,
-            usthad: usthadValue,
-            total: totalIncome,
-            netBalance: totalIncome - expenses,
+            date: dateStr,
+            uloomx,
+            usthad,
+            total,
+            netBalance,
         });
     }
     
@@ -233,6 +191,21 @@ const MetricCard = ({
 
 // Stacked Area Chart Component with Interactive Tooltips
 const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
+    // Handle empty data case
+    if (!data || data.length === 0) {
+        return (
+            <div className="relative w-full h-[280px] flex items-center justify-center">
+                <div className="text-center">
+                    <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <BarChart3 className="w-8 h-8 text-gray-300" />
+                    </div>
+                    <p className="text-gray-500 font-medium">No financial data available</p>
+                    <p className="text-gray-400 text-sm mt-2">Submit financial entries to see trends</p>
+                </div>
+            </div>
+        );
+    }
+
     const maxValue = Math.max(...data.map(d => d.uloomx + d.usthad));
     const height = 280;
     const width = 900;
@@ -271,6 +244,8 @@ const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
     const { usthadAreaPath, uloomxAreaPath, uloomxPoints } = createStackedPaths();
 
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+        if (data.length === 0) return;
+        
         const svgRect = e.currentTarget.getBoundingClientRect();
         const x = e.clientX - svgRect.left;
         const chartWidth = width - padding.left - padding.right;
@@ -545,23 +520,153 @@ const DonutChart = ({
     );
 };
 
+// Counter animation hook
+const useCounterAnimation = (targetValue: number, duration: number = 2000) => {
+    const [currentValue, setCurrentValue] = useState(0);
+    const [isAnimating, setIsAnimating] = useState(false);
+
+    useEffect(() => {
+        if (targetValue === 0) {
+            setCurrentValue(0);
+            return;
+        }
+
+        setIsAnimating(true);
+        const startTime = Date.now();
+        const startValue = currentValue;
+
+        const animate = () => {
+            const now = Date.now();
+            const progress = Math.min((now - startTime) / duration, 1);
+            
+            // Easing function for smooth animation
+            const easeOutQuart = 1 - Math.pow(1 - progress, 4);
+            const newValue = startValue + (targetValue - startValue) * easeOutQuart;
+            
+            setCurrentValue(newValue);
+
+            if (progress < 1) {
+                requestAnimationFrame(animate);
+            } else {
+                setIsAnimating(false);
+            }
+        };
+
+        requestAnimationFrame(animate);
+    }, [targetValue, duration]);
+
+    return { currentValue, isAnimating };
+};
+
 export default function CEOFinancialIntelligence() {
+    const { profile } = useAuth();
+    const [loading, setLoading] = useState(true);
+    const [financialEntries, setFinancialEntries] = useState<any[]>([]);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetrics>({
-        uloomxIncome: 125000,
-        usthadIncome: 83000,
-        combinedExpense: 42000,
-        netProfit: 166000,
+        uloomxIncome: 0,
+        usthadIncome: 0,
+        combinedExpense: 0,
+        netProfit: 0,
     });
 
     const [monthlyMetrics, setMonthlyMetrics] = useState<MonthlyMetrics>({
-        uloomxTotal: 3750000,
-        usthadTotal: 2490000,
-        totalExpense: 1260000,
-        balance: 4980000,
+        uloomxTotal: 0,
+        usthadTotal: 0,
+        totalExpense: 0,
+        balance: 0,
     });
 
-    const [chartData] = useState<ChartData[]>(generateChartData());
+    // Animated values for daily metrics
+    const animatedUloomxIncome = useCounterAnimation(dailyMetrics.uloomxIncome, 2000);
+    const animatedUsthadIncome = useCounterAnimation(dailyMetrics.usthadIncome, 1800);
+    const animatedCombinedExpense = useCounterAnimation(dailyMetrics.combinedExpense, 2200);
+    const animatedNetProfit = useCounterAnimation(dailyMetrics.netProfit, 2500);
+
+    // Animated values for monthly metrics
+    const animatedMonthlyUloomx = useCounterAnimation(monthlyMetrics.uloomxTotal, 2800);
+    const animatedMonthlyUsthad = useCounterAnimation(monthlyMetrics.usthadTotal, 3000);
+    const animatedMonthlyExpense = useCounterAnimation(monthlyMetrics.totalExpense, 2600);
+
+    const [chartData, setChartData] = useState<ChartData[]>([]);
     const [currentDateTime, setCurrentDateTime] = useState<string>("");
+
+    // Fetch financial data from database
+    useEffect(() => {
+        const fetchFinancialData = async () => {
+            try {
+                setLoading(true);
+                
+                // Fetch financial entries for the last 30 days
+                const thirtyDaysAgo = new Date();
+                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                
+                const { data: entries, error } = await supabase
+                    .from('financial_entries')
+                    .select('*')
+                    .gte('entry_date', thirtyDaysAgo.toISOString().split('T')[0])
+                    .order('entry_date', { ascending: false });
+                
+                if (error) {
+                    console.error('Error fetching financial entries:', error);
+                    setLoading(false);
+                    return;
+                }
+                
+                console.log('Fetched financial entries:', entries);
+                setFinancialEntries(entries || []);
+                
+                // Calculate daily metrics (today's data)
+                const today = new Date().toISOString().split('T')[0];
+                const todayEntries = (entries || []).filter(entry => 
+                    entry.entry_date === today
+                );
+                
+                const todayUloomx = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
+                const todayUsthad = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
+                const todayExpenses = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
+                
+                console.log('Daily metrics calculated:', { todayUloomx, todayUsthad, todayExpenses, todayEntries });
+                
+                setDailyMetrics({
+                    uloomxIncome: todayUloomx,
+                    usthadIncome: todayUsthad,
+                    combinedExpense: todayExpenses,
+                    netProfit: todayUloomx + todayUsthad - todayExpenses,
+                });
+                
+                // Calculate monthly metrics (current month)
+                const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+                const monthEntries = (entries || []).filter(entry => 
+                    entry.entry_date.startsWith(currentMonth)
+                );
+                
+                const monthUloomx = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
+                const monthUsthad = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
+                const monthExpenses = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
+                
+                console.log('Monthly metrics calculated:', { monthUloomx, monthUsthad, monthExpenses, monthEntries, currentMonth });
+                
+                setMonthlyMetrics({
+                    uloomxTotal: monthUloomx,
+                    usthadTotal: monthUsthad,
+                    totalExpense: monthExpenses,
+                    balance: monthUloomx + monthUsthad - monthExpenses,
+                });
+                
+                // Generate chart data
+                setChartData(generateChartData(entries || []));
+                
+            } catch (error) {
+                console.error('Error fetching financial data:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+        
+        if (profile) {
+            fetchFinancialData();
+        }
+    }, [profile]);
 
     // Update date/time
     useEffect(() => {
@@ -581,21 +686,14 @@ export default function CEOFinancialIntelligence() {
         return () => clearInterval(interval);
     }, []);
 
-    // Calculate net profit automatically
-    useEffect(() => {
-        setDailyMetrics(prev => ({
-            ...prev,
-            netProfit: prev.uloomxIncome + prev.usthadIncome - prev.combinedExpense,
-        }));
-    }, [dailyMetrics.uloomxIncome, dailyMetrics.usthadIncome, dailyMetrics.combinedExpense]);
-
-    // Calculate monthly balance automatically
-    useEffect(() => {
-        setMonthlyMetrics(prev => ({
-            ...prev,
-            balance: prev.uloomxTotal + prev.usthadTotal - prev.totalExpense,
-        }));
-    }, [monthlyMetrics.uloomxTotal, monthlyMetrics.usthadTotal, monthlyMetrics.totalExpense]);
+    // Debug current state values
+    console.log('Current state:', { 
+        loading, 
+        dailyMetrics, 
+        monthlyMetrics, 
+        chartDataLength: chartData.length,
+        financialEntriesLength: financialEntries.length 
+    });
 
     // Anomaly detection calculations
     const expenseRatio = (monthlyMetrics.totalExpense / (monthlyMetrics.uloomxTotal + monthlyMetrics.usthadTotal)) * 100;
@@ -669,29 +767,39 @@ export default function CEOFinancialIntelligence() {
                     </div>
                 </div>
 
+                {/* Loading State */}
+                {loading ? (
+                    <div className="flex items-center justify-center py-12">
+                        <div className="text-center">
+                            <div className="w-12 h-12 border-4 border-[#ff4d00]/20 border-t-[#ff4d00] rounded-full animate-spin mx-auto mb-4"></div>
+                            <p className="text-[#64748b] font-medium">Loading financial data...</p>
+                        </div>
+                    </div>
+                ) : (
+                    <>
                 {/* Tier 1: Real-Time Daily Transmission */}
                 <div className="mb-8">
                     <h2 className="text-xl font-semibold text-[#1e293b] mb-4">Real-Time Daily Transmission</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <MetricCard
                             title="Today's UloomX Income"
-                            value={formatCurrency(dailyMetrics.uloomxIncome)}
+                            value={formatCurrency(animatedUloomxIncome.currentValue)}
                             imageUrl="/images/uloomx.png"
-                            trend="up"
-                            trendValue="+12%"
+                            trend={dailyMetrics.uloomxIncome > 0 ? "up" : undefined}
+                            trendValue={dailyMetrics.uloomxIncome > 0 ? "+12%" : undefined}
                             color="#ff4d00"
                         />
                         <MetricCard
                             title="Today's Usthad Income"
-                            value={formatCurrency(dailyMetrics.usthadIncome)}
+                            value={formatCurrency(animatedUsthadIncome.currentValue)}
                             imageUrl="/images/usthadacademylogo2.svg"
-                            trend="up"
-                            trendValue="+8%"
+                            trend={dailyMetrics.usthadIncome > 0 ? "up" : undefined}
+                            trendValue={dailyMetrics.usthadIncome > 0 ? "+8%" : undefined}
                             color="#ff4d00"
                         />
                         <MetricCard
                             title="Today's Combined Expense"
-                            value={formatCurrency(dailyMetrics.combinedExpense)}
+                            value={formatCurrency(animatedCombinedExpense.currentValue)}
                             icon={Wallet}
                             trend="down"
                             trendValue="+5%"
@@ -699,7 +807,7 @@ export default function CEOFinancialIntelligence() {
                         />
                         <MetricCard
                             title="Today's Net Profit"
-                            value={formatCurrency(dailyMetrics.netProfit)}
+                            value={formatCurrency(animatedNetProfit.currentValue)}
                             icon={TrendingUp}
                             trend="up"
                             trendValue="+15%"
@@ -722,21 +830,21 @@ export default function CEOFinancialIntelligence() {
                                             <Building className="w-5 h-5 text-[#ff4d00]" />
                                         </div>
                                         <p className="text-sm text-[#64748b] mb-1">Monthly UloomX Total</p>
-                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(monthlyMetrics.uloomxTotal)}</p>
+                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyUloomx.currentValue)}</p>
                                     </div>
                                     <div className="p-6 rounded-[20px] bg-gradient-to-br from-gray-50 to-gray-100 border border-gray-200 hover:shadow-md transition-all">
                                         <div className="w-10 h-10 rounded-xl bg-[#ffb088]/20 flex items-center justify-center mb-3">
                                             <Landmark className="w-5 h-5 text-[#ff6b35]" />
                                         </div>
                                         <p className="text-sm text-[#64748b] mb-1">Monthly Usthad Total</p>
-                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(monthlyMetrics.usthadTotal)}</p>
+                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyUsthad.currentValue)}</p>
                                     </div>
                                     <div className="p-6 rounded-[20px] bg-gradient-to-br from-red-50 to-red-100 border border-red-200 hover:shadow-md transition-all">
                                         <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center mb-3">
                                             <Wallet className="w-5 h-5 text-red-500" />
                                         </div>
                                         <p className="text-sm text-[#64748b] mb-1">Monthly Total Expense</p>
-                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(monthlyMetrics.totalExpense)}</p>
+                                        <p className="text-2xl font-black text-[#1e293b]">{formatCurrency(animatedMonthlyExpense.currentValue)}</p>
                                     </div>
                                 </div>
                             </div>
@@ -879,6 +987,8 @@ export default function CEOFinancialIntelligence() {
                         </div>
                     </div>
                 </div>
+                    </>
+                )}
             </div>
         </div>
     );

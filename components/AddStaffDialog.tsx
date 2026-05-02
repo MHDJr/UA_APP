@@ -26,6 +26,7 @@ import {
     Wallet,
     TrendingUp,
     AtSign,
+    Megaphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@supabase/supabase-js";
@@ -42,8 +43,8 @@ interface AddStaffDialogProps {
 const ROLES = [
     {
         value: "staff",
-        label: "Staff",
-        desc: "Standard Access",
+        label: "Administration",
+        desc: "Office Administration",
         Icon: ShieldCheck,
     },
     {
@@ -57,6 +58,12 @@ const ROLES = [
         label: "Sales",
         desc: "Revenue Access",
         Icon: TrendingUp,
+    },
+    {
+        value: "marketing",
+        label: "Marketing",
+        desc: "Growth & Campaigns",
+        Icon: Megaphone,
     },
 ];
 
@@ -144,7 +151,8 @@ export default function AddStaffDialog({
                 username: username,
                 designation: designation,
                 role: formData.role,
-                department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : "Staff",
+                is_manager: formData.hasManagerAccess,
+                department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
                 status: "offline",
             }).select();
 
@@ -301,7 +309,7 @@ export default function AddStaffDialog({
                         {/* ── System Role ── */}
                         <div className="mb-6">
                             <FieldLabel text="System Role" />
-                            <div className="grid grid-cols-3 gap-3 mt-2">
+                            <div className="grid grid-cols-2 gap-3 mt-2">
                                 {ROLES.map(({ value, label, desc, Icon }) => {
                                     const active = formData.role === value;
                                     return (

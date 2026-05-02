@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "@/lib/auth-context";
-import { ManagerOperationsCommand } from "@/components/manager/ManagerOperationsCommand";
+import { ManagerCommandCenter } from "@/components/manager/ManagerCommandCenter";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
@@ -36,5 +36,5 @@ export default function ManagerPage() {
         return null;
     }
 
-    return <ManagerOperationsCommand />;
+    return <ManagerCommandCenter />;
 }

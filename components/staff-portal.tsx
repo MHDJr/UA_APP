@@ -1791,6 +1791,14 @@ export default function StaffPortal() {
                                                     </span>
                                                 </div>
                                             )}
+                                            {taskCreators[task.created_by] && (
+                                                <div className="flex items-center gap-1.5 mt-1 text-slate-500">
+                                                    <User className="w-3 h-3" />
+                                                    <span className="text-[10px] font-black uppercase tracking-widest">
+                                                        Assigned by: {taskCreators[task.created_by].role || 'Unknown'}
+                                                    </span>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <ChevronDown

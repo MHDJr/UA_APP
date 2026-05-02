@@ -48,6 +48,7 @@ import {
     MapPin,
     Package,
     Video,
+    Bookmark,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
@@ -151,6 +152,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [taskTab, setTaskTab] = useState<
         "active" | "blocked" | "overdue" | "daily" | "completed"
     >("active");
+    const [departmentFilter, setDepartmentFilter] = useState<
+        "ceo" | "sales" | "marketing" | "accounts" | "administration"
+    >("ceo");
     const [showStaffOverview, setShowStaffOverview] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const itemsPerPage = 4;
@@ -1892,56 +1896,112 @@ let meetingError: any = null;
                         color="bg-amber-500"
                     />
 
+                    {departmentFilter === "ceo" && (
+                        <div className="flex gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-fit">
+                            <button
+                                onClick={() => setTaskTab("active")}
+                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    taskTab === "active"
+                                        ? "bg-theme-bg-white text-theme-inv-text shadow-lg"
+                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                }`}
+                            >
+                                Active
+                            </button>
+                            <button
+                                onClick={() => setTaskTab("blocked")}
+                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    taskTab === "blocked"
+                                        ? "bg-red-500 text-theme-text shadow-lg shadow-red-500/20"
+                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                }`}
+                            >
+                                Urgent
+                            </button>
+                            <button
+                                onClick={() => setTaskTab("overdue")}
+                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    taskTab === "overdue"
+                                        ? "bg-amber-500 text-theme-inv-text shadow-lg shadow-amber-500/20"
+                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                }`}
+                            >
+                                Overdue
+                            </button>
+                            <button
+                                onClick={() => setTaskTab("completed")}
+                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    taskTab === "completed"
+                                        ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                }`}
+                            >
+                                Completed
+                            </button>
+                            <button
+                                onClick={() => setTaskTab("daily")}
+                                className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
+                                    taskTab === "daily"
+                                        ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                }`}
+                            >
+                                Daily Tasks
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Department Filters */}
                     <div className="flex gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-fit">
                         <button
-                            onClick={() => setTaskTab("active")}
+                            onClick={() => setDepartmentFilter("ceo")}
                             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                taskTab === "active"
-                                    ? "bg-theme-bg-white text-theme-inv-text shadow-lg"
+                                departmentFilter === "ceo"
+                                    ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Active
+                            CEO
                         </button>
                         <button
-                            onClick={() => setTaskTab("blocked")}
+                            onClick={() => setDepartmentFilter("sales")}
                             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                taskTab === "blocked"
-                                    ? "bg-red-500 text-theme-text shadow-lg shadow-red-500/20"
+                                departmentFilter === "sales"
+                                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Urgent
+                            Sales
                         </button>
                         <button
-                            onClick={() => setTaskTab("overdue")}
+                            onClick={() => setDepartmentFilter("marketing")}
                             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                taskTab === "overdue"
-                                    ? "bg-amber-500 text-theme-inv-text shadow-lg shadow-amber-500/20"
+                                departmentFilter === "marketing"
+                                    ? "bg-pink-500 text-white shadow-lg shadow-pink-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Overdue
+                            Marketing
                         </button>
                         <button
-                            onClick={() => setTaskTab("completed")}
+                            onClick={() => setDepartmentFilter("accounts")}
                             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                taskTab === "completed"
-                                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                                departmentFilter === "accounts"
+                                    ? "bg-green-500 text-white shadow-lg shadow-green-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Completed
+                            Accounts
                         </button>
                         <button
-                            onClick={() => setTaskTab("daily")}
+                            onClick={() => setDepartmentFilter("administration")}
                             className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${
-                                taskTab === "daily"
-                                    ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+                                departmentFilter === "administration"
+                                    ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Daily Tasks
+                            Administration
                         </button>
                     </div>
 
@@ -1956,7 +2016,9 @@ let meetingError: any = null;
                         </div>
                     )}
 
-                    <div className="flex flex-col gap-3 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                    <div className="flex-1 overflow-hidden">
+                        <div className="h-full max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                            <div className="flex flex-col gap-3">
                         {/* Compute displayed tasks */}
                         {(() => {
                             let displayedTasks;
@@ -1977,6 +2039,35 @@ let meetingError: any = null;
                                         t.is_daily_task === true ||
                                         t.repeat_daily === true;
 
+                                    // Department filtering - check creator's role
+                                    if (departmentFilter !== "ceo") {
+                                        const creator = staff.find(s => s.id === t.created_by);
+                                        if (!creator) return false;
+                                        
+                                        const creatorRole = creator.role?.toLowerCase();
+                                        switch (departmentFilter) {
+                                            case "sales":
+                                                return creatorRole === "sales manager" || creatorRole === "sales staff";
+                                            case "marketing":
+                                                return creatorRole === "marketing manager" || creatorRole === "marketing staff";
+                                            case "accounts":
+                                                return creatorRole === "accounts manager" || creatorRole === "accounts staff";
+                                            case "administration":
+                                                return creatorRole === "admin" || creatorRole === "administration" || creatorRole === "hr";
+                                            default:
+                                                return false;
+                                        }
+                                    }
+
+                                    // CEO filter - apply task status filters
+                                    if (departmentFilter === "ceo") {
+                                        if (taskTab === "daily") return isDaily;
+                                        if (taskTab === "overdue") return isOverdue;
+                                        if (taskTab === "blocked")
+                                            return t.priority === "urgent"; // Treat urgent as blocked/high focus
+                                        return !isOverdue && t.priority !== "urgent"; // Active default
+                                    }
+
                                     if (taskTab === "daily") return isDaily;
                                     if (taskTab === "overdue") return isOverdue;
                                     if (taskTab === "blocked")
@@ -1990,7 +2081,13 @@ let meetingError: any = null;
                                     <div className="h-40 border border-dashed border-theme-brand/20 text-center text-theme-text-40 text-[10px] uppercase tracking-widest rounded-3xl bg-theme-bg-white-5 flex flex-col items-center justify-center gap-2 transition-all animate-executive-fade-in shadow-inner">
                                         <CheckCircle className="w-6 h-6 text-theme-brand opacity-80" />
                                         <span>
-                                            {taskTab === "completed" ? "No completed tasks" : "No active operations at the moment"}
+                                            {taskTab === "completed" ? "No completed tasks" : 
+                                             departmentFilter === "ceo" ? "No active operations at the moment" :
+                                             departmentFilter === "sales" ? "No sales department tasks" :
+                                             departmentFilter === "marketing" ? "No marketing department tasks" :
+                                             departmentFilter === "accounts" ? "No accounts department tasks" :
+                                             departmentFilter === "administration" ? "No administration department tasks" :
+                                             "No active operations at the moment"}
                                         </span>
                                     </div>
                                 );
@@ -2134,6 +2231,8 @@ let meetingError: any = null;
                                 );
                             });
                         })()}
+                            </div>
+                        </div>
                     </div>
                 </section>
 
@@ -2144,7 +2243,7 @@ let meetingError: any = null;
                     <div className="flex flex-col gap-3">
                         <div className="flex items-center justify-between">
                             <SectionHeader
-                                title="Intelligence & Directives"
+                                title="CEO Command Log"
                                 color="bg-amber-500"
                             />
                             <Button
@@ -2152,13 +2251,13 @@ let meetingError: any = null;
                                 size="sm"
                                 className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 text-[8px] font-black uppercase tracking-widest h-7 px-3 rounded-lg transition-all"
                             >
-                                <Lightbulb className="w-3 h-3 mr-1" />
-                                Got a new idea
+                                <Bookmark className="w-3 h-3 mr-1" />
+                                + NEW DIRECTIVE
                             </Button>
                         </div>
                         {ideas.length === 0 ? (
                             <div className="p-6 border border-dashed border-theme-border-5 text-center text-theme-text-20 text-[9px] uppercase tracking-widest rounded-2xl bg-black/20">
-                                No strategic directives active
+                                No active reminders or directives found
                             </div>
                         ) : (
                             <div className="flex flex-col gap-3 ua-shimmer-effect">

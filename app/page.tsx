@@ -21,10 +21,19 @@ export default function Home() {
 
     useEffect(() => {
         if (!loading && profile) {
-            if (profile.role === "ceo") router.replace("/ceo");
-            else if (profile.is_manager) router.replace("/manager");
-            else if (profile.role === "sales" || profile.is_tutor || profile.role === "accounts" || profile.role === "staff")
+            // Check if current user is CEO and we're not on a staff page
+            const isCurrentPathStaff = typeof window !== "undefined" && window.location.pathname.startsWith("/staff");
+            const isCEOAddingStaff = profile.role === "ceo" && !isCurrentPathStaff;
+            
+            if (profile.role === "ceo" && !isCurrentPathStaff) {
+                router.replace("/ceo");
+            }
+            else if (profile.is_manager && !isCurrentPathStaff) {
+                router.replace("/manager");
+            }
+            else if (profile.role === "sales" || profile.is_tutor || profile.role === "accounts" || profile.role === "staff") {
                 router.replace("/staff");
+            }
         }
     }, [profile, loading, router]);
 

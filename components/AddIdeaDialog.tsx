@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
-    Lightbulb,
+    Bookmark,
     Loader2,
     Sparkles,
     Users,
@@ -275,13 +275,13 @@ export default function AddIdeaDialog({
                                     boxShadow: `0 4px 14px ${VIOLET}55`,
                                 }}
                             >
-                                <Lightbulb className="w-4 h-4" />
+                                <Bookmark className="w-4 h-4" />
                             </div>
                             <span
                                 className="text-[11px] font-bold tracking-[0.18em] uppercase"
                                 style={{ color: VIOLET }}
                             >
-                                Intelligence & Directives
+                                CEO Command Log
                             </span>
                         </div>
 
@@ -289,10 +289,10 @@ export default function AddIdeaDialog({
                             className="text-[18px] font-black uppercase tracking-[0.12em] leading-tight"
                             style={{ color: VIOLET }}
                         >
-                            Capture New Idea
+                            EXECUTIVE DIRECTIVE
                         </DialogTitle>
                         <p className="mt-1 text-[12px] text-gray-400 font-medium tracking-wide">
-                            Transform vision into actionable intelligence for the organization
+                            Issue executive directive for team alignment and action
                         </p>
                     </div>
 
@@ -300,10 +300,10 @@ export default function AddIdeaDialog({
                     <form onSubmit={handleSubmit} className="px-8 pb-8">
                         {/* ── Idea Title ── */}
                         <div className="mb-5">
-                            <FieldLabel text="Idea Title" Icon={Sparkles} />
+                            <FieldLabel text="Subject" Icon={Sparkles} />
                             <input
                                 type="text"
-                                placeholder="e.g., Implement AI-Powered Student Analytics"
+                                placeholder="e.g., Q3 Strategic Initiative: Customer Success Enhancement"
                                 value={title}
                                 onChange={(e) => setTitle(e.target.value)}
                                 className="w-full h-12 px-4 text-sm rounded-xl transition-all duration-300 outline-none"
@@ -392,7 +392,7 @@ export default function AddIdeaDialog({
                         <div className="grid grid-cols-4 gap-4 mb-5">
                             <div className="col-span-1">
                                 <FieldLabel text="Priority" />
-                                <div className="flex flex-col gap-1.5 mt-2">
+                                <div className="flex flex-wrap gap-2 mt-2">
                                     {PRIORITIES.map(({ value, label, color, bgColor }) => {
                                         const active = priority === value;
                                         return (
@@ -400,15 +400,18 @@ export default function AddIdeaDialog({
                                                 key={value}
                                                 type="button"
                                                 onClick={() => setPriority(value)}
-                                                className="px-3 py-2 rounded-lg text-left text-[11px] font-semibold transition-all duration-200"
+                                                className="px-3 py-1.5 rounded-full text-left text-[10px] font-semibold transition-all duration-200"
                                                 style={{
                                                     background: active
-                                                        ? bgColor
+                                                        ? color
                                                         : "rgba(249,250,251,0.8)",
-                                                    color: active ? color : "#6B7280",
+                                                    color: active ? "white" : color,
                                                     border: active
-                                                        ? `1px solid ${color}40`
-                                                        : "1px solid #E5E7EB",
+                                                        ? `1px solid ${color}`
+                                                        : `1px solid ${color}30`,
+                                                    fontSize: "10px",
+                                                    padding: "6px 12px",
+                                                    minWidth: "auto",
                                                 }}
                                             >
                                                 {label}
@@ -419,9 +422,9 @@ export default function AddIdeaDialog({
                             </div>
 
                             <div className="col-span-3">
-                                <FieldLabel text="Description" />
+                                <FieldLabel text="Directive Details / Reminders" />
                                 <textarea
-                                    placeholder="Describe your idea in detail... What problem does it solve? What are the expected outcomes?"
+                                    placeholder="Enter personal reminders or instructions for the team..."
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
                                     rows={5}
@@ -443,148 +446,60 @@ export default function AddIdeaDialog({
                             </div>
                         </div>
 
-                        {/* ── Share with Staff Section ── */}
+                        {/* ── Privacy Toggle Section ── */}
                         <div className="mb-6">
-                            <div
-                                className="flex items-center gap-3 p-4 rounded-xl cursor-pointer select-none transition-all duration-200"
+                            <div className="flex items-center justify-between p-4 rounded-xl transition-all duration-200"
                                 style={{
-                                    border: shareWithStaff
-                                        ? `1px solid rgba(45,42,119,0.25)`
-                                        : "1px solid #E5E7EB",
-                                    background: shareWithStaff
-                                        ? `rgba(45,42,119,0.04)`
-                                        : "rgba(249,250,251,0.8)",
+                                    border: "1px solid #E5E7EB",
+                                    background: "rgba(249,250,251,0.8)",
                                 }}
-                                onClick={() => setShareWithStaff(!shareWithStaff)}
                             >
-                                <div
-                                    className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200"
-                                    style={{
-                                        border: shareWithStaff
-                                            ? "none"
-                                            : `2px solid #D1D5DB`,
-                                        background: shareWithStaff
-                                            ? `linear-gradient(135deg, ${ORANGE}, ${VIOLET})`
-                                            : "white",
-                                        boxShadow: shareWithStaff
-                                            ? `0 2px 8px rgba(45,42,119,0.3)`
-                                            : "none",
-                                    }}
-                                >
-                                    {shareWithStaff && (
-                                        <Check className="w-3 h-3 text-white" />
-                                    )}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Share2
+                                <div className="flex items-center gap-3">
+                                    <Bookmark
                                         className="w-4 h-4"
-                                        style={{
-                                            color: shareWithStaff ? VIOLET : "#6B7280",
-                                        }}
+                                        style={{ color: VIOLET }}
                                     />
-                                    <span
-                                        className="text-[12px] font-semibold tracking-wide"
-                                        style={{
-                                            color: shareWithStaff ? VIOLET : "#6B7280",
-                                        }}
-                                    >
-                                        Share this idea with staff members
+                                    <span className="text-[12px] font-semibold tracking-wide" style={{ color: VIOLET }}>
+                                        Privacy Settings
                                     </span>
                                 </div>
-                            </div>
-
-                            {/* Staff Selection Grid */}
-                            {shareWithStaff && (
-                                <div className="mt-4 p-4 rounded-xl bg-gray-50/50 border border-gray-100">
-                                    {/* Share with all toggle */}
-                                    <div
-                                        className="flex items-center gap-3 mb-4 pb-4 border-b border-gray-200"
-                                        onClick={() => {
-                                            setShareAllStaff(!shareAllStaff);
-                                            if (!shareAllStaff) {
-                                                setSelectedStaff(staffList.map((s) => s.id));
-                                            } else {
-                                                setSelectedStaff([]);
-                                            }
+                                
+                                <div className="flex items-center gap-3">
+                                    <span 
+                                        className={`text-[11px] font-medium transition-all duration-200 ${
+                                            !shareWithStaff ? "text-violet-600 font-semibold" : "text-gray-400"
+                                        }`}
+                                    >
+                                        Private Reminder
+                                    </span>
+                                    
+                                    <button
+                                        type="button"
+                                        onClick={() => setShareWithStaff(!shareWithStaff)}
+                                        className="relative w-12 h-6 rounded-full transition-all duration-300"
+                                        style={{
+                                            background: shareWithStaff
+                                                ? `linear-gradient(135deg, ${ORANGE}, ${VIOLET})`
+                                                : "#E5E7EB",
                                         }}
                                     >
                                         <div
-                                            className="w-4 h-4 rounded flex items-center justify-center transition-all duration-200"
+                                            className="absolute top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 shadow-sm"
                                             style={{
-                                                background: shareAllStaff
-                                                    ? `linear-gradient(135deg, ${ORANGE}, ${VIOLET})`
-                                                    : "white",
-                                                border: shareAllStaff
-                                                    ? "none"
-                                                    : `2px solid #D1D5DB`,
+                                                left: shareWithStaff ? "25px" : "3px",
                                             }}
-                                        >
-                                            {shareAllStaff && (
-                                                <Check className="w-2.5 h-2.5 text-white" />
-                                            )}
-                                        </div>
-                                        <span className="text-[11px] font-semibold text-gray-600">
-                                            Select all staff members ({staffList.length})
-                                        </span>
-                                    </div>
-
-                                    {/* Individual staff selection */}
-                                    <div className="grid grid-cols-2 gap-2 max-h-[200px] overflow-y-auto">
-                                        {staffList.map((staff) => {
-                                            const isSelected = selectedStaff.includes(staff.id);
-                                            return (
-                                                <button
-                                                    key={staff.id}
-                                                    type="button"
-                                                    onClick={() =>
-                                                        !shareAllStaff &&
-                                                        toggleStaffSelection(staff.id)
-                                                    }
-                                                    disabled={shareAllStaff}
-                                                    className="flex items-center gap-3 p-2.5 rounded-lg border transition-all duration-200 text-left"
-                                                    style={{
-                                                        background: isSelected
-                                                            ? `${VIOLET}10`
-                                                            : "white",
-                                                        borderColor: isSelected
-                                                            ? `${VIOLET}40`
-                                                            : "#E5E7EB",
-                                                        opacity: shareAllStaff ? 0.5 : 1,
-                                                    }}
-                                                >
-                                                    <div
-                                                        className="w-5 h-5 rounded-full flex items-center justify-center"
-                                                        style={{
-                                                            background: isSelected
-                                                                ? VIOLET
-                                                                : "#E5E7EB",
-                                                        }}
-                                                    >
-                                                        {isSelected && (
-                                                            <Check className="w-3 h-3 text-white" />
-                                                        )}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-[11px] font-semibold text-gray-800 truncate">
-                                                            {staff.name}
-                                                        </p>
-                                                        <p className="text-[9px] text-gray-400 truncate">
-                                                            {staff.dept}
-                                                        </p>
-                                                    </div>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {selectedStaff.length > 0 && !shareAllStaff && (
-                                        <p className="mt-3 text-[10px] text-gray-500">
-                                            {selectedStaff.length} staff member
-                                            {selectedStaff.length > 1 ? "s" : ""} selected
-                                        </p>
-                                    )}
+                                        />
+                                    </button>
+                                    
+                                    <span 
+                                        className={`text-[11px] font-medium transition-all duration-200 ${
+                                            shareWithStaff ? "text-violet-600 font-semibold" : "text-gray-400"
+                                        }`}
+                                    >
+                                        Publish to Command Center
+                                    </span>
                                 </div>
-                            )}
+                            </div>
                         </div>
 
                         {/* ── Action Buttons ── */}
@@ -665,14 +580,14 @@ export default function AddIdeaDialog({
                                 {loading ? (
                                     <Loader2 className="h-4 w-4 animate-spin relative z-10" />
                                 ) : (
-                                    <Lightbulb className="h-4 w-4 relative z-10" />
+                                    <Bookmark className="h-4 w-4 relative z-10" />
                                 )}
                                 <span className="relative z-10">
                                     {loading
                                         ? "Saving..."
                                         : shareWithStaff
-                                        ? "Save & Share"
-                                        : "Save Idea"}
+                                        ? "Publish Directive"
+                                        : "Save Reminder"}
                                 </span>
                             </button>
                         </div>
