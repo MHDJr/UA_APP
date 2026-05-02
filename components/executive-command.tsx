@@ -173,6 +173,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [isIdeasOpen, setIsIdeasOpen] = useState(false);
     const [isNewIdeaDialogOpen, setIsNewIdeaDialogOpen] = useState(false);
     const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(new Set());
+    const [completedIdeas, setCompletedIdeas] = useState<Set<string>>(new Set());
     const [newIdea, setNewIdea] = useState({
         title: "",
         description: "",
@@ -221,6 +222,19 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         reminder: "10",
         notes: "",
     });
+
+    // Toggle completion status
+    const toggleIdeaCompletion = (ideaId: string) => {
+        setCompletedIdeas(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(ideaId)) {
+                newSet.delete(ideaId);
+            } else {
+                newSet.add(ideaId);
+            }
+            return newSet;
+        });
+    };
 
     // Form States
 
@@ -1341,7 +1355,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
             // 1. Create meeting with basic fields first
             let meeting: any = null;
-let meetingError: any = null;
+            let meetingError: any = null;
             
             // Calculate start and end times
             const startTime = scheduledAt;
@@ -1479,7 +1493,7 @@ let meetingError: any = null;
                 location: "Virtual HQ",
                 agendaItems: [],
                 preMeetingTasks: [],
-               notifications: { dashboard: true, email: true, push: true, sms: false },
+                notifications: { dashboard: true, email: true, push: true, sms: false },
                 reminder: "15",
                 notes: "",
                 agenda: "",
@@ -2262,6 +2276,7 @@ let meetingError: any = null;
                         ) : (
                             <div className="flex flex-col gap-3 ua-shimmer-effect">
                                 {ideas.map((idea) => {
+                                    const isCompleted = completedIdeas.has(idea.id);
                                     const acknowledgedCount =
                                         (idea as any).acknowledged_by?.length ||
                                         0;
@@ -2280,65 +2295,109 @@ let meetingError: any = null;
                                     return (
                                         <div
                                             key={idea.id}
-                                            className={`bg-theme-card border rounded-2xl p-4 flex flex-col gap-3 relative group ${unacknowledged > 0 ? "border-amber-500/40" : "border-theme-border-10"}`}
+                                            className={`relative rounded-2xl p-4 flex flex-col gap-3 transition-all duration-300 ${
+                                                unacknowledged > 0 ? "border-amber-500/40" : "border-white/20"
+                                            }`}
+                                            style={{
+                                                background: "rgba(255,255,255,0.1)",
+                                                backdropFilter: "blur(20px) saturate(180%)",
+                                                WebkitBackdropFilter: "blur(20px) saturate(180%)",
+                                                border: "1px solid rgba(255,255,255,0.2)",
+                                                boxShadow: "0 8px 32px rgba(0,0,0,0.1), 0 1px 0px rgba(255,255,255,0.2) inset",
+                                            }}
                                         >
-                                            {/* Header with Title and Priority */}
-                                            <div className="flex justify-between items-start">
-                                                <div className="flex items-center gap-2">
-                                                    {idea.title && (
-                                                        <h4 className="text-sm font-bold text-theme-text leading-tight line-clamp-1">
-                                                            {idea.title}
-                                                        </h4>
+                                            {/* Tick Box and Content */}
+                                            <div className="flex items-start gap-3">
+                                                {/* Circular Tick Box */}
+                                                <button
+                                                    onClick={() => toggleIdeaCompletion(idea.id)}
+                                                    className="w-5 h-5 rounded-full border-2 border-white/40 flex items-center justify-center transition-all duration-200 flex-shrink-0 mt-0.5"
+                                                    style={{
+                                                        background: isCompleted ? "rgba(34,197,94,0.2)" : "transparent",
+                                                        borderColor: isCompleted ? "rgb(34,197,94)" : "rgba(255,255,255,0.4)",
+                                                    }}
+                                                >
+                                                    {isCompleted && (
+                                                        <div className="w-2 h-2 rounded-full bg-green-500" />
                                                     )}
-                                                    <Badge className={`text-[8px] rounded-lg uppercase border-none font-black tracking-wider ${priorityColors[idea.priority as keyof typeof priorityColors] || priorityColors.medium}`}>
-                                                        {idea.priority || 'medium'}
-                                                    </Badge>
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <span className="text-[9px] text-theme-text-30">
-                                                        {format(
-                                                            parseISO(
-                                                                idea.created_at,
-                                                            ),
-                                                            "MMM d",
-                                                        )}
-                                                    </span>
-                                                    {!idea.title && (
-                                                        <Badge className="bg-amber-500/10 text-amber-500 text-[8px] rounded-xl uppercase border-none font-black tracking-widest">
-                                                            Directive
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                            </div>
-                                            
-                                            {/* Content */}
-                                            <p className="text-sm font-medium text-theme-text leading-relaxed line-clamp-3">
-                                                {idea.content}
-                                            </p>
-                                            
-                                            {/* Staff Sharing Status */}
-                                            {(idea.shared_with?.length || 0) > 0 && (
-                                                <div className="space-y-2">
-                                                    <div className="flex items-center justify-between text-[8px] font-bold uppercase tracking-widest">
-                                                        <span className={`${unacknowledged > 0 ? "text-amber-500" : "text-theme-text-40"}`}>
-                                                            {unacknowledged > 0 ? "Pending" : "All Seen"} ({acknowledgedCount}/{idea.shared_with?.length || 0})
-                                                        </span>
-                                                        {unacknowledged > 0 && (
-                                                            <span className="text-amber-500 animate-pulse">
-                                                                ● {unacknowledged} new
+                                                </button>
+                                                
+                                                {/* Content Container */}
+                                                <div className="flex-1">
+                                                    {/* Header with Title and Priority */}
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            {idea.title && (
+                                                                <h4 className={`text-sm font-bold leading-tight line-clamp-1 transition-all duration-300 ${
+                                                                    isCompleted 
+                                                                        ? "text-gray-400 line-through" 
+                                                                        : "text-white"
+                                                                }`}>
+                                                                    {idea.title}
+                                                                </h4>
+                                                            )}
+                                                            <Badge className={`text-[8px] rounded-lg uppercase border-none font-black tracking-wider ${priorityColors[idea.priority as keyof typeof priorityColors] || priorityColors.medium}`}>
+                                                                {idea.priority || 'medium'}
+                                                            </Badge>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] text-white/60">
+                                                                {format(
+                                                                    parseISO(
+                                                                        idea.created_at,
+                                                                    ),
+                                                                    "MMM d",
+                                                                )}
                                                             </span>
-                                                        )}
+                                                            {!idea.title && (
+                                                                <Badge className="bg-amber-500/10 text-amber-500 text-[8px] rounded-xl uppercase border-none font-black tracking-widest">
+                                                                    Directive
+                                                                </Badge>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                     
-                                                    {/* Staff Avatars */}
-                                                    <div className="flex items-center gap-1">
-                                                        {(idea.shared_with || []).slice(0, 4).map((staffId: string, index: number) => {
-                                                            const staffMember = staff.find(s => s.id === staffId);
-                                                            const hasSeen = (idea as any).acknowledged_by?.includes(staffId);
-                                                            return (
-                                                                <div key={staffId} className="relative">
-                                                                    <Avatar className="w-6 h-6 border-2 border-theme-card">
-                                                                        <AvatarFallback className="text-[8px] font-bold bg-theme-bg text-theme-text-60">
+                                                    {/* Content */}
+                                                    <p className={`text-sm font-medium leading-relaxed line-clamp-3 transition-all duration-300 ${
+                                                        isCompleted 
+                                                            ? "text-gray-400 line-through" 
+                                                            : "text-white/80"
+                                                    }`}>
+                                                        {idea.content}
+                                                    </p>
+                                                    
+                                                    {/* Action Date Tag */}
+                                                    <div className="mt-2">
+                                                        <span className="text-[8px] font-medium text-white/50">
+                                                            {isCompleted ? "Completed" : "Due Today"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                                
+                                                {/* Staff Sharing Status */}
+                                                {(idea.shared_with?.length || 0) > 0 && (
+                                                    <div className="mt-3 space-y-2">
+                                                        <div className="flex items-center justify-between text-[8px] font-bold uppercase tracking-widest">
+                                                            <span className={`${unacknowledged > 0 ? "text-amber-500" : "text-white/40"}`}>
+                                                                {unacknowledged > 0 ? "Pending" : "All Seen"} ({acknowledgedCount}/{idea.shared_with?.length || 0})
+                                                            </span>
+                                                            {unacknowledged > 0 && (
+                                                                <span className="text-amber-500 animate-pulse">
+                                                                    ● {unacknowledged} new
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        
+                                                        {/* Staff Avatars */}
+                                                        <div className="flex items-center gap-1">
+                                                            {(idea.shared_with || []).slice(0, 4).map((staffId: string, index: number) => {
+                                                                const staffMember = staff.find(s => s.id === staffId);
+                                                                const hasSeen = (idea as any).acknowledged_by?.includes(staffId);
+                                                                return (
+                                                                    <div key={staffId} className="relative">
+                                                                        <Avatar className="w-6 h-6 border-2 border-white/20">
+                                                                            <AvatarFallback className="text-[8px] font-bold bg-white/10 text-white/60">
                                                                             {staffMember?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '??'}
                                                                         </AvatarFallback>
                                                                     </Avatar>
@@ -2349,8 +2408,8 @@ let meetingError: any = null;
                                                             );
                                                         })}
                                                         {(idea.shared_with?.length || 0) > 4 && (
-                                                            <div className="w-6 h-6 rounded-full bg-theme-bg border-2 border-theme-card flex items-center justify-center">
-                                                                <span className="text-[8px] font-bold text-theme-text-40">
+                                                            <div className="w-6 h-6 rounded-full bg-white/10 border-2 border-white/20 flex items-center justify-center">
+                                                                <span className="text-[8px] font-bold text-white/60">
                                                                     +{(idea.shared_with?.length || 0) - 4}
                                                                 </span>
                                                             </div>
@@ -2358,34 +2417,6 @@ let meetingError: any = null;
                                                     </div>
                                                 </div>
                                             )}
-                                            
-                                            {/* Actions */}
-                                            <div className="flex items-center justify-between mt-1 pt-2 border-t border-theme-border-5">
-                                                <div className="flex items-center gap-2">
-                                                    {(idea.shared_with?.length || 0) === 0 ? (
-                                                        <span className="text-[8px] text-theme-text-40 font-medium">
-                                                            Private directive
-                                                        </span>
-                                                    ) : (
-                                                        <span className="text-[8px] text-theme-text-40 font-medium">
-                                                            Shared with {idea.shared_with?.length || 0} staff{(idea.shared_with?.length || 0) === 1 ? '' : 's'}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <Button
-                                                    onClick={(e) => {
-                                                        e.preventDefault();
-                                                        e.stopPropagation();
-                                                        console.log("Dispose button clicked for idea:", idea.id);
-                                                        disposeIdea(idea.id);
-                                                    }}
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-6 text-[8px] font-black uppercase tracking-widest text-red-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg px-2 transition-all"
-                                                >
-                                                    Dispose
-                                                </Button>
-                                            </div>
                                         </div>
                                     );
                                 })}

@@ -23,6 +23,7 @@ import {
     Shield,
     Megaphone,
     Check,
+    Lightbulb,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
@@ -38,6 +39,8 @@ interface AddIdeaDialogProps {
     }>;
     currentUserId: string;
 }
+
+type ActionMode = "note" | "task" | "reminder";
 
 type IdeaCategory = "strategy" | "product" | "operation" | "marketing" | "other";
 type IdeaPriority = "low" | "medium" | "high" | "critical";
@@ -108,6 +111,7 @@ export default function AddIdeaDialog({
     staffList,
     currentUserId,
 }: AddIdeaDialogProps) {
+    const [actionMode, setActionMode] = useState<ActionMode>("note");
     const [loading, setLoading] = useState(false);
     const [title, setTitle] = useState("");
     const [description, setDescription] = useState("");
@@ -118,6 +122,7 @@ export default function AddIdeaDialog({
     const [shareAllStaff, setShareAllStaff] = useState(false);
 
     const resetForm = () => {
+        setActionMode("note");
         setTitle("");
         setDescription("");
         setCategory("strategy");
@@ -289,11 +294,40 @@ export default function AddIdeaDialog({
                             className="text-[18px] font-black uppercase tracking-[0.12em] leading-tight"
                             style={{ color: VIOLET }}
                         >
-                            EXECUTIVE DIRECTIVE
+                            CREATE EXECUTIVE ACTION
                         </DialogTitle>
                         <p className="mt-1 text-[12px] text-gray-400 font-medium tracking-wide">
                             Issue executive directive for team alignment and action
                         </p>
+                    </div>
+
+                    {/* ─────────── ACTION MODE SEGMENTED CONTROL ─────────── */}
+                    <div className="px-8 pb-4">
+                        <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(249,250,251,0.8)" }}>
+                            {[
+                                { value: "note" as ActionMode, label: "NOTE" },
+                                { value: "task" as ActionMode, label: "TASK" },
+                                { value: "reminder" as ActionMode, label: "REMINDER" },
+                            ].map(({ value, label }) => (
+                                <button
+                                    key={value}
+                                    type="button"
+                                    onClick={() => setActionMode(value)}
+                                    className="flex-1 px-4 py-2.5 rounded-lg text-[11px] font-black uppercase tracking-wider transition-all duration-200"
+                                    style={{
+                                        background: actionMode === value
+                                            ? `linear-gradient(135deg, ${VIOLET}, #4B47C0)`
+                                            : "transparent",
+                                        color: actionMode === value ? "white" : VIOLET,
+                                        boxShadow: actionMode === value
+                                            ? `0 2px 8px ${VIOLET}40`
+                                            : "none",
+                                    }}
+                                >
+                                    {label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     {/* ─────────── FORM ─────────── */}
@@ -424,7 +458,13 @@ export default function AddIdeaDialog({
                             <div className="col-span-3">
                                 <FieldLabel text="Directive Details / Reminders" />
                                 <textarea
-                                    placeholder="Enter personal reminders or instructions for the team..."
+                                    placeholder={
+                                        actionMode === "task" 
+                                            ? "Enter task objective..."
+                                            : actionMode === "reminder"
+                                            ? "Set reminder details and time..."
+                                            : "Enter personal reminders or instructions for the team..."
+                                    }
                                     value={description}
                                     onChange={(e) => setDescription(e.target.value)}
                                     rows={5}

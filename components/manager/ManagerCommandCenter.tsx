@@ -279,32 +279,32 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
         });
     }, [tasks, completedTasks, activeTab, showCompleted]);
 
+    const fetchTasks = async () => {
+        if (!profile) return;
+        
+        try {
+            // Fetch tasks assigned to staff in manager's department
+            const { data: tasksData, error } = await supabase
+                .from("tasks")
+                .select("*")
+                .in("status", ["pending", "in_progress"])
+                .order("created_at", { ascending: false });
+            
+            if (error) {
+                console.error('Error fetching tasks:', error);
+                return;
+            }
+            
+            if (tasksData) {
+                setTasks(tasksData);
+            }
+        } catch (error) {
+            console.error('Error fetching tasks:', error);
+        }
+    };
+
     // Fetch tasks from database
     useEffect(() => {
-        const fetchTasks = async () => {
-            if (!profile) return;
-            
-            try {
-                // Fetch tasks assigned to staff in manager's department
-                const { data: tasksData, error } = await supabase
-                    .from("tasks")
-                    .select("*")
-                    .in("status", ["pending", "in_progress"])
-                    .order("created_at", { ascending: false });
-                
-                if (error) {
-                    console.error('Error fetching tasks:', error);
-                    return;
-                }
-                
-                if (tasksData) {
-                    setTasks(tasksData);
-                }
-            } catch (error) {
-                console.error('Error fetching tasks:', error);
-            }
-        };
-        
         fetchTasks();
     }, [profile]);
 

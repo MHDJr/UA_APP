@@ -1,0 +1,8 @@
+components/executive-command.tsx(1740,14): error TS17008: JSX element 'main' has no corresponding closing tag.
+components/executive-command.tsx(2470,17): error TS1005: ')' expected.
+components/executive-command.tsx(2471,13): error TS1109: Expression expected.
+components/executive-command.tsx(2473,18): error TS1005: ';' expected.
+components/executive-command.tsx(2533,13): error TS1128: Declaration or statement expected.
+components/executive-command.tsx(2538,14): error TS1109: Expression expected.
+components/executive-command.tsx(4675,9): error TS1128: Declaration or statement expected.
+components/executive-command.tsx(4676,5): error TS1109: Expression expected.

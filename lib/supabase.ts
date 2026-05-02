@@ -23,7 +23,7 @@ export type Profile = {
     email: string;
     username?: string | null;
     full_name: string;
-    role: "ceo" | "staff" | "sales";
+    role: "ceo" | "staff" | "sales" | "accounts" | "manager" | "tutor";
     phone?: string;
     department?: string;
     avatar_url?: string;
