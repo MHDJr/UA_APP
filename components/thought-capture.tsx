@@ -88,7 +88,7 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
 
         try {
             // Try different insertion strategies based on what columns exist
-            let data, error;
+            let data: any, error: any;
             
             // Strategy 1: Try with all columns (new schema)
             try {
