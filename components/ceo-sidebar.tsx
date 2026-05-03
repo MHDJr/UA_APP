@@ -7,6 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { useBadgeCounts } from "@/hooks/use-badge-counts";
 import { supabase } from "@/lib/supabase";
+import { SystemSyncButton } from "./system-sync-button";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -26,11 +27,6 @@ const navItems: NavItem[] = [
         id: "command-center",
         label: "Command Center",
         icon: LayoutDashboard,
-    },
-    {
-        id: "directive-intelligence",
-        label: "Directive Intelligence",
-        icon: Brain,
     },
     {
         id: "financial-intelligence",
@@ -204,8 +200,20 @@ export function CEOSidebar({ activeView, onViewChange, onMinimizedChange }: CEOS
                 </ul>
             </nav>
 
-            {/* Minimize Toggle Button */}
-            <div className="px-3 pb-2">
+            {/* Minimize Toggle Button & System Sync */}
+            <div className="px-3 pb-2 space-y-2">
+                <div className={cn(
+                    "flex items-center gap-2",
+                    isMinimized && "justify-center"
+                )}>
+                    <SystemSyncButton 
+                        variant={isMinimized ? "icon" : "full"}
+                        className={cn(
+                            "flex-shrink-0",
+                            !isMinimized && "flex-1"
+                        )}
+                    />
+                </div>
                 <button
                     onClick={handleToggleMinimized}
                     className="w-full flex items-center justify-center py-2 rounded-lg text-gray-300 hover:text-gray-500 hover:bg-black/[0.03] transition-all duration-200"

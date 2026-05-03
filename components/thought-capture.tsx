@@ -79,12 +79,20 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
             return;
         }
 
+        if (!profile?.id) {
+            toast.error("User not authenticated. Please login again.");
+            return;
+        }
+
         setIsSubmitting(true);
 
         try {
-            const { data, error } = await supabase
-                .from("ideas")
-                .insert({
+            // Try different insertion strategies based on what columns exist
+            let data, error;
+            
+            // Strategy 1: Try with all columns (new schema)
+            try {
+                const ideaData = {
                     title: title.trim() || null,
                     content: content.trim(),
                     priority: status === "high_priority" ? "high" : "medium",
@@ -92,15 +100,45 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                     tags: autoTags,
                     follow_up_date: followUpDate || null,
                     auto_tagged: true,
-                    created_by: profile?.id,
+                    created_by: profile.id,
                     shared_with: status === "directive" ? [] : [],
                     archived: false,
                     signal_cleared: false,
-                })
-                .select()
-                .single();
+                };
 
-            if (error) throw error;
+                console.log("Trying insert with full schema:", ideaData);
+                const result = await supabase
+                    .from("ideas")
+                    .insert(ideaData)
+                    .select()
+                    .single();
+                data = result.data;
+                error = result.error;
+            } catch (e) {
+                console.log("Full schema insert failed, trying minimal schema");
+                
+                // Strategy 2: Try with minimal columns (old schema)
+                const minimalIdeaData = {
+                    title: title.trim() || "Thought",
+                    priority: status === "high_priority" ? "high" : "medium",
+                    status: status,
+                    created_by: profile.id,
+                };
+
+                console.log("Trying insert with minimal schema:", minimalIdeaData);
+                const result = await supabase
+                    .from("ideas")
+                    .insert(minimalIdeaData)
+                    .select()
+                    .single();
+                data = result.data;
+                error = result.error;
+            }
+
+            if (error) {
+                console.error("Supabase error:", error);
+                throw error;
+            }
 
             // Trigger cinematic animation
             setShowCinematic(true);
@@ -128,7 +166,57 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
 
         } catch (error) {
             console.error("Error capturing thought:", error);
-            toast.error("Failed to capture thought");
+            
+            // Detailed debugging information
+            console.log("=== DEBUG INFO ===");
+            console.log("Profile:", profile);
+            console.log("Profile ID:", profile?.id);
+            console.log("Profile Role:", profile?.role);
+            console.log("Is Authenticated:", !!profile);
+            
+            // Handle different error types
+            let errorMessage = "Unknown error occurred";
+            let errorCode = "";
+            
+            if (error && typeof error === 'object') {
+                // Supabase error object
+                if ('message' in error) {
+                    errorMessage = String(error.message);
+                }
+                if ('code' in error) {
+                    errorCode = String(error.code);
+                }
+                if ('details' in error) {
+                    console.log("Error details:", error.details);
+                }
+                console.log("Full error object:", JSON.stringify(error, null, 2));
+            } else if (error instanceof Error) {
+                errorMessage = error.message;
+                console.log("Error message:", errorMessage);
+                console.log("Error stack:", error.stack);
+            } else if (typeof error === 'string') {
+                errorMessage = error;
+            }
+            
+            console.log("Final error message:", errorMessage);
+            console.log("Error code:", errorCode);
+            
+            // More specific error messages
+            if (errorMessage.includes('duplicate key')) {
+                toast.error("This thought already exists");
+            } else if (errorMessage.includes('permission') || errorMessage.includes('42501') || errorCode === '42501') {
+                toast.error("Permission denied. Run the SQL fix in Supabase.");
+                console.error("RLS Policy Error - Run comprehensive_debug.sql");
+            } else if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+                toast.error("Network error. Please check your connection.");
+            } else if (errorMessage.includes('column') || errorMessage.includes('does not exist')) {
+                toast.error("Database schema issue. Run the schema fix.");
+                console.error("Schema Error - Run fix_thought_capture_schema.sql");
+            } else if (errorMessage.includes('JWT') || errorMessage.includes('auth')) {
+                toast.error("Authentication error. Please login again.");
+            } else {
+                toast.error(`Failed to capture: ${errorMessage}`);
+            }
             setIsSubmitting(false);
         }
     };
@@ -357,7 +445,7 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                             <div className="space-y-2">
                                 <div className="flex items-center gap-2">
                                     <Calendar className="w-3 h-3 text-amber-400/60" />
-                                    <span className="text-[10px] text-theme-text-50 uppercase tracking-wider font-bold">
+                                    <span className="text-[10px] text-amber-400/90 uppercase tracking-wider font-bold">
                                         Follow-up Reminder
                                     </span>
                                 </div>
@@ -370,7 +458,7 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                                                 px-2 py-1 rounded-lg text-[10px] font-bold transition-all
                                                 ${followUpDate === format(item.date, "yyyy-MM-dd")
                                                     ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                                    : 'bg-white/5 text-white/40 border border-white/10 hover:bg-white/10'
+                                                    : 'bg-amber-500/10 text-amber-300/60 border border-amber-500/20 hover:bg-amber-500/20 hover:text-amber-300'
                                                 }
                                             `}
                                         >

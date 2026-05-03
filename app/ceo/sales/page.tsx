@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth-context";
 import { ExecutiveSalesOverview } from "@/components/executive-sales-overview";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 import { MobileFAB } from "@/components/mobile-fab";
+import { CEOSidebar } from "@/components/ceo-sidebar";
 
 export default function CEOSalesPage() {
     const { user, profile, loading } = useAuth();
@@ -26,9 +27,25 @@ export default function CEOSalesPage() {
     }
 
     return (
-        <div className="min-h-screen bg-[#f8fafc] pb-24 md:pb-8">
+        <div className="min-h-screen bg-[#f8fafc]">
+            {/* Desktop Sidebar */}
+            <div className="hidden md:block">
+                <CEOSidebar
+                    activeView="sales-intelligence"
+                    onViewChange={(view) => {
+                        if (view === "sales-intelligence") {
+                            return;
+                        } else if (view === "financial-intelligence") {
+                            router.push("/ceo/financial-intelligence");
+                        } else {
+                            router.push("/ceo");
+                        }
+                    }}
+                />
+            </div>
+
             {/* Main Content */}
-            <div className="pt-[60px] md:pt-0">
+            <div className="md:ml-[80px] pt-[60px] md:pt-3 p-3 md:p-6 lg:p-8 pb-24 md:pb-8">
                 <ExecutiveSalesOverview />
             </div>
             

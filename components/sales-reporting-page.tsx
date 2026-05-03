@@ -40,6 +40,9 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import MobileNavigation from "@/components/mobile-navigation";
+import { MonthlyProgressGauge } from "@/components/monthly-progress-gauge";
+import { MonthlyConversionTracker } from "@/components/monthly-conversion-tracker";
+import { SetMonthlyTargetModal } from "@/components/set-monthly-target-modal";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 
@@ -123,6 +126,14 @@ const getGreeting = () => {
     };
 };
 
+// Interface for monthly target data
+interface MonthlyTarget {
+    id: string;
+    target_value: number;
+    current_progress: number;
+    achievement_percentage: number;
+}
+
 export function SalesReportingPage() {
     const { profile, user } = useAuth();
     const [time, setTime] = useState("");
@@ -134,6 +145,7 @@ export function SalesReportingPage() {
     const [mobileNavTab, setMobileNavTab] = useState("home");
     const [hasSubmittedToday, setHasSubmittedToday] = useState(false);
     const [todayReportId, setTodayReportId] = useState<string | null>(null);
+    const [monthlyTarget, setMonthlyTarget] = useState<MonthlyTarget | null>(null);
 
     // Form states with localStorage persistence
     const [totalLeads, setTotalLeads] = useState(() => {
@@ -247,6 +259,34 @@ export function SalesReportingPage() {
         }
     }, [totalLeads, conversions, evaluations, lostLeads, leadQuality]);
 
+    // Fetch monthly target data
+    const fetchSalesMonthlyTarget = async () => {
+        if (!profile) return null;
+        
+        try {
+            const currentMonth = new Date();
+            currentMonth.setDate(1); // First day of current month
+            
+            const { data, error } = await supabase
+                .from('monthly_targets')
+                .select('*')
+                .eq('profile_id', profile.id)
+                .eq('department', 'sales')
+                .eq('target_month', currentMonth.toISOString().split('T')[0])
+                .single();
+            
+            if (error) {
+                console.error('Error fetching monthly target:', error);
+                return null;
+            }
+            
+            return data;
+        } catch (error) {
+            console.error('Error fetching monthly target:', error);
+            return null;
+        }
+    };
+
     // Check if user has already submitted report today
     useEffect(() => {
         const checkTodaySubmission = async () => {
@@ -295,6 +335,10 @@ export function SalesReportingPage() {
                 setHasSubmittedToday(true);
                 setTodayReportId(reportData.id);
             }
+            
+            // Load monthly target data
+            const targetData = await fetchSalesMonthlyTarget();
+            setMonthlyTarget(targetData);
         };
 
         const loadFromLocalStorage = () => {
@@ -633,6 +677,20 @@ export function SalesReportingPage() {
 
             {/* Main Content - Mobile: single column, Desktop: grid */}
             <main className="p-4 md:p-8 max-w-[1700px] mx-auto grid grid-cols-12 gap-4 md:gap-8">
+                {/* Monthly Conversion Tracker - Full Width */}
+                {profile && (
+                    <div className="col-span-12 mb-6">
+                        <MonthlyConversionTracker 
+                            currentMonthConversions={parseInt(conversions) || 0}
+                            profile={profile}
+                            onTargetUpdated={() => {
+                                // Refresh monthly target data
+                                fetchSalesMonthlyTarget().then(setMonthlyTarget);
+                            }}
+                        />
+                    </div>
+                )}
+
                 {/* Mobile Greeting Banner - Compact Slim Card */}
                 <div className="col-span-12 md:hidden">
                     <motion.div
@@ -1049,7 +1107,7 @@ export function SalesReportingPage() {
                         </div>
 
                         {/* Desktop Quick Stats Preview */}
-                        <div className="grid grid-cols-4 gap-4 mt-8 pt-6 border-t border-slate-100">
+                        <div className="grid grid-cols-5 gap-4 mt-8 pt-6 border-t border-slate-100">
                             <div className="text-center p-4 rounded-2xl bg-slate-50">
                                 <Users className="w-5 h-5 mx-auto mb-2" style={{ color: BRAND.navy }} />
                                 <p className="text-2xl font-black text-slate-900">{totalLeads || "0"}</p>
@@ -1069,6 +1127,84 @@ export function SalesReportingPage() {
                                 <XCircle className="w-5 h-5 mx-auto mb-2" style={{ color: BRAND.orange }} />
                                 <p className="text-2xl font-black text-slate-900">{lostLeads || "0"}</p>
                                 <p className="text-xs text-slate-400 font-bold uppercase">Lost</p>
+                            </div>
+                            <div className="text-center p-4 rounded-2xl bg-slate-50">
+                                <div className="flex justify-center items-start">
+                                    <MonthlyProgressGauge
+                                        percentage={monthlyTarget?.achievement_percentage || 0}
+                                        current={monthlyTarget?.current_progress || 0}
+                                        target={monthlyTarget?.target_value || 0}
+                                        department="sales"
+                                        size="sm"
+                                        onTargetUpdated={() => {
+                                            // Refresh monthly target data
+                                            fetchSalesMonthlyTarget().then(setMonthlyTarget);
+                                        }}
+                                    />
+                                </div>
+                                <p className="text-xs text-slate-400 font-bold uppercase mt-2">Monthly</p>
+                            </div>
+                        </div>
+                    </motion.div>
+
+                    {/* Desktop: Lead Quality Score */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="hidden md:block rounded-[2.5rem] p-8 text-white shadow-lg relative overflow-hidden"
+                        style={{ backgroundColor: BRAND.navy }}
+                    >
+                        {/* Glow effect */}
+                        <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-20" style={{ backgroundColor: BRAND.orange, filter: "blur(40px)" }}></div>
+
+                        <div className="relative z-10">
+                            <div className="flex items-center gap-3 mb-6">
+                                <div className="p-2 bg-white/10 rounded-xl">
+                                    <Star className="w-6 h-6" style={{ color: BRAND.orange }} />
+                                </div>
+                                <span className="text-sm font-black tracking-widest uppercase text-white/50">
+                                    Quality Assessment
+                                </span>
+                            </div>
+
+                            <div className="flex items-center gap-6">
+                                <div className="relative flex-shrink-0">
+                                    <div
+                                        className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black border-4"
+                                        style={{
+                                            borderColor: leadQuality[0] >= 7 ? "#10b981" : leadQuality[0] >= 4 ? BRAND.orange : "#ef4444",
+                                            backgroundColor: "rgba(255,255,255,0.1)"
+                                        }}
+                                    >
+                                        {leadQuality[0]}
+                                    </div>
+                                    <div
+                                        className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
+                                        style={{ backgroundColor: BRAND.orange }}
+                                    >
+                                        /10
+                                    </div>
+                                </div>
+                                <div className="flex-1 space-y-3">
+                                    <div className="flex justify-between text-sm font-bold uppercase tracking-wider">
+                                        <span className="text-white/60">Poor</span>
+                                        <span className="text-white/60">Excellent</span>
+                                    </div>
+                                    <Slider
+                                        value={leadQuality}
+                                        onValueChange={setLeadQuality}
+                                        max={10}
+                                        min={1}
+                                        step={1}
+                                        className="w-full"
+                                    />
+                                    <div className="flex justify-between text-xs text-white/40">
+                                        <span>1</span>
+                                        <span>5</span>
+                                        <span>10</span>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </motion.div>

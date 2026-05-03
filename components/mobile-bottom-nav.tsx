@@ -24,7 +24,6 @@ type NavItem = {
 
 const mainNavItems: NavItem[] = [
     { id: "command-center", label: "Dashboard", icon: LayoutDashboard },
-    { id: "directive-intelligence", label: "Directives", icon: Brain },
     { id: "financial-intelligence", label: "Finance", icon: Wallet },
     { id: "sales-intelligence", label: "Sales", icon: TrendingUp },
     { id: "staff-management", label: "Staff", icon: Users },
@@ -53,8 +52,6 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
     const handleNavClick = (id: string) => {
         if (id === "financial-intelligence") {
             router.push("/ceo/financial-intelligence");
-        } else if (id === "directive-intelligence") {
-            router.push("/ceo/directive-intelligence");
         } else {
             onViewChange(id);
         }

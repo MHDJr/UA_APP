@@ -25,6 +25,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
+import { MonthlyProgressGauge } from "@/components/monthly-progress-gauge";
 
 // Types
 interface FinancialEntry {
@@ -34,6 +35,13 @@ interface FinancialEntry {
     usthadIncome: number;
     expenses: number;
     revenue: number;
+}
+
+interface MonthlyTarget {
+    id: string;
+    target_value: number;
+    current_progress: number;
+    achievement_percentage: number;
 }
 
 // Circular Progress Component
@@ -105,6 +113,32 @@ const formatTime = (date: Date) => {
         minute: '2-digit',
         hour12: true
     }).replace('am', 'AM').replace('pm', 'PM');
+};
+
+// Fetch monthly target data
+const fetchMonthlyTarget = async (userId: string): Promise<MonthlyTarget | null> => {
+    try {
+        const currentMonth = new Date();
+        currentMonth.setDate(1); // First day of current month
+        
+        const { data, error } = await supabase
+            .from('monthly_targets')
+            .select('*')
+            .eq('profile_id', userId)
+            .eq('department', 'accounts')
+            .eq('target_month', currentMonth.toISOString().split('T')[0])
+            .single();
+        
+        if (error) {
+            console.error('Error fetching monthly target:', error);
+            return null;
+        }
+        
+        return data;
+    } catch (error) {
+        console.error('Error fetching monthly target:', error);
+        return null;
+    }
 };
 
 // Fetch real history data
@@ -197,6 +231,7 @@ export default function AccountsPage() {
     const [isClient, setIsClient] = useState(false);
     const [financialHistory, setFinancialHistory] = useState<FinancialEntry[]>([]);
     const [loading, setLoading] = useState(true);
+    const [monthlyTarget, setMonthlyTarget] = useState<MonthlyTarget | null>(null);
 
     // Update time and greeting
     useEffect(() => {
@@ -309,18 +344,22 @@ export default function AccountsPage() {
         }
     };
     
-    // Fetch financial history on component mount
+    // Fetch financial history and monthly target on component mount
     useEffect(() => {
-        const loadFinancialHistory = async () => {
+        const loadData = async () => {
             if (profile) {
                 setLoading(true);
-                const history = await fetchFinancialHistory(profile.id);
+                const [history, target] = await Promise.all([
+                    fetchFinancialHistory(profile.id),
+                    fetchMonthlyTarget(profile.id)
+                ]);
                 setFinancialHistory(history);
+                setMonthlyTarget(target);
                 setLoading(false);
             }
         };
         
-        loadFinancialHistory();
+        loadData();
     }, [profile]);
 
     return (
@@ -493,8 +532,37 @@ export default function AccountsPage() {
                     </div>
                 </div>
 
-                {/* Sidebar - Verification and Quick History - Takes up col-span-4 */}
+                {/* Sidebar - Monthly Progress, Verification and Quick History - Takes up col-span-4 */}
                 <div className="md:col-span-4 space-y-6">
+                    {/* Monthly Progress Card */}
+                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="w-10 h-10 rounded-xl bg-[#ff4d00]/10 flex items-center justify-center">
+                                <Target className="w-5 h-5 text-[#ff4d00]" />
+                            </div>
+                            <div>
+                                <h2 className="text-base font-bold text-[#1e293b]">Monthly Target</h2>
+                                <p className="text-xs text-[#64748b]">Revenue progress</p>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-center">
+                            <MonthlyProgressGauge
+                                percentage={monthlyTarget?.achievement_percentage || 0}
+                                current={monthlyTarget?.current_progress || 0}
+                                target={monthlyTarget?.target_value || 0}
+                                department="accounts"
+                                size="md"
+                                onTargetUpdated={() => {
+                                    // Refresh monthly target data
+                                    if (profile) {
+                                        fetchMonthlyTarget(profile.id).then(setMonthlyTarget);
+                                    }
+                                }}
+                            />
+                        </div>
+                    </div>
+
                     {/* Transmission Verification Card */}
                     <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
                         <div className="flex items-center gap-3 mb-5">

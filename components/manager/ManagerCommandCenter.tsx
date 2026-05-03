@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Task } from "@/lib/supabase";
 import {
@@ -213,6 +214,19 @@ interface ManagerCommandCenterProps {
 
 export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
     const { profile, user } = useAuth();
+    const router = useRouter();
+
+    // Handle logout
+    const handleLogout = async () => {
+        try {
+            await supabase.auth.signOut();
+            router.push("/");
+            toast.success("Logged out successfully");
+        } catch (error) {
+            console.error("Logout error:", error);
+            toast.error("Failed to logout");
+        }
+    };
     const [staffData] = useState(mockStaffData);
     const [recentTasks] = useState(mockRecentTasks);
     const [tasks, setTasks] = useState<Task[]>([]);
@@ -478,7 +492,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                             </Badge>
                         </div>
 
-                        {/* Profile */}
+                        {/* Profile & Logout */}
                         <div className="flex items-center gap-3">
                             <div className="text-right hidden sm:block">
                                 <p className="text-sm font-semibold text-slate-900">
@@ -497,6 +511,23 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2F1E73] to-[#F15A24] flex items-center justify-center text-white font-bold text-sm shadow-lg">
                                 {(profile?.full_name || "M").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
                             </div>
+                            {/* Logout Button */}
+                            <button
+                                onClick={handleLogout}
+                                className="hidden md:flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 hover:border-red-300 hover:bg-red-100 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-red-600 hover:text-red-800 ml-2"
+                                title="Logout"
+                            >
+                                <LogOut className="w-3 h-3" />
+                                <span className="hidden lg:inline">Logout</span>
+                            </button>
+                            {/* Mobile Logout Button */}
+                            <button
+                                onClick={handleLogout}
+                                className="md:hidden p-2 bg-red-50 border border-red-200 rounded-lg text-red-600 hover:bg-red-100 transition-colors"
+                                title="Logout"
+                            >
+                                <LogOut className="w-4 h-4" />
+                            </button>
                         </div>
                     </div>
                 </div>

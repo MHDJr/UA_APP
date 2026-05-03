@@ -10,6 +10,8 @@ import { AuthProvider } from "@/lib/auth-context";
 import { FocusProvider } from "@/lib/focus-context";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ErrorBoundary } from "@/components/error-boundary";
+import { NetworkStatusProvider } from "@/components/network-status-provider";
 
 export const metadata: Metadata = {
     title: "Usthad Academy - Executive Command",
@@ -47,21 +49,25 @@ export default function RootLayout({
                 />
             </head>
             <body className="font-sans min-h-screen bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground">
-                <ThemeProvider>
-                    <FocusProvider>
-                        <AuthProvider>
-                            {children}
-                            <Toaster
-                                position="top-right"
-                                theme="dark"
-                                toastOptions={{
-                                    className:
-                                        "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
-                                }}
-                            />
-                        </AuthProvider>
-                    </FocusProvider>
-                </ThemeProvider>
+                <ErrorBoundary>
+                    <NetworkStatusProvider>
+                        <ThemeProvider>
+                            <FocusProvider>
+                                <AuthProvider>
+                                    {children}
+                                    <Toaster
+                                        position="top-right"
+                                        theme="dark"
+                                        toastOptions={{
+                                            className:
+                                                "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
+                                        }}
+                                    />
+                                </AuthProvider>
+                            </FocusProvider>
+                        </ThemeProvider>
+                    </NetworkStatusProvider>
+                </ErrorBoundary>
             </body>
         </html>
     );

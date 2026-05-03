@@ -1085,13 +1085,23 @@ export default function StaffPortal() {
                         Staff Hub
                     </span>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div
-                        className={`w-2 h-2 rounded-full ${isOnDuty ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}
-                    ></div>
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-600">
-                        {isOnDuty ? "On Duty" : "Off Duty"}
-                    </span>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                        <div
+                            className={`w-2 h-2 rounded-full ${isOnDuty ? "bg-emerald-500 animate-pulse" : "bg-slate-300"}`}
+                        ></div>
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-600">
+                            {isOnDuty ? "On Duty" : "Off Duty"}
+                        </span>
+                    </div>
+                    {/* Mobile Logout Button */}
+                    <button
+                        onClick={handleLogout}
+                        className="p-2 bg-red-50 border border-red-200 rounded-lg text-red-600 hover:bg-red-100 transition-colors"
+                        title="Logout"
+                    >
+                        <LogOut className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 

@@ -15,7 +15,7 @@ export function useBadgeCounts() {
   });
   const [loading, setLoading] = useState(true);
 
-  const fetchBadgeCounts = async () => {
+  const fetchBadgeCounts = async (isMounted: boolean = true) => {
     try {
       setLoading(true);
 
@@ -38,24 +38,31 @@ export function useBadgeCounts() {
 
       if (victoriesError) throw victoriesError;
 
-      setBadgeCounts({
-        pendingRequests: pendingCount || 0,
-        victories: victoriesCount || 0,
-      });
+      if (isMounted) {
+        setBadgeCounts({
+          pendingRequests: pendingCount || 0,
+          victories: victoriesCount || 0,
+        });
+      }
     } catch (error) {
       console.error("Error fetching badge counts:", error);
       // Set default values on error
-      setBadgeCounts({
-        pendingRequests: 0,
-        victories: 0,
-      });
+      if (isMounted) {
+        setBadgeCounts({
+          pendingRequests: 0,
+          victories: 0,
+        });
+      }
     } finally {
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchBadgeCounts();
+    let isMounted = true;
+    fetchBadgeCounts(isMounted);
 
     // Set up real-time subscriptions
     const requestsSubscription = supabase
@@ -69,7 +76,7 @@ export function useBadgeCounts() {
           filter: "status=eq.pending",
         },
         () => {
-          fetchBadgeCounts();
+          if (isMounted) fetchBadgeCounts(isMounted);
         }
       )
       .subscribe();
@@ -85,15 +92,18 @@ export function useBadgeCounts() {
           filter: "status=eq.completed",
         },
         () => {
-          fetchBadgeCounts();
+          if (isMounted) fetchBadgeCounts(isMounted);
         }
       )
       .subscribe();
 
     // Refresh counts every 30 seconds as fallback
-    const interval = setInterval(fetchBadgeCounts, 30000);
+    const interval = setInterval(() => {
+      if (isMounted) fetchBadgeCounts(isMounted);
+    }, 30000);
 
     return () => {
+      isMounted = false;
       requestsSubscription.unsubscribe();
       tasksSubscription.unsubscribe();
       clearInterval(interval);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, Fragment } from "react";
+import { useRouter } from "next/navigation";
 import { supabase, Profile, Task, Request, Broadcast, Knock, ActivityFeed, Attendance, SignupRequest, Meeting, ExecutiveReport, AgentStatus, Lead, LeadStatus, DemoRequest, TutorAvailability, TutorNotification, Programme, Idea, SalesSignals } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { useAuth } from "@/lib/auth-context";
@@ -80,6 +81,7 @@ import { NewIdeaDialog } from "./new-idea-dialog";
 import { ThoughtCapture } from "./thought-capture";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { SkeletonCommandCenter } from "./skeleton-loader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -136,6 +138,7 @@ const CommandCard = ({
 // ============================================
 
 export function ExecutiveCommand({ currentView }: { currentView?: string }) {
+    const router = useRouter();
     const { profile, signOut } = useAuth();
     const { theme } = useTheme();
 
@@ -154,7 +157,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         "active" | "blocked" | "overdue" | "daily" | "completed"
     >("active");
     const [departmentFilter, setDepartmentFilter] = useState<
-        "ceo" | "sales" | "marketing" | "accounts" | "administration"
+        "ceo" | "administration" | "marketing" | "sales" | "accounts"
     >("ceo");
     const [showStaffOverview, setShowStaffOverview] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -646,16 +649,19 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     };
 
     useEffect(() => {
+        let isMounted = true;
         let channel: any;
         let autoRefreshInterval: NodeJS.Timeout;
 
         const handleVisibilityChange = () => {
-            if (!document.hidden) {
+            if (!document.hidden && isMounted) {
                 fetchData();
             }
         };
 
         const startRealtime = () => {
+            if (!isMounted) return;
+            
             channel = supabase
                 .channel("exec-command")
                 .on(
@@ -667,7 +673,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     },
                     (payload: any) => {
                         // Immediately refresh for real-time updates
-                        if (!document.hidden) {
+                        if (!document.hidden && isMounted) {
                             console.log('Real-time update:', payload);
                             fetchData();
                         }
@@ -677,20 +683,23 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             
             // Reduce refresh interval for more responsive signal feed
             autoRefreshInterval = setInterval(
-                () => !document.hidden && fetchData(),
+                () => !document.hidden && isMounted && fetchData(),
                 15000, // Reduced from 30 to 15 seconds
             );
         };
 
         // Ensure database column exists first
         ensureCeoReviewedColumn().then(() => {
-            fetchData();
-            startRealtime();
+            if (isMounted) {
+                fetchData();
+                startRealtime();
+            }
         });
         
         document.addEventListener("visibilitychange", handleVisibilityChange);
 
         return () => {
+            isMounted = false;
             document.removeEventListener(
                 "visibilitychange",
                 handleVisibilityChange,
@@ -1537,6 +1546,11 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         setSelectedStaffForChat(staff);
         setIsChatModalOpen(true);
     };
+    // Show skeleton loader while initial data is loading
+    if (staff.length === 0 && isRefreshing) {
+        return <SkeletonCommandCenter />;
+    }
+
     return (
         <div className="min-h-screen bg-ua-mesh-gradient text-theme-text font-sans selection:bg-theme-bg-white-10 p-6 flex flex-col gap-6">
             {/* HEADER WITH LOGO AND CEO IDENTITY */}
@@ -2002,14 +2016,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             CEO
                         </button>
                         <button
-                            onClick={() => setDepartmentFilter("sales")}
+                            onClick={() => setDepartmentFilter("administration")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                departmentFilter === "sales"
-                                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+                                departmentFilter === "administration"
+                                    ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
                                     : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                             }`}
                         >
-                            Sales
+                            Administration
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("marketing")}
@@ -2022,6 +2036,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             Marketing
                         </button>
                         <button
+                            onClick={() => setDepartmentFilter("sales")}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
+                                departmentFilter === "sales"
+                                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                            }`}
+                        >
+                            Sales
+                        </button>
+                        <button
                             onClick={() => setDepartmentFilter("accounts")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "accounts"
@@ -2030,16 +2054,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             }`}
                         >
                             Accounts
-                        </button>
-                        <button
-                            onClick={() => setDepartmentFilter("administration")}
-                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                departmentFilter === "administration"
-                                    ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
-                            }`}
-                        >
-                            Admin
                         </button>
                     </div>
 
@@ -2285,9 +2299,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                 color="bg-amber-500"
                             />
                             <Button
-                                onClick={() => router.push("/ceo/directive-intelligence")}
+                                variant="ghost"
                                 size="sm"
-                                className="bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border-amber-500/20 text-[8px] font-black uppercase tracking-widest h-7 px-3 rounded-lg transition-all"
+                                className="text-xs font-medium text-amber-500 hover:text-amber-600"
                             >
                                 <Bookmark className="w-3 h-3 mr-1" />
                                 View All

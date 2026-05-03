@@ -27,6 +27,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { AdvancedViewToggle } from "@/components/ui/advanced-view-toggle";
 import { DetailedMatrix } from "@/components/detailed-matrix";
+import { CEOStaffVelocity } from "./ceo-staff-velocity";
 import { supabase, DailyReport, Profile } from "@/lib/supabase";
 
 // Brand colors
@@ -847,11 +848,20 @@ export function ExecutiveSalesOverview() {
                         className="overflow-hidden"
                     >
                         <motion.div
-                            className="m-6"
+                            className="m-6 space-y-6"
                             initial={{ y: 20 }}
                             animate={{ y: 0 }}
                             transition={{ duration: 0.5, delay: 0.2 }}
                         >
+                            {/* Sales Staff Velocity - Only in Advanced View */}
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ duration: 0.5, delay: 0.1 }}
+                            >
+                                <CEOStaffVelocity />
+                            </motion.div>
+                            
                             <DetailedMatrix salesReps={salesReps} />
                         </motion.div>
                     </motion.div>

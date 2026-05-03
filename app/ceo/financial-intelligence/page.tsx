@@ -250,7 +250,10 @@ const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
 
     // Update SVG width on resize for mobile responsiveness
     React.useEffect(() => {
+        let isMounted = true;
+        
         const updateWidth = () => {
+            if (!isMounted) return;
             if (containerRef.current) {
                 const containerWidth = containerRef.current.clientWidth;
                 setSvgWidth(Math.min(width, containerWidth));
@@ -258,8 +261,20 @@ const StackedAreaChart = ({ data }: { data: ChartData[] }) => {
         };
         
         updateWidth();
-        window.addEventListener('resize', updateWidth);
-        return () => window.removeEventListener('resize', updateWidth);
+        
+        const handleResize = () => {
+            // Debounce resize events
+            clearTimeout((handleResize as any)._timeoutId);
+            (handleResize as any)._timeoutId = setTimeout(updateWidth, 100);
+        };
+        
+        window.addEventListener('resize', handleResize);
+        
+        return () => {
+            isMounted = false;
+            window.removeEventListener('resize', handleResize);
+            clearTimeout((handleResize as any)._timeoutId);
+        };
     }, []);
 
     const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
@@ -466,7 +481,11 @@ const DonutChart = ({
     const containerRef = React.useRef<HTMLDivElement>(null);
     
     React.useEffect(() => {
+        let isMounted = true;
+        let resizeTimeout: NodeJS.Timeout;
+        
         const updateSize = () => {
+            if (!isMounted) return;
             if (containerRef.current) {
                 const containerWidth = containerRef.current.clientWidth;
                 // Use smaller size on mobile, larger on desktop
@@ -476,8 +495,19 @@ const DonutChart = ({
         };
         
         updateSize();
-        window.addEventListener('resize', updateSize);
-        return () => window.removeEventListener('resize', updateSize);
+        
+        const handleResize = () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(updateSize, 100);
+        };
+        
+        window.addEventListener('resize', handleResize);
+        
+        return () => {
+            isMounted = false;
+            window.removeEventListener('resize', handleResize);
+            clearTimeout(resizeTimeout);
+        };
     }, []);
     
     const size = chartSize;
@@ -563,12 +593,15 @@ const DonutChart = ({
     );
 };
 
-// Counter animation hook
+// Counter animation hook with cleanup
 const useCounterAnimation = (targetValue: number, duration: number = 2000) => {
     const [currentValue, setCurrentValue] = useState(0);
     const [isAnimating, setIsAnimating] = useState(false);
 
     useEffect(() => {
+        let isMounted = true;
+        let animationFrameId: number;
+
         if (targetValue === 0) {
             setCurrentValue(0);
             return;
@@ -579,6 +612,8 @@ const useCounterAnimation = (targetValue: number, duration: number = 2000) => {
         const startValue = currentValue;
 
         const animate = () => {
+            if (!isMounted) return;
+            
             const now = Date.now();
             const progress = Math.min((now - startTime) / duration, 1);
             
@@ -589,13 +624,20 @@ const useCounterAnimation = (targetValue: number, duration: number = 2000) => {
             setCurrentValue(newValue);
 
             if (progress < 1) {
-                requestAnimationFrame(animate);
+                animationFrameId = requestAnimationFrame(animate);
             } else {
                 setIsAnimating(false);
             }
         };
 
-        requestAnimationFrame(animate);
+        animationFrameId = requestAnimationFrame(animate);
+
+        return () => {
+            isMounted = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+            }
+        };
     }, [targetValue, duration]);
 
     return { currentValue, isAnimating };
@@ -633,8 +675,10 @@ export default function CEOFinancialIntelligence() {
     const [chartData, setChartData] = useState<ChartData[]>([]);
     const [currentDateTime, setCurrentDateTime] = useState<string>("");
 
-    // Fetch financial data from database
+    // Fetch financial data from database with cleanup
     useEffect(() => {
+        let isMounted = true;
+        
         const fetchFinancialData = async () => {
             try {
                 setLoading(true);
@@ -651,9 +695,11 @@ export default function CEOFinancialIntelligence() {
                 
                 if (error) {
                     console.error('Error fetching financial entries:', error);
-                    setLoading(false);
+                    if (isMounted) setLoading(false);
                     return;
                 }
+                
+                if (!isMounted) return;
                 
                 console.log('Fetched financial entries:', entries);
                 setFinancialEntries(entries || []);
@@ -702,13 +748,17 @@ export default function CEOFinancialIntelligence() {
             } catch (error) {
                 console.error('Error fetching financial data:', error);
             } finally {
-                setLoading(false);
+                if (isMounted) setLoading(false);
             }
         };
         
         if (profile) {
             fetchFinancialData();
         }
+        
+        return () => {
+            isMounted = false;
+        };
     }, [profile]);
 
     // Update date/time
@@ -760,8 +810,6 @@ export default function CEOFinancialIntelligence() {
                             return;
                         } else if (view === "sales-intelligence") {
                             router.push("/ceo/sales");
-                        } else if (view === "directive-intelligence") {
-                            router.push("/ceo/directive-intelligence");
                         } else {
                             router.push("/ceo");
                         }

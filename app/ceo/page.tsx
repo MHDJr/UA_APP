@@ -13,7 +13,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence" | "financial-intelligence" | "directive-intelligence";
+type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence" | "financial-intelligence";
 
 export default function CEOPage() {
     const { profile, loading } = useAuth();
@@ -33,8 +33,6 @@ export default function CEOPage() {
             router.push("/ceo/financial-intelligence");
         } else if (activeView === "sales-intelligence") {
             router.push("/ceo/sales");
-        } else if (activeView === "directive-intelligence") {
-            router.push("/ceo/directive-intelligence");
         }
     }, [activeView, router]);
 
