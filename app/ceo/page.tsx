@@ -3,7 +3,6 @@
 import { ExecutiveCommand } from "@/components/executive-command";
 import { CEOSidebar } from "@/components/ceo-sidebar";
 import { StaffManagement } from "@/components/staff-management";
-import ScheduledMeetings from "@/components/scheduled-meetings";
 import { CEOInbox } from "@/components/ceo-inbox";
 import { ExecutiveSalesOverview } from "@/components/executive-sales-overview";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
@@ -13,7 +12,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
-type CEOView = "command-center" | "inbox" | "staff-management" | "scheduled-meetings" | "sales-intelligence" | "financial-intelligence";
+type CEOView = "command-center" | "inbox" | "staff-management" | "sales-intelligence" | "financial-intelligence";
 
 export default function CEOPage() {
     const { profile, loading } = useAuth();
@@ -50,8 +49,6 @@ export default function CEOPage() {
                 return <CEOInbox />;
             case "staff-management":
                 return <StaffManagement />;
-            case "scheduled-meetings":
-                return <ScheduledMeetings />;
             case "sales-intelligence":
                 return <ExecutiveSalesOverview />;
             case "command-center":

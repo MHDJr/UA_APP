@@ -468,8 +468,6 @@ export default function StaffPortal() {
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
     const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
     const [activeModal, setActiveModal] = useState<string | null>(null);
-    const [selectedMeeting, setSelectedMeeting] = useState<any | null>(null);
-    const [isMeetingDetailsOpen, setIsMeetingDetailsOpen] = useState(false);
     const [expandedTask, setExpandedTask] = useState<string | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
@@ -484,9 +482,6 @@ export default function StaffPortal() {
     const [isUserInteracting, setIsUserInteracting] = useState(false);
     const [isInitialLoading, setIsInitialLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
-    const [myMeetings, setMyMeetings] = useState<any[]>([]);
-    const [allScheduledMeetings, setAllScheduledMeetings] = useState<any[]>([]);
-    const [meetingNotifications, setMeetingNotifications] = useState<any[]>([]);
     const [userStatus, setUserStatus] = useState<"off_duty" | "on_mission">(
         "off_duty",
     );
@@ -665,139 +660,14 @@ export default function StaffPortal() {
                             (p) => p.meeting_id === m.id,
                         )?.acknowledged_at,
                     }));
-                    setMyMeetings(merged);
                 }
-            } else {
-                setMyMeetings([]);
             }
-
-            // Fetch all scheduled meetings with staff assignments
-            await fetchAllScheduledMeetings();
-
-            if (mNotificationsData.data)
-                setMeetingNotifications(mNotificationsData.data);
         } catch (error) {
-            console.error("Error fetching staff data:", error);
+            console.error("Error fetching data:", error);
         } finally {
-            setIsInitialLoading(false);
             setIsRefreshing(false);
         }
-    }, [profile, isInitialLoading]);
-
-    // Fetch all scheduled meetings when component mounts
-    useEffect(() => {
-        if (profile && !isInitialLoading) {
-            fetchAllScheduledMeetings();
-        }
-    }, [profile, isInitialLoading]);
-
-    const fetchAllScheduledMeetings = async () => {
-        try {
-            console.log("Fetching all scheduled meetings for staff visibility...");
-            
-            // Fetch all meetings (remove date filter to see all meetings)
-            const { data: meetings, error: meetingsError } = await supabase
-                .from("meetings")
-                .select("*")
-                .order("scheduled_at", { ascending: true })
-                .limit(50);
-
-            console.log("Meetings fetched:", meetings);
-            console.log("Meetings error:", meetingsError);
-            
-            if (meetingsError) {
-                console.error("Meetings error:", meetingsError);
-                // If RLS error, provide helpful message
-                if (meetingsError.message?.includes('permission denied')) {
-                    console.error("RLS policy blocking access - staff need visibility on all meetings");
-                }
-                throw meetingsError;
-            }
-
-            if (meetings && meetings.length > 0) {
-                console.log(`Found ${meetings.length} meetings, processing...`);
-                
-                // Process meetings with basic info first, then try to get participants
-                const meetingsWithBasicInfo = meetings.map(meeting => ({
-                    ...meeting,
-                    participants: [], // Default to empty array
-                    // Ensure required fields for display
-                    title: meeting.title || 'Untitled Meeting',
-                    scheduled_at: meeting.scheduled_at,
-                    duration_minutes: meeting.duration_minutes || 30,
-                    platform: meeting.platform || 'On-Site'
-                }));
-                
-                // Try to get participants, but don't fail if it doesn't work
-                try {
-                    const meetingIds = meetings.map(m => m.id);
-                    const { data: participants, error: participantsError } = await supabase
-                        .from("meeting_participants")
-                        .select(`
-                            *,
-                            profiles!meeting_participants_user_id_fkey (
-                                id,
-                                full_name,
-                                username,
-                                avatar_url,
-                                role,
-                                designation
-                            )
-                        `)
-                        .in("meeting_id", meetingIds);
-
-                    console.log("Participants fetched:", participants);
-                    console.log("Participants error:", participantsError);
-                    
-                    if (!participantsError && participants) {
-                        // Group participants by meeting
-                        const participantsByMeeting = participants.reduce((acc, participant) => {
-                            if (!acc[participant.meeting_id]) {
-                                acc[participant.meeting_id] = [];
-                            }
-                            acc[participant.meeting_id].push(participant);
-                            return acc;
-                        }, {} as Record<string, any[]>);
-
-                        // Update meetings with participant data
-                        const meetingsWithParticipants = meetingsWithBasicInfo.map(meeting => ({
-                            ...meeting,
-                            participants: participantsByMeeting[meeting.id] || []
-                        }));
-                        
-                        console.log("Final meetings with participants:", meetingsWithParticipants);
-                        setAllScheduledMeetings(meetingsWithParticipants);
-                    } else {
-                        console.log("Using meetings without participants due to error");
-                        setAllScheduledMeetings(meetingsWithBasicInfo);
-                    }
-                } catch (participantError) {
-                    console.error("Error fetching participants:", participantError);
-                    console.log("Using meetings without participants");
-                    setAllScheduledMeetings(meetingsWithBasicInfo);
-                }
-            } else {
-                console.log("No meetings found in database");
-                setAllScheduledMeetings([]);
-            }
-        } catch (error) {
-            console.error("Error fetching all scheduled meetings:", error);
-            // Create fallback meeting data for testing
-            console.log("Using fallback meeting data for testing");
-            const fallbackMeetings = [
-                {
-                    id: 'fallback-1',
-                    title: 'Test Meeting - Should Be Visible',
-                    description: 'This is a fallback meeting to test display',
-                    scheduled_at: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
-                    duration_minutes: 60,
-                    platform: 'Video',
-                    participants: []
-                }
-            ];
-            setAllScheduledMeetings(fallbackMeetings);
-        }
-    };
+    }, [profile, isUserInteracting, isInitialLoading]);
 
     const checkTodayAttendance = async () => {
         if (!profile) return;
@@ -927,15 +797,6 @@ export default function StaffPortal() {
         };
     }, [profile?.id, fetchData]);
 
-    // Event listener for refreshing meetings from mobile navigation
-    useEffect(() => {
-        const handleRefreshMeetings = () => {
-            fetchAllScheduledMeetings();
-        };
-
-        window.addEventListener('refreshMeetings', handleRefreshMeetings);
-        return () => window.removeEventListener('refreshMeetings', handleRefreshMeetings);
-    }, [fetchAllScheduledMeetings]);
 
     // Session timer effect
     useEffect(() => {
@@ -1999,7 +1860,6 @@ export default function StaffPortal() {
                                 { id: "new_request", label: "New Request", icon: Plus },
                                 { id: "leave_request", label: "Leave", icon: Calendar },
                                 { id: "idea", label: "Share Idea", icon: Lightbulb },
-                                { id: "report", label: "Victory Log", icon: FileText },
                             ].map((item) => (
                                 <button
                                     key={item.id}
@@ -2025,147 +1885,8 @@ export default function StaffPortal() {
                     </div>
                 </div>
 
-                
-                {/* Desktop Right Column - Meetings & Actions */}
+                {/* Desktop Right Column - Actions */}
                 <div className="col-span-12 lg:col-span-3 space-y-6 hidden lg:block">
-                    <div className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-100">
-                        <div className="flex items-center justify-between mb-5">
-                            <div className="flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-indigo-500" />
-                                <span className="text-[10px] font-black tracking-widest uppercase text-slate-400">
-                                    All Scheduled Meetings
-                                </span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={fetchAllScheduledMeetings}
-                                    className="p-1 rounded hover:bg-indigo-50 transition-colors"
-                                    title="Refresh meetings"
-                                >
-                                    <RefreshCw className="w-3 h-3 text-indigo-500" />
-                                </button>
-                                <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                            </div>
-                        </div>
-                        <div className="space-y-4 max-h-96 overflow-y-auto">
-                            {isRefreshing ? (
-                                <div className="text-center py-8">
-                                    <div className="animate-spin h-6 w-6 border-2 border-indigo-500 border-t-transparent rounded-full mx-auto mb-2"></div>
-                                    <p className="text-[10px] text-slate-400 font-medium">Loading meetings...</p>
-                                </div>
-                            ) : allScheduledMeetings.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <Calendar className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                                    <p className="text-[10px] text-slate-400 font-medium">No scheduled meetings</p>
-                                    <p className="text-[8px] text-slate-300 mt-1">Check back later for upcoming meetings</p>
-                                    <button
-                                        onClick={fetchAllScheduledMeetings}
-                                        className="mt-4 px-4 py-2 bg-indigo-600 text-white text-xs rounded-lg"
-                                    >
-                                        Refresh Meetings
-                                    </button>
-                                </div>
-                            ) : (
-                                allScheduledMeetings.map((meeting) => {
-                                    // Check if current staff user is assigned to this meeting
-                                    console.log("Checking assignment for meeting:", meeting.id);
-                                    console.log("Current user profile ID:", profile?.id);
-                                    console.log("Meeting participants:", meeting.participants);
-                                    console.log("Meeting attendees array:", meeting.attendees);
-                                    
-                                    // Check both meeting_participants and attendees array
-                                    const isAssignedViaParticipants = meeting.participants?.some(
-                                        (participant: any) => {
-                                            console.log("Checking participant:", participant.user_id, "vs", profile?.id);
-                                            console.log("Match:", participant.user_id === profile?.id);
-                                            return participant.user_id === profile?.id;
-                                        }
-                                    );
-                                    
-                                    const isAssignedViaAttendees = meeting.attendees?.includes(profile?.id);
-                                    
-                                    console.log("Assigned via participants:", isAssignedViaParticipants);
-                                    console.log("Assigned via attendees:", isAssignedViaAttendees);
-                                    
-                                    const isCurrentUserAssigned = isAssignedViaParticipants || isAssignedViaAttendees;
-                                    
-                                    console.log("Is current user assigned:", isCurrentUserAssigned);
-                                    
-                                    return (
-                                        <div
-                                            key={meeting.id}
-                                            className={`border rounded-xl p-4 hover:shadow-md transition-all duration-200 ${
-                                                isCurrentUserAssigned
-                                                    ? 'border-indigo-300 bg-indigo-50'
-                                                    : 'border-slate-200 hover:border-indigo-300'
-                                            }`}
-                                        >
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div className="flex-1">
-                                                    {/* Meeting Date & Time */}
-                                                    <div className="flex items-center gap-2 mb-2">
-                                                        <div className="flex items-center gap-1 bg-indigo-100 px-2 py-1 rounded-lg">
-                                                            <Calendar className="w-3 h-3 text-indigo-600" />
-                                                            <p className="text-[9px] font-bold text-indigo-600">
-                                                                {format(new Date(meeting.scheduled_at), "MMM dd, yyyy")}
-                                                            </p>
-                                                        </div>
-                                                        <div className="flex items-center gap-1 bg-blue-100 px-2 py-1 rounded-lg">
-                                                            <Clock className="w-3 h-3 text-blue-600" />
-                                                            <p className="text-[9px] font-bold text-blue-600">
-                                                                {format(new Date(meeting.scheduled_at), "h:mm a")}
-                                                            </p>
-                                                        </div>
-                                                        {isCurrentUserAssigned && (
-                                                            <span className="text-[7px] bg-indigo-600 text-white px-2 py-1 rounded-full font-bold">
-                                                                ASSIGNED
-                                                            </span>
-                                                        )}
-                                                    </div>
-
-                                                    {/* Meeting Title */}
-                                                    <h4 className="text-[13px] font-black text-slate-800 uppercase leading-tight mb-3">
-                                                        {meeting.title}
-                                                    </h4>
-
-                                                    {/* View Details Button */}
-                                                    <button
-                                                        onClick={() => {
-                                                            setSelectedMeeting(meeting);
-                                                            setIsMeetingDetailsOpen(true);
-                                                        }}
-                                                        className="w-full bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                                                    >
-                                                        <Target className="w-3.5 h-3.5" />
-                                                        View Details
-                                                    </button>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="bg-gradient-to-br from-indigo-600 to-indigo-900 rounded-[2rem] p-7 text-white shadow-xl shadow-indigo-200 relative overflow-hidden">
-                        <div className="flex items-center gap-3 mb-4 relative z-10">
-                            <Zap className="w-5 h-5 text-orange-400 fill-orange-400" />
-                            <span className="text-xs font-black tracking-widest uppercase opacity-60">
-                                Victory Log
-                            </span>
-                        </div>
-                        <h4 className="text-lg font-black uppercase leading-tight mb-4 relative z-10">
-                            Record a Victory?
-                        </h4>
-                        <button
-                            onClick={() => setActiveModal("report")}
-                            className="w-full py-3 bg-white text-indigo-900 rounded-2xl font-black text-[10px] tracking-widest uppercase shadow-lg shadow-black/20 relative z-10"
-                        >
-                            Update Now
-                        </button>
-                    </div>
-
                     <div className="bg-white rounded-[2rem] p-7 shadow-sm border border-slate-100">
                         <div className="flex items-center gap-3 mb-8">
                             <div
@@ -2392,203 +2113,10 @@ export default function StaffPortal() {
                             </div>
                         </div>
                     )}
-                    {activeModal === "report" && (
-                        <div className="space-y-4">
-                            <div className="space-y-1">
-                                <label className="text-[10px] font-black uppercase text-slate-400 ml-1">
-                                    Daily Summary
-                                </label>
-                                <textarea
-                                    placeholder="What did you achieve?"
-                                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold min-h-[120px]"
-                                />
-                            </div>
-                        </div>
-                    )}
                 </Modal>
             )}
 
-            {/* Meeting Details Dialog */}
-            <Dialog open={isMeetingDetailsOpen} onOpenChange={setIsMeetingDetailsOpen}>
-                <DialogContent className="max-w-2xl max-h-[90vh] overflow-hidden p-0 bg-gradient-to-br from-white via-[#F8FAFF] to-white border-0 shadow-2xl">
-                    {/* Dialog Header with Gradient Background */}
-                    <div className="relative bg-gradient-to-r from-[#2C2171] via-[#3F348C] to-[#2C2171] p-6 text-white">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-3xl"></div>
-                        <div className="absolute bottom-0 left-0 w-24 h-24 bg-[#FA4615]/20 rounded-full blur-2xl"></div>
-                        
-                        <div className="relative z-10">
-                            <DialogHeader className="p-0">
-                                <DialogTitle className="text-2xl font-bold text-white flex items-center gap-3">
-                                    <div className="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                                        <Calendar className="w-6 h-6 text-white" />
-                                    </div>
-                                    Meeting Details
-                                </DialogTitle>
-                            </DialogHeader>
-                        </div>
-                    </div>
 
-                    {selectedMeeting && (
-                        <ScrollArea className="max-h-[calc(90vh-120px)]">
-                            <div className="p-6 space-y-6">
-                                {/* Meeting Title Card */}
-                                <div className="bg-white rounded-2xl p-6 shadow-lg border border-[#E5E7EB] relative overflow-hidden">
-                                    <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-[#2C2171]/10 to-transparent rounded-full"></div>
-                                    <h3 className="text-2xl font-bold text-[#1E293B] mb-4 pr-20">
-                                        {selectedMeeting.title}
-                                    </h3>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                        <div className="flex items-center gap-3 p-3 bg-[#F8FAFF] rounded-xl border border-[#E5E7EB]">
-                                            <div className="p-2 bg-[#2C2171] rounded-lg">
-                                                <Calendar className="w-4 h-4 text-white" />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-medium text-[#64748B] uppercase tracking-wider">Date</p>
-                                                <p className="text-sm font-bold text-[#1E293B]">
-                                                    {format(new Date(selectedMeeting.scheduled_at), "MMM d, yyyy")}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex items-center gap-3 p-3 bg-[#F8FAFF] rounded-xl border border-[#E5E7EB]">
-                                            <div className="p-2 bg-blue-500 rounded-lg">
-                                                <Clock className="w-4 h-4 text-white" />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-medium text-[#64748B] uppercase tracking-wider">Time</p>
-                                                <p className="text-sm font-bold text-[#1E293B]">
-                                                    {format(new Date(selectedMeeting.scheduled_at), "h:mm a")}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="flex items-center gap-3 p-3 bg-[#F8FAFF] rounded-xl border border-[#E5E7EB]">
-                                            <div className="p-2 bg-green-500 rounded-lg">
-                                                <Timer className="w-4 h-4 text-white" />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-medium text-[#64748B] uppercase tracking-wider">Duration</p>
-                                                <p className="text-sm font-bold text-[#1E293B]">
-                                                    {selectedMeeting.duration_minutes || 60}m
-                                                </p>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Platform/Location Card */}
-                                <div className="bg-white rounded-2xl p-6 shadow-lg border border-[#E5E7EB]">
-                                    <h4 className="text-lg font-bold text-[#1E293B] mb-4 flex items-center gap-2">
-                                        <div className="p-2 bg-[#FA4615]/20 rounded-lg">
-                                            {selectedMeeting.platform ? (
-                                                <Video className="w-5 h-5 text-[#FA4615]" />
-                                            ) : (
-                                                <MapPin className="w-5 h-5 text-[#FA4615]" />
-                                            )}
-                                        </div>
-                                        {selectedMeeting.platform ? "Meeting Platform" : "Location"}
-                                    </h4>
-                                    <div className="p-4 bg-gradient-to-r from-[#FA4615]/10 to-[#FA4615]/5 rounded-xl border border-[#FA4615]/20">
-                                        <p className="text-lg font-bold text-[#1E293B]">
-                                            {selectedMeeting.platform || "On-Site"}
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {/* Participants Card */}
-                                {selectedMeeting.participants && selectedMeeting.participants.length > 0 && (
-                                    <div className="bg-white rounded-2xl p-6 shadow-lg border border-[#E5E7EB]">
-                                        <h4 className="text-lg font-bold text-[#1E293B] mb-4 flex items-center gap-2">
-                                            <div className="p-2 bg-[#2C2171]/20 rounded-lg">
-                                                <Users className="w-5 h-5 text-[#2C2171]" />
-                                            </div>
-                                            Participants ({selectedMeeting.participants.length})
-                                        </h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                            {selectedMeeting.participants.map((participant: any, idx: number) => (
-                                                <div
-                                                    key={idx}
-                                                    className="flex items-center gap-3 p-3 bg-gradient-to-r from-[#F8FAFF] to-white rounded-xl border border-[#E5E7EB] hover:border-[#2C2171]/30 transition-colors"
-                                                >
-                                                    <div className="w-10 h-10 bg-gradient-to-br from-[#2C2171] to-[#3F348C] rounded-full flex items-center justify-center text-white font-bold">
-                                                        {participant.user?.full_name?.charAt(0) || participant.user_id?.charAt(0) || 'U'}
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <p className="text-sm font-bold text-[#1E293B]">
-                                                            {participant.user?.full_name || participant.user_id}
-                                                        </p>
-                                                        <p className="text-xs text-[#64748B]">
-                                                            {participant.user?.email || 'No email'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Agenda Card */}
-                                {selectedMeeting.agenda && (
-                                    <div className="bg-white rounded-2xl p-6 shadow-lg border border-[#E5E7EB]">
-                                        <h4 className="text-lg font-bold text-[#1E293B] mb-4 flex items-center gap-2">
-                                            <div className="p-2 bg-blue-500/20 rounded-lg">
-                                                <ListTodo className="w-5 h-5 text-blue-500" />
-                                            </div>
-                                            Meeting Agenda
-                                        </h4>
-                                        <div className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-blue-200">
-                                            <p className="text-sm text-[#1E293B] leading-relaxed whitespace-pre-wrap">
-                                                {selectedMeeting.agenda}
-                                            </p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Join Meeting Button */}
-                                {selectedMeeting.agenda && (() => {
-                                    const urlMatch = selectedMeeting.agenda.match(/(https?:\/\/[^\s]+)/);
-                                    if (urlMatch) {
-                                        return (
-                                            <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-1 shadow-xl">
-                                                <button
-                                                    onClick={() => window.open(urlMatch[1], '_blank')}
-                                                    className="w-full bg-white rounded-xl p-4 flex items-center justify-center gap-3 transition-all hover:bg-gradient-to-r hover:from-white/95 hover:to-white/90 group"
-                                                >
-                                                    <div className="p-3 bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl group-hover:scale-110 transition-transform">
-                                                        <Video className="w-6 h-6 text-white" />
-                                                    </div>
-                                                    <div className="text-left">
-                                                        <p className="text-lg font-bold text-[#1E293B]">Join Meeting</p>
-                                                        <p className="text-sm text-[#64748B]">Click to open video call</p>
-                                                    </div>
-                                                    <div className="ml-auto">
-                                                        <div className="p-2 bg-green-100 rounded-lg group-hover:bg-green-200 transition-colors">
-                                                            <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                                                            </svg>
-                                                        </div>
-                                                    </div>
-                                                </button>
-                                            </div>
-                                        );
-                                    }
-                                    return null;
-                                })()}
-                            </div>
-                        </ScrollArea>
-                    )}
-                </DialogContent>
-            </Dialog>
-
-            {/* FAB - Hidden on mobile, shown on desktop */}
-            <button
-                style={{ backgroundColor: brand.orange }}
-                className="hidden md:flex fixed bottom-10 right-10 w-16 h-16 rounded-3xl shadow-2xl items-center justify-center text-white active:scale-95 transition-all z-[60] hover:rotate-6"
-                onClick={() => setActiveModal("report")}
-            >
-                <FileText className="w-7 h-7" />
-            </button>
 
             {/* Shared Mobile Navigation */}
             <MobileNavigation currentPage="home" />

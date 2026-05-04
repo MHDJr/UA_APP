@@ -4,7 +4,7 @@ import { useState } from "react";
 import { CEOSidebar } from "@/components/ceo-sidebar";
 import { cn } from "@/lib/utils";
 
-type CEOView = "command-center" | "staff-management" | "scheduled-meetings";
+type CEOView = "command-center" | "staff-management";
 type Role = "ceo" | "staff";
 
 interface CEOLayoutProps {

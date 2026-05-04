@@ -10,7 +10,6 @@ import {
     MessageSquare,
     User,
     BarChart3,
-    Calendar,
     Wallet,
 } from "lucide-react";
 
@@ -34,22 +33,6 @@ export default function MobileNavigation({ currentPage }: MobileNavigationProps)
         window.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleScrollToMeetings = () => {
-        const meetingsSection = document.getElementById('meetings-section');
-        if (meetingsSection) {
-            meetingsSection.scrollIntoView({ behavior: 'smooth' });
-        } else {
-            toast.info("Loading meetings...");
-            // Trigger meetings refresh if on staff page
-            if (window.location.pathname === '/staff') {
-                window.dispatchEvent(new CustomEvent('refreshMeetings'));
-                setTimeout(() => {
-                    const section = document.getElementById('meetings-section');
-                    if (section) section.scrollIntoView({ behavior: 'smooth' });
-                }, 500);
-            }
-        }
-    };
 
     const navItems = [
         { 
@@ -63,12 +46,6 @@ export default function MobileNavigation({ currentPage }: MobileNavigationProps)
                     router.push('/staff');
                 }
             }
-        },
-        { 
-            id: "meetings", 
-            label: "Meetings", 
-            icon: Calendar, 
-            href: "/meetings"
         },
         ...(profile?.role === "sales" || profile?.role === "ceo"
             ? [{ id: "sales", label: "Sales", icon: BarChart3, href: "/sales" }]

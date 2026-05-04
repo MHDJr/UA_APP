@@ -23,7 +23,6 @@ import { useAuth } from "@/lib/auth-context";
 import { supabase, Idea } from "@/lib/supabase";
 import { toast } from "sonner";
 import { autoTagContent, TagCategory, formatTag, getTagMetadata } from "@/lib/ai-tagging";
-import { format, addDays, addWeeks } from "date-fns";
 
 interface ThoughtCaptureProps {
     onCapture?: (idea: Idea) => void;
@@ -36,8 +35,7 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
     const [content, setContent] = useState("");
     const [title, setTitle] = useState("");
     const [status, setStatus] = useState<"reminder" | "directive" | "high_priority">("reminder");
-    const [followUpDate, setFollowUpDate] = useState<string>("");
-    const [autoTags, setAutoTags] = useState<TagCategory[]>([]);
+        const [autoTags, setAutoTags] = useState<TagCategory[]>([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showCinematic, setShowCinematic] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -66,13 +64,7 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
 
     const handleFocus = () => setIsExpanded(true);
 
-    const quickDates = [
-        { label: "Tomorrow", date: addDays(new Date(), 1) },
-        { label: "3 Days", date: addDays(new Date(), 3) },
-        { label: "1 Week", date: addWeeks(new Date(), 1) },
-        { label: "2 Weeks", date: addWeeks(new Date(), 2) },
-    ];
-
+    
     const handleSubmit = async () => {
         if (!content.trim()) {
             toast.error("Please enter your thought");
@@ -98,7 +90,6 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                     priority: status === "high_priority" ? "high" : "medium",
                     status: status,
                     tags: autoTags,
-                    follow_up_date: followUpDate || null,
                     auto_tagged: true,
                     created_by: profile.id,
                     shared_with: status === "directive" ? [] : [],
@@ -148,7 +139,6 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                 setContent("");
                 setTitle("");
                 setStatus("reminder");
-                setFollowUpDate("");
                 setAutoTags([]);
                 setIsExpanded(false);
                 setShowCinematic(false);
@@ -351,23 +341,25 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                                 </button>
                             </div>
 
-                            {/* Title Input */}
-                            <Input
-                                type="text"
-                                placeholder="Title (optional)..."
-                                value={title}
-                                onChange={(e) => setTitle(e.target.value)}
-                                className="bg-theme-bg-white-5 border-theme-border-10 text-theme-text placeholder:text-theme-text-40 focus:border-amber-500/50 text-sm"
-                            />
+                            {/* Title Input - only show if user wants to add a title */}
+                            {(title || isExpanded) && (
+                                <Input
+                                    type="text"
+                                    placeholder="Title (optional)..."
+                                    value={title}
+                                    onChange={(e) => setTitle(e.target.value)}
+                                    className="bg-theme-bg-white-5 border-theme-border-10 text-theme-text placeholder:text-theme-text-40 focus:border-amber-500/50 text-sm"
+                                />
+                            )}
 
                             {/* Content Textarea */}
                             <textarea
-                                placeholder="Capture your strategic thought, directive, or reminder..."
+                                placeholder={title ? "Add details..." : "Capture your strategic thought, directive, or reminder..."}
                                 value={content}
                                 onChange={(e) => setContent(e.target.value)}
-                                rows={3}
+                                rows={title ? 2 : 3}
                                 className="w-full bg-theme-bg-white-5 border border-theme-border-10 rounded-lg p-3 text-theme-text placeholder:text-theme-text-40 focus:border-amber-500/50 focus:outline-none resize-none text-sm leading-relaxed"
-                                autoFocus
+                                autoFocus={!title}
                             />
 
                             {/* AI Auto-Tags */}
@@ -441,39 +433,7 @@ export function ThoughtCapture({ onCapture, compact = false }: ThoughtCapturePro
                                 })}
                             </div>
 
-                            {/* Follow-up Date */}
-                            <div className="space-y-2">
-                                <div className="flex items-center gap-2">
-                                    <Calendar className="w-3 h-3 text-amber-400/60" />
-                                    <span className="text-[10px] text-amber-400/90 uppercase tracking-wider font-bold">
-                                        Follow-up Reminder
-                                    </span>
-                                </div>
-                                <div className="flex gap-2">
-                                    {quickDates.map((item) => (
-                                        <button
-                                            key={item.label}
-                                            onClick={() => setFollowUpDate(format(item.date, "yyyy-MM-dd"))}
-                                            className={`
-                                                px-2 py-1 rounded-lg text-[10px] font-bold transition-all
-                                                ${followUpDate === format(item.date, "yyyy-MM-dd")
-                                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                                    : 'bg-amber-500/10 text-amber-300/60 border border-amber-500/20 hover:bg-amber-500/20 hover:text-amber-300'
-                                                }
-                                            `}
-                                        >
-                                            {item.label}
-                                        </button>
-                                    ))}
-                                    <input
-                                        type="date"
-                                        value={followUpDate}
-                                        onChange={(e) => setFollowUpDate(e.target.value)}
-                                        className="px-2 py-1 rounded-lg text-[10px] bg-theme-bg-white-5 text-theme-text-60 border border-theme-border-10 focus:border-amber-500/50 focus:outline-none"
-                                    />
-                                </div>
-                            </div>
-
+                            
                             {/* Action Buttons */}
                             <div className="flex items-center justify-between pt-2">
                                 <div className="flex items-center gap-2 text-[10px] text-theme-text-40">

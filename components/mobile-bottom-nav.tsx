@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Calendar, Mail, TrendingUp, Wallet, Menu, X, LogOut, Settings, User, Brain } from "lucide-react";
+import { LayoutDashboard, Users, Mail, TrendingUp, Wallet, Menu, X, LogOut, Settings, User, Brain } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useBadgeCounts } from "@/hooks/use-badge-counts";
@@ -151,18 +151,6 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
                                         <p className="font-bold text-gray-900">SALIM PA</p>
                                         <p className="text-xs text-gray-500">Chief Executive Officer</p>
                                     </div>
-
-                                    {/* Secondary Nav Items */}
-                                    <button
-                                        onClick={() => {
-                                            onViewChange("scheduled-meetings");
-                                            setIsMenuOpen(false);
-                                        }}
-                                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-gray-50 transition-colors"
-                                    >
-                                        <Calendar className="w-5 h-5 text-gray-600" />
-                                        <span className="text-sm font-medium text-gray-700">Scheduled Meetings</span>
-                                    </button>
 
                                     <button
                                         onClick={() => {

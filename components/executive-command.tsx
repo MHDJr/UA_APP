@@ -228,7 +228,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     });
 
     // Toggle completion status
-    const toggleIdeaCompletion = (ideaId: string) => {
+    const toggleIdeaCompletion = async (ideaId: string) => {
+        // Find the current idea to get its completion status
+        const currentIdea = ideas.find(idea => idea.id === ideaId);
+        const isCurrentlyCompleted = completedIdeas.has(ideaId);
+        
+        // Update local state immediately for responsive UI
         setCompletedIdeas(prev => {
             const newSet = new Set(prev);
             if (newSet.has(ideaId)) {
@@ -238,6 +243,78 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             }
             return newSet;
         });
+
+        try {
+            // Update database
+            const { error } = await supabase
+                .from("ideas")
+                .update({ 
+                    completed: !isCurrentlyCompleted,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", ideaId);
+
+            if (error) {
+                console.error("Error updating completion status:", error);
+                // Revert local state if database update fails
+                setCompletedIdeas(prev => {
+                    const newSet = new Set(prev);
+                    if (newSet.has(ideaId)) {
+                        newSet.delete(ideaId);
+                    } else {
+                        newSet.add(ideaId);
+                    }
+                    return newSet;
+                });
+            }
+        } catch (error) {
+            console.error("Error toggling completion:", error);
+            // Revert local state if there's an error
+            setCompletedIdeas(prev => {
+                const newSet = new Set(prev);
+                if (newSet.has(ideaId)) {
+                    newSet.delete(ideaId);
+                } else {
+                    newSet.add(ideaId);
+                }
+                return newSet;
+            });
+        }
+    };
+
+    // Clear all completed directives
+    const clearCompletedDirectives = async () => {
+        const completedIds = Array.from(completedIdeas);
+        
+        if (completedIds.length === 0) {
+            toast.info("No completed directives to clear");
+            return;
+        }
+
+        try {
+            // Delete all completed directives from database
+            const { error } = await supabase
+                .from("ideas")
+                .delete()
+                .in("id", completedIds);
+
+            if (error) {
+                console.error("Error clearing completed directives:", error);
+                toast.error("Failed to clear completed directives");
+                return;
+            }
+
+            // Clear local state
+            setCompletedIdeas(new Set());
+            
+            // Refresh ideas data
+            await fetchData();
+            
+            toast.success(`Cleared ${completedIds.length} completed directive${completedIds.length > 1 ? 's' : ''}`);
+        } catch (error) {
+            console.error("Error clearing completed directives:", error);
+            toast.error("Failed to clear completed directives");
+        }
     };
 
     // Form States
@@ -418,25 +495,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 priority: "medium",
             })),
 
-            // Upcoming Meetings
-            ...meetings
-                .filter((m) => {
-                    const meetingTime = new Date(m.scheduled_at);
-                    const now = new Date();
-                    const hoursUntilMeeting = (meetingTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-                    return hoursUntilMeeting > 0 && hoursUntilMeeting <= 24 && !(m as any).signal_cleared;
-                })
-                .map((m) => ({
-                    id: `meeting-${m.id}`,
-                    category: "meeting",
-                    title: "Meeting Scheduled",
-                    description: `${m.title} in ${Math.round((new Date(m.scheduled_at).getTime() - new Date().getTime()) / (1000 * 60 * 60))} hours`,
-                    time: m.created_at,
-                    icon: Video,
-                    color: "#ec4899",
-                    colorType: "pink",
-                    priority: "high",
-                })),
         ];
 
         return items
@@ -633,7 +691,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             if (requestsRes.data) setRequests(requestsRes.data);
             if (leadsRes.data) setLeads(leadsRes.data);
             if (demosRes.data) setDemoRequests(demosRes.data);
-            if (ideasRes.data) setIdeas(ideasRes.data);
+            if (ideasRes.data) {
+                setIdeas(ideasRes.data);
+                // Initialize completed ideas state from database
+                const completedIds = ideasRes.data
+                    .filter(idea => idea.completed)
+                    .map(idea => idea.id);
+                setCompletedIdeas(new Set(completedIds));
+            }
             if (completedTasksRes.data) {
                 console.log('Completed tasks fetched:', completedTasksRes.data);
                 console.log('Completed tasks with ceo_reviewed status:', completedTasksRes.data.map(t => ({ id: t.id, title: t.title, ceo_reviewed: t.ceo_reviewed })));
@@ -2298,14 +2363,28 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                 title="CEO Command Log"
                                 color="bg-amber-500"
                             />
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-xs font-medium text-amber-500 hover:text-amber-600"
-                            >
-                                <Bookmark className="w-3 h-3 mr-1" />
-                                View All
-                            </Button>
+                            <div className="flex items-center gap-2">
+                                {completedIdeas.size > 0 && (
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={clearCompletedDirectives}
+                                        className="text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50/10"
+                                        title={`Clear ${completedIdeas.size} completed directive${completedIdeas.size > 1 ? 's' : ''}`}
+                                    >
+                                        <Trash2 className="w-3 h-3 mr-1" />
+                                        Clear ({completedIdeas.size})
+                                    </Button>
+                                )}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-xs font-medium text-amber-500 hover:text-amber-600"
+                                >
+                                    <Bookmark className="w-3 h-3 mr-1" />
+                                    View All
+                                </Button>
+                            </div>
                         </div>
                         
                         {/* Thought Capture Glassmorphic Input */}
@@ -2339,88 +2418,131 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                     return (
                                         <div
                                             key={idea.id}
-                                            className={`relative rounded-2xl p-4 flex flex-col gap-3 transition-all duration-300 ${
-                                                unacknowledged > 0 ? "border-amber-500/40" : "border-white/20"
+                                            className={`relative rounded-2xl transition-all duration-300 ${
+                                                isCompleted 
+                                                    ? "p-2 py-1.5 hover:shadow-sm" 
+                                                    : "p-4 flex flex-col gap-3 hover:-translate-y-1 hover:shadow-xl"
+                                            } ${
+                                                isCompleted 
+                                                    ? "border-l-2 border-l-green-500/40" 
+                                                    : idea.priority === 'high' 
+                                                        ? "border-l-4 border-l-orange-500" 
+                                                        : unacknowledged > 0 
+                                                            ? "border-l-4 border-l-orange-500/80" 
+                                                            : "border-l-4 border-l-orange-500/60"
                                             }`}
                                             style={{
-                                                background: "rgba(255,255,255,0.1)",
-                                                backdropFilter: "blur(20px) saturate(180%)",
-                                                WebkitBackdropFilter: "blur(20px) saturate(180%)",
-                                                border: "1px solid rgba(255,255,255,0.2)",
-                                                boxShadow: "0 8px 32px rgba(0,0,0,0.1), 0 1px 0px rgba(255,255,255,0.2) inset",
+                                                background: isCompleted ? "#F0F0F0" : "rgba(49, 38, 125, 0.9)",
+                                                backdropFilter: isCompleted ? "none" : "blur(40px) saturate(180%)",
+                                                WebkitBackdropFilter: isCompleted ? "none" : "blur(40px) saturate(180%)",
+                                                border: isCompleted ? "1px solid rgba(34,197,94,0.2)" : "1px solid rgba(241, 77, 36, 0.3)",
+                                                boxShadow: isCompleted 
+                                                    ? "0 2px 8px rgba(0,0,0,0.05)" 
+                                                    : "0 8px 32px rgba(0,0,0,0.2), 0 1px 0px rgba(241, 77, 36, 0.3) inset",
                                             }}
                                         >
-                                            {/* Tick Box and Content */}
-                                            <div className="flex items-start gap-3">
-                                                {/* Circular Tick Box */}
+                                            {isCompleted ? (
+                                            /* Collapsed Completed State */
+                                            <div className="flex items-center gap-2">
+                                                {/* Green Check Icon */}
                                                 <button
                                                     onClick={() => toggleIdeaCompletion(idea.id)}
-                                                    className="w-5 h-5 rounded-full border-2 border-white/40 flex items-center justify-center transition-all duration-200 flex-shrink-0 mt-0.5"
-                                                    style={{
-                                                        background: isCompleted ? "rgba(34,197,94,0.2)" : "transparent",
-                                                        borderColor: isCompleted ? "rgb(34,197,94)" : "rgba(255,255,255,0.4)",
-                                                    }}
+                                                    className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center transition-all duration-200 flex-shrink-0 hover:bg-green-600 hover:shadow-sm"
                                                 >
-                                                    {isCompleted && (
-                                                        <div className="w-2 h-2 rounded-full bg-green-500" />
-                                                    )}
+                                                    <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                                    </svg>
                                                 </button>
                                                 
-                                                {/* Content Container */}
-                                                <div className="flex-1">
-                                                    {/* Header with Title and Priority */}
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <div className="flex items-center gap-2">
-                                                            {idea.title && (
-                                                                <h4 className={`text-sm font-bold leading-tight line-clamp-1 transition-all duration-300 ${
-                                                                    isCompleted 
-                                                                        ? "text-gray-400 line-through" 
-                                                                        : "text-white"
-                                                                }`}>
-                                                                    {idea.title}
-                                                                </h4>
-                                                            )}
-                                                            <Badge className={`text-[8px] rounded-lg uppercase border-none font-black tracking-wider ${priorityColors[idea.priority as keyof typeof priorityColors] || priorityColors.medium}`}>
-                                                                {idea.priority || 'medium'}
-                                                            </Badge>
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[9px] text-white/60">
-                                                                {format(
-                                                                    parseISO(
-                                                                        idea.created_at,
-                                                                    ),
-                                                                    "MMM d",
-                                                                )}
-                                                            </span>
-                                                            {!idea.title && (
-                                                                <Badge className="bg-amber-500/10 text-amber-500 text-[8px] rounded-xl uppercase border-none font-black tracking-widest">
-                                                                    Directive
-                                                                </Badge>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Content */}
-                                                    <p className={`text-sm font-medium leading-relaxed line-clamp-3 transition-all duration-300 ${
-                                                        isCompleted 
-                                                            ? "text-gray-400 line-through" 
-                                                            : "text-white/80"
-                                                    }`}>
-                                                        {idea.content}
-                                                    </p>
-                                                    
-                                                    {/* Action Date Tag */}
-                                                    <div className="mt-2">
-                                                        <span className="text-[8px] font-medium text-white/50">
-                                                            {isCompleted ? "Completed" : "Due Today"}
+                                                {/* Collapsed Content */}
+                                                <div className="flex-1 flex items-center justify-between">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xs font-medium text-gray-700">
+                                                            {idea.title || "Directive"}
+                                                        </span>
+                                                        <span className="text-[10px] text-gray-500">
+                                                            – Completed {(() => {
+                                                                const now = new Date();
+                                                                const created = new Date(idea.created_at);
+                                                                const diffInMinutes = Math.floor((now.getTime() - created.getTime()) / (1000 * 60));
+                                                                
+                                                                if (diffInMinutes < 1) return "just now";
+                                                                if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+                                                                const diffInHours = Math.floor(diffInMinutes / 60);
+                                                                if (diffInHours < 24) return `${diffInHours}h ago`;
+                                                                const diffInDays = Math.floor(diffInHours / 24);
+                                                                return `${diffInDays}d ago`;
+                                                            })()}
                                                         </span>
                                                     </div>
                                                 </div>
                                             </div>
+                                        ) : (
+                                            /* Full Active State */
+                                            <div className="flex items-start gap-3">
+                                                {/* Circular Tick Box */}
+                                                <button
+                                                    onClick={() => toggleIdeaCompletion(idea.id)}
+                                                    className="w-5 h-5 rounded-full border-2 border-white/40 flex items-center justify-center transition-all duration-200 flex-shrink-0 mt-0.5 hover:shadow-lg hover:shadow-white/30 hover:border-white/60"
+                                                    style={{
+                                                        background: "transparent",
+                                                        borderColor: "rgba(255,255,255,0.4)",
+                                                    }}
+                                                >
+                                                </button>
                                                 
-                                                {/* Staff Sharing Status */}
-                                                {(idea.shared_with?.length || 0) > 0 && (
+                                                {/* Content Container */}
+                                                <div className="flex-1">
+                                                    {/* Header with Title and Metadata Pills */}
+                                                    <div className="flex justify-between items-start mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            {idea.title && (
+                                                                <h4 className="text-sm font-semibold leading-tight line-clamp-1 transition-all duration-300 text-white">
+                                                                    {idea.title}
+                                                                </h4>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            {/* Metadata Pills */}
+                                                            <div className="flex items-center gap-1">
+                                                                <Badge className="bg-white/10 text-white/70 text-[7px] px-2 py-0.5 rounded-full uppercase border-none font-medium tracking-wider backdrop-blur-sm">
+                                                                    {idea.priority || 'medium'}
+                                                                </Badge>
+                                                                <Badge className="bg-white/10 text-white/70 text-[7px] px-2 py-0.5 rounded-full uppercase border-none font-medium tracking-wider backdrop-blur-sm">
+                                                                    Directive
+                                                                </Badge>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                    
+                                                    {/* Content */}
+                                                    <p className="text-xs font-normal leading-relaxed line-clamp-3 transition-all duration-300 text-white/90">
+                                                        {idea.content}
+                                                    </p>
+                                                    
+                                                    {/* Timestamp */}
+                                                    <div className="mt-2 flex justify-end">
+                                                        <span className="text-[7px] text-white/40 font-medium">
+                                                            {(() => {
+                                                                const now = new Date();
+                                                                const created = new Date(idea.created_at);
+                                                                const diffInMinutes = Math.floor((now.getTime() - created.getTime()) / (1000 * 60));
+                                                                
+                                                                if (diffInMinutes < 1) return "just now";
+                                                                if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+                                                                const diffInHours = Math.floor(diffInMinutes / 60);
+                                                                if (diffInHours < 24) return `${diffInHours}h ago`;
+                                                                const diffInDays = Math.floor(diffInHours / 24);
+                                                                return `${diffInDays}d ago`;
+                                                            })()}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                                
+                                                {/* Staff Sharing Status - Only for Active Directives */}
+                                                {!isCompleted && (idea.shared_with?.length || 0) > 0 && (
                                                     <div className="mt-3 space-y-2">
                                                         <div className="flex items-center justify-between text-[8px] font-bold uppercase tracking-widest">
                                                             <span className={`${unacknowledged > 0 ? "text-amber-500" : "text-white/40"}`}>

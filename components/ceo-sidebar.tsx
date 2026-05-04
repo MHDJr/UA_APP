@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Calendar, Mail, ChevronRight, ChevronLeft, TrendingUp, LogOut, Wallet, Brain } from "lucide-react";
+import { LayoutDashboard, Users, Mail, ChevronRight, ChevronLeft, TrendingUp, LogOut, Wallet, Brain } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 import { useBadgeCounts } from "@/hooks/use-badge-counts";
@@ -42,11 +42,6 @@ const navItems: NavItem[] = [
         id: "staff-management",
         label: "Staff Management",
         icon: Users,
-    },
-    {
-        id: "scheduled-meetings",
-        label: "Scheduled Meetings",
-        icon: Calendar,
     },
     {
         id: "inbox",

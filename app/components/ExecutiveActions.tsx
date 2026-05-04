@@ -13,7 +13,6 @@ import {
     MessageSquare,
     Shield,
     Cpu,
-    Calendar,
     PhoneCall,
     ClipboardList,
 } from "lucide-react";
@@ -64,12 +63,6 @@ export default function ExecutiveActions({
     // Quick Actions State
     const [selectedAction, setSelectedAction] = useState<string | null>(null);
 
-    // Meeting Dialog State
-    const [meetingOpen, setMeetingOpen] = useState(false);
-    const [meetingTitle, setMeetingTitle] = useState("");
-    const [meetingAgenda, setMeetingAgenda] = useState("");
-    const [meetingDate, setMeetingDate] = useState("");
-    const [selectedAttendees, setSelectedAttendees] = useState<string[]>([]);
 
     // Call Staff Dialog State
     const [callStaffOpen, setCallStaffOpen] = useState(false);
@@ -129,57 +122,6 @@ export default function ExecutiveActions({
         }
     }
 
-    async function handleScheduleMeeting(e: React.FormEvent) {
-        e.preventDefault();
-        if (
-            !meetingTitle.trim() ||
-            !meetingDate ||
-            selectedAttendees.length === 0
-        ) {
-            toast.error(
-                "Please fill in meeting title, date, and select at least one staff.",
-            );
-            return;
-        }
-        setLoading(true);
-
-        try {
-            const startTime = new Date(meetingDate);
-            const endTime = new Date(startTime.getTime() + 60 * 60000); // Default 1 hour
-
-            const { error } = await supabase.from("meetings").insert({
-                title: meetingTitle.trim(),
-                description: meetingAgenda.trim(),
-                start_time: startTime.toISOString(),
-                end_time: endTime.toISOString(),
-                scheduled_at: startTime.toISOString(), // Keep for legacy compatibility
-                attendees: selectedAttendees,
-            });
-
-            if (error) throw error;
-
-            // Notify attendees
-            await supabase.from("notifications").insert(
-                selectedAttendees.map((userId) => ({
-                    user_id: userId,
-                    title: "NEW MEETING SCHEDULED",
-                    message: `CEO has scheduled a meeting: ${meetingTitle} at ${new Date(meetingDate).toLocaleString()}`,
-                    type: "announcement",
-                })),
-            );
-
-            setMeetingOpen(false);
-            setMeetingTitle("");
-            setMeetingAgenda("");
-            setMeetingDate("");
-            setSelectedAttendees([]);
-            toast.success("Meeting scheduled successfully");
-        } catch (error: any) {
-            toast.error("Failed to schedule meeting: " + error.message);
-        } finally {
-            setLoading(false);
-        }
-    }
 
     async function handleCallStaff(e: React.FormEvent) {
         e.preventDefault();
@@ -209,12 +151,6 @@ export default function ExecutiveActions({
 
     // Monochromatic, serious command buttons
     const quickActions = [
-        {
-            id: "schedule-meeting",
-            icon: Calendar,
-            label: "Call Strategy Meeting",
-            onClick: () => setMeetingOpen(true),
-        },
         {
             id: "assign-task",
             icon: ClipboardList,
@@ -372,163 +308,6 @@ export default function ExecutiveActions({
                 </DialogContent>
             </Dialog>
 
-            {/* Schedule Meeting Dialog */}
-            <Dialog open={meetingOpen} onOpenChange={setMeetingOpen}>
-                <DialogContent className="bg-exec-charcoal border-white/10 text-white max-w-lg">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg font-semibold uppercase tracking-wider text-white flex items-center gap-2">
-                            <Calendar className="h-4 w-4" /> Schedule Executive
-                            Meeting
-                        </DialogTitle>
-                    </DialogHeader>
-                    <form
-                        onSubmit={handleScheduleMeeting}
-                        className="space-y-4 pt-4"
-                    >
-                        <div className="space-y-2">
-                            <Label className="text-white/70 text-xs uppercase tracking-wide">
-                                Meeting Title
-                            </Label>
-                            <Input
-                                placeholder="e.g. Strategy Sync"
-                                value={meetingTitle}
-                                onChange={(e) =>
-                                    setMeetingTitle(e.target.value)
-                                }
-                                className="bg-exec-black border-white/10"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-white/70 text-xs uppercase tracking-wide">
-                                Agenda
-                            </Label>
-                            <Textarea
-                                placeholder="Describe the meeting goals..."
-                                value={meetingAgenda}
-                                onChange={(e) =>
-                                    setMeetingAgenda(e.target.value)
-                                }
-                                rows={3}
-                                className="bg-exec-black border-white/10 resize-none"
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                                <Label className="text-white/70 text-xs uppercase tracking-wide">
-                                    Scheduled Date & Time
-                                </Label>
-                                <Input
-                                    type="datetime-local"
-                                    value={meetingDate}
-                                    onChange={(e) =>
-                                        setMeetingDate(e.target.value)
-                                    }
-                                    className="bg-exec-black border-white/10"
-                                />
-                            </div>
-                        </div>
-                        <div className="space-y-2">
-                            <Label className="text-white/70 text-xs uppercase tracking-wide">
-                                Select Attendees
-                            </Label>
-                            <div className="grid grid-cols-2 gap-2 max-h-[180px] overflow-y-auto p-2 bg-exec-black rounded-lg border border-white/5">
-                                {staffList.map((s) => {
-                                    const isSelected =
-                                        selectedAttendees.includes(s.id);
-                                    return (
-                                        <button
-                                            key={s.id}
-                                            type="button"
-                                            onClick={() => {
-                                                if (isSelected) {
-                                                    setSelectedAttendees(
-                                                        selectedAttendees.filter(
-                                                            (id) => id !== s.id,
-                                                        ),
-                                                    );
-                                                } else {
-                                                    setSelectedAttendees([
-                                                        ...selectedAttendees,
-                                                        s.id,
-                                                    ]);
-                                                }
-                                            }}
-                                            className={`flex items-center gap-3 p-2 rounded-lg border transition-all duration-200 ${
-                                                isSelected
-                                                    ? "bg-primary/20 border-primary text-white"
-                                                    : "bg-exec-charcoal-light border-white/10 text-white/60 hover:border-white/30"
-                                            }`}
-                                        >
-                                            <div
-                                                className={`w-5 h-5 rounded-full flex items-center justify-center ${
-                                                    isSelected
-                                                        ? "bg-primary text-black"
-                                                        : "bg-white/10"
-                                                }`}
-                                            >
-                                                {isSelected && (
-                                                    <svg
-                                                        className="w-3 h-3"
-                                                        fill="none"
-                                                        viewBox="0 0 24 24"
-                                                        stroke="currentColor"
-                                                    >
-                                                        <path
-                                                            strokeLinecap="round"
-                                                            strokeLinejoin="round"
-                                                            strokeWidth={3}
-                                                            d="M5 13l4 4L19 7"
-                                                        />
-                                                    </svg>
-                                                )}
-                                            </div>
-                                            <div className="flex-1 text-left min-w-0">
-                                                <div className="text-[11px] font-bold truncate">
-                                                    {s.name}
-                                                </div>
-                                                <div className="text-[8px] text-white/40 truncate">
-                                                    {s.dept}
-                                                </div>
-                                            </div>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                            {selectedAttendees.length > 0 && (
-                                <div className="flex items-center gap-2 text-[10px] text-primary">
-                                    <span>
-                                        {selectedAttendees.length} attendee
-                                        {selectedAttendees.length > 1
-                                            ? "s"
-                                            : ""}{" "}
-                                        selected
-                                    </span>
-                                </div>
-                            )}
-                        </div>
-                        <DialogFooter className="pt-2">
-                            <DialogClose asChild>
-                                <Button
-                                    variant="outline"
-                                    className="border-white/10 hover:bg-white/5"
-                                >
-                                    Cancel
-                                </Button>
-                            </DialogClose>
-                            <Button
-                                type="submit"
-                                disabled={loading}
-                                className="bg-primary hover:bg-primary/90 text-black"
-                            >
-                                {loading && (
-                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                )}
-                                Schedule Meeting
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
 
             {/* Call Staff Dialog */}
             <Dialog open={callStaffOpen} onOpenChange={setCallStaffOpen}>

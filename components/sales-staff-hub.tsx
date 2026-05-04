@@ -117,6 +117,14 @@ export function SalesStaffHub() {
     const [contactedToday, setContactedToday] = useState("");
     const [evaluationsBooked, setEvaluationsBooked] = useState("");
 
+    // Conversion metrics state
+    const [conversionMetrics, setConversionMetrics] = useState({
+        leadsClaimed: 12,
+        leadsContacted: 8,
+        evaluationsBooked: 3,
+        conversionsClosed: 2
+    });
+
     // Deployment form states
     const [studentName, setStudentName] = useState("");
     const [packageSelected, setPackageSelected] = useState("");
@@ -139,8 +147,18 @@ export function SalesStaffHub() {
     }, [shiftTime]);
 
     const handleUpdateMatrix = () => {
+        // Update conversion metrics with form values
+        const updatedMetrics = {
+            ...conversionMetrics,
+            leadsClaimed: parseInt(newLeads) || conversionMetrics.leadsClaimed,
+            leadsContacted: parseInt(contactedToday) || conversionMetrics.leadsContacted,
+            evaluationsBooked: parseInt(evaluationsBooked) || conversionMetrics.evaluationsBooked,
+        };
+        
+        setConversionMetrics(updatedMetrics);
+        
         toast.success("Matrix updated successfully!", {
-            description: `Recorded ${newLeads || 0} new leads, ${contactedToday || 0} contacted, ${evaluationsBooked || 0} evaluations.`,
+            description: `Recorded ${updatedMetrics.leadsClaimed} new leads, ${updatedMetrics.leadsContacted} contacted, ${updatedMetrics.evaluationsBooked} evaluations.`,
         });
         setNewLeads("");
         setContactedToday("");
@@ -164,7 +182,23 @@ export function SalesStaffHub() {
         setAssignedTutor("");
     };
 
-    const progressPercentage = (MOCK_SALES_DATA.contactedToday / MOCK_SALES_DATA.dailyGoal) * 100;
+    // Calculate conversion progress
+    const safeLeadsContacted = Number(conversionMetrics.leadsContacted) || 0;
+    const safeConversionsClosed = Number(conversionMetrics.conversionsClosed) || 0;
+    const conversionRate = safeLeadsContacted > 0 && safeConversionsClosed > 0 
+        ? Math.round((safeConversionsClosed / safeLeadsContacted) * 100)
+        : 25; // Default fallback rate
+    const progressPercentage = safeLeadsContacted > 0 && MOCK_SALES_DATA.dailyGoal > 0 
+        ? Math.round((safeLeadsContacted / MOCK_SALES_DATA.dailyGoal) * 100)
+        : 0;
+
+    // Debug logging
+    console.log('Conversion Metrics Debug:', {
+        leadsContacted: conversionMetrics.leadsContacted,
+        conversionsClosed: conversionMetrics.conversionsClosed,
+        conversionRate,
+        progressPercentage
+    });
     const agentName = profile?.full_name?.split(" ")[0] || "AGENT";
     const isTopPerformer = MOCK_SALES_DATA.rank === 1;
 
@@ -221,7 +255,7 @@ export function SalesStaffHub() {
                             <div className="flex items-center gap-2">
                                 <Trophy className="w-4 h-4" style={{ color: BRAND_COLORS.orange }} />
                                 <span className="text-xl font-bold" style={{ color: BRAND_COLORS.indigo }}>
-                                    {MOCK_SALES_DATA.contactedToday || 0}%
+                                    {conversionRate}%
                                 </span>
                             </div>
                         </div>
@@ -250,7 +284,7 @@ export function SalesStaffHub() {
                             </span>
                         </div>
                         <span className="text-sm font-medium text-gray-500">
-                            {MOCK_SALES_DATA.contactedToday} / {MOCK_SALES_DATA.dailyGoal}
+                            {conversionMetrics.leadsContacted} / {MOCK_SALES_DATA.dailyGoal}
                         </span>
                     </div>
                     <div className="relative h-3 bg-gray-100 rounded-full overflow-hidden">
@@ -267,7 +301,7 @@ export function SalesStaffHub() {
                     <div className="flex items-center gap-2 mt-2">
                         <Flame className="w-4 h-4 text-orange-500" />
                         <span className="text-xs text-gray-500">
-                            {MOCK_SALES_DATA.dailyGoal - MOCK_SALES_DATA.contactedToday} more to reach daily goal
+                            {MOCK_SALES_DATA.dailyGoal - conversionMetrics.leadsContacted} more to reach daily goal
                         </span>
                     </div>
                 </div>
@@ -342,17 +376,17 @@ export function SalesStaffHub() {
                         <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-100">
                             <div className="text-center p-3 rounded-xl bg-gray-50">
                                 <Users className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND_COLORS.indigo }} />
-                                <p className="text-lg font-bold text-gray-900">{MOCK_SALES_DATA.contactedToday}</p>
+                                <p className="text-lg font-bold text-gray-900">{conversionMetrics.leadsContacted}</p>
                                 <p className="text-xs text-gray-400">Total Contacted</p>
                             </div>
                             <div className="text-center p-3 rounded-xl bg-gray-50">
                                 <FileText className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND_COLORS.indigo }} />
-                                <p className="text-lg font-bold text-gray-900">8</p>
+                                <p className="text-lg font-bold text-gray-900">{conversionMetrics.evaluationsBooked}</p>
                                 <p className="text-xs text-gray-400">Evals Booked</p>
                             </div>
                             <div className="text-center p-3 rounded-xl bg-gray-50">
                                 <CheckCircle2 className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND_COLORS.orange }} />
-                                <p className="text-lg font-bold text-gray-900">3</p>
+                                <p className="text-lg font-bold text-gray-900">{conversionMetrics.conversionsClosed}</p>
                                 <p className="text-xs text-gray-400">Closed Today</p>
                             </div>
                         </div>
