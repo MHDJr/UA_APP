@@ -320,7 +320,7 @@ export default function AccountsPage() {
     }, [profile]);
 
     return (
-        <div className="min-h-screen bg-[#f9fafb] pb-28">
+        <div className="min-h-screen bg-[#f9fafb] pt-[calc(env(safe-area-inset-top)+4rem)] md:pt-0 pb-28">
             {/* Desktop Header - Hidden on Mobile */}
             <div className="hidden md:block bg-white border-b border-gray-200">
                 <div className="max-w-7xl mx-auto px-6 py-4">

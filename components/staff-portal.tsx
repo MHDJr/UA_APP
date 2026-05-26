@@ -984,7 +984,7 @@ export default function StaffPortal() {
     }
 
     return (
-        <div className="min-h-screen bg-[#F4F7FE] text-slate-800 font-sans selection:bg-orange-100 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8 max-w-[100vw] overflow-x-hidden">
+        <div className="min-h-screen bg-[#F4F7FE] text-slate-800 font-sans selection:bg-orange-100 pt-[calc(env(safe-area-inset-top)+4rem)] md:pt-6 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8 max-w-[100vw] overflow-x-hidden">
             {/* Mobile-Only Header Status Bar - Hidden (MobileBottomNav handles this) */}
             <div className="hidden md:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-40">
                 <div className="flex items-center gap-2">
@@ -1783,7 +1783,7 @@ export default function StaffPortal() {
                                                         <X className="w-4 h-4" />{" "}
                                                         Delete Permanently
                                                     </button>
-                                                    {task.ceo_reviewed && (
+                                                    {(task as any).ceo_reviewed && (
                                                         <div className="px-3 py-2 bg-blue-50 text-blue-600 rounded-2xl text-[9px] font-black uppercase border border-blue-200 flex items-center gap-2">
                                                             <Check className="w-3 h-3" />
                                                             CEO Reviewed

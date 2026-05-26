@@ -49,32 +49,11 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
     };
 
     const getNavItems = (): NavItem[] => {
-        if (userRole === "CEO") {
-            return [
-                { id: "command-center", label: "CEO Hub", icon: LayoutDashboard, href: "/ceo" },
-                { id: "financial-intelligence", label: "Finance", icon: Wallet, href: "/ceo/financial-intelligence" },
-                { id: "sales-intelligence", label: "Sales", icon: TrendingUp, href: "/ceo/sales" },
-                { id: "staff-management", label: "Staff", icon: Users, href: "/ceo" },
-                { id: "inbox", label: "Messages", icon: Mail, href: "/ceo" },
-            ];
-        } else if (userRole === "MANAGER") {
-            return [
-                { id: "dashboard", label: "Manager", icon: LayoutDashboard, href: "/manager" },
-                { id: "team", label: "Team", icon: Users, href: "/manager" }, 
-                { id: "sales", label: "Sales", icon: TrendingUp, href: "/manager/sales" },
-                { id: "messages", label: "Inbox", icon: Mail, href: "/manager" },
-                { id: "profile", label: "Me", icon: User },
-            ];
-        } else {
-            // Default STAFF
-            return [
-                { id: "home", label: "Home", icon: Home, href: "/staff" },
-                { id: "tasks", label: "Tasks", icon: Brain, href: "/staff" },
-                { id: "finance", label: "Finance", icon: Wallet, href: "/accounts" },
-                { id: "messages", label: "Chat", icon: Mail, href: "/staff" },
-                { id: "profile", label: "Me", icon: User },
-            ];
-        }
+        const homeHref = userRole === 'CEO' ? '/ceo' : userRole === 'MANAGER' ? '/manager' : '/staff';
+        return [
+            { id: "home", label: "HOME", icon: Home, href: homeHref },
+            { id: "accounts", label: "ACCOUNTS", icon: Wallet, href: "/accounts" },
+        ];
     };
 
     const navItems = getNavItems();
@@ -108,8 +87,8 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
     return (
         <>
             {/* Mobile Header - Sticky */}
-            <header className="fixed top-0 left-0 right-0 z-50 md:hidden">
-                <div className="backdrop-blur-xl bg-white/95 border-b border-gray-200/50 px-4 py-3 shadow-sm">
+            <header className="fixed top-0 left-0 right-0 z-50 md:hidden bg-white/95 backdrop-blur-xl border-b border-gray-200/50 pt-[env(safe-area-inset-top)]">
+                <div className="px-4 py-3 shadow-sm">
                     <div className="flex items-center justify-between">
                         {/* Logo */}
                         <div className="flex items-center gap-2">
@@ -242,44 +221,26 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
             </AnimatePresence>
 
             {/* Bottom Navigation Bar */}
-            <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
-                <div className="mx-4 backdrop-blur-2xl bg-white/90 border border-white/20 shadow-[0_10px_40px_rgba(0,0,0,0.15)] rounded-[2rem] px-2 py-2">
-                    <div className="flex items-center justify-between">
+            <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/85 backdrop-blur-md border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
+                <div className="flex items-center justify-around px-2 py-2">
                         {navItems.map((item) => {
                             const isActive = activeView === item.id || (item.href && pathname === item.href);
                             const Icon = item.icon;
                             const badgeCount = getBadgeCount(item.id);
-                            const isProfile = item.id === "profile";
 
                             return (
                                 <button
                                     key={item.id}
                                     onClick={() => handleNavClick(item)}
                                     className={cn(
-                                        "flex flex-col items-center justify-center gap-1 flex-1 py-2 rounded-2xl transition-all duration-300 active:scale-90",
+                                        "flex flex-col items-center justify-center gap-1 flex-1 py-2 transition-all duration-300 active:scale-95",
                                         isActive
-                                            ? "bg-[#31267D] text-white shadow-lg shadow-indigo-500/30"
+                                            ? "text-[#312E81] scale-105"
                                             : "text-gray-400 hover:text-gray-600"
                                     )}
                                     style={{ touchAction: "manipulation" }}
                                 >
                                     <div className="relative w-7 h-7 flex items-center justify-center">
-                                        {isProfile ? (
-                                            <div className={cn(
-                                                "w-7 h-7 rounded-full border-2 overflow-hidden transition-all duration-300 flex items-center justify-center shadow-inner",
-                                                isActive ? "border-white" : "border-gray-200"
-                                            )}>
-                                                <Avatar className="w-full h-full border-0">
-                                                    <AvatarImage 
-                                                        src={userRole === 'CEO' ? "/images/ceo.jpeg" : undefined} 
-                                                        className="object-cover"
-                                                    />
-                                                    <AvatarFallback className="text-[10px] font-black bg-gray-100 text-gray-400 flex items-center justify-center">
-                                                        {(profile?.full_name || 'U').split(' ').map(n => n[0]).join('')}
-                                                    </AvatarFallback>
-                                                </Avatar>
-                                            </div>
-                                        ) : (
                                             <Icon
                                                 className={cn(
                                                     "w-5 h-5 transition-transform duration-300",
@@ -287,7 +248,6 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
                                                 )}
                                                 strokeWidth={isActive ? 2.5 : 2}
                                             />
-                                        )}
                                         {/* Badge */}
                                         {badgeCount > 0 && (
                                             <span
@@ -310,7 +270,6 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
                             );
                         })}
                     </div>
-                </div>
             </nav>
 
             {/* Spacer for bottom nav */}

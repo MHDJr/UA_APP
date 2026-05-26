@@ -164,7 +164,7 @@ const ExecutivePerformanceEngine = React.memo(({ tasks, completedTasks }: { task
     
     // 1. Operational Velocity Calculation
     const activeTasksCount = tasks.length;
-    const completedTodayCount = completedTasks.filter(t => isToday(parseISO(t.updated_at))).length;
+    const completedTodayCount = completedTasks.filter(t => t.updated_at && isToday(parseISO(t.updated_at))).length;
     const totalToday = activeTasksCount + completedTodayCount;
     const velocity = totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 84;
 
@@ -370,7 +370,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     // Filter visible ideas (hide completed ideas after 1 hour)
     const visibleIdeas = useMemo(() => {
         const oneHourAgo = new Date(currentTime - 60 * 60 * 1000);
-        return ideas.filter(idea => {
+        return ideas.filter((idea: any) => {
             if (!idea.completed) return true;
             const completedAt = idea.completed_at ? new Date(idea.completed_at) : new Date(idea.updated_at);
             return completedAt > oneHourAgo;
@@ -1009,7 +1009,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         }
 
         // Combine date and time for due_date
-        let dueDateTime = null;
+        let dueDateTime: string | null = null;
         if (newTask.due_date) {
             if (newTask.due_time) {
                 dueDateTime = new Date(`${newTask.due_date}T${newTask.due_time}`).toISOString();
@@ -1150,7 +1150,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             }
 
             toast.success("OPERATIVE TERMINATED & DATA PURGED");
-            setStaff((prev) => prev.filter((s) => s.id !== staffToRemove.id));
+            queryClient.invalidateQueries({ queryKey: ["staff"] });
             setIsRemoveStaffModalOpen(false);
             setStaffToRemove(null);
             setConfirmName("");
@@ -1187,7 +1187,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         }
         
         // First, remove task from local state immediately for better UX
-        setTasks(prev => prev.filter(task => task.id !== id));
+        queryClient.invalidateQueries({ queryKey: ["tasks"] });
         
         try {
             // First, let's check if the task actually exists before trying to delete it
@@ -1428,7 +1428,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             }
             
             // Also remove from local completed tasks immediately for better UX
-            setCompletedTasks(prev => prev.filter(task => task.id !== id));
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
             
             fetchData(); // Refresh the data to update the UI
         } catch (error) {
@@ -1478,7 +1478,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             }
             
             // Clear local state immediately for better UX
-            setCompletedTasks([]);
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
             
             toast.success("All completed tasks marked as reviewed and removed from CEO view");
             fetchData();
@@ -1647,12 +1647,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 const tasksToInsert = newMeeting.preMeetingTasks
                     .filter(
                         (t) =>
-                            t.title && t.assignedTo && t.assignedTo !== "CEO",
+                            t.title && t.assigned_to && t.assigned_to !== "CEO",
                     )
                     .map((t) => ({
                         title: `[PRE-MEETING] ${t.title}`,
                         description: `Preparatory task for summit: ${newMeeting.title}`,
-                        assigned_to: t.assignedTo,
+                        assigned_to: t.assigned_to,
                         priority:
                             newMeeting.priority === "critical"
                                 ? "urgent"
@@ -4345,7 +4345,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                             {
                                                                 id: Date.now().toString(),
                                                                 title: "",
-                                                                assignedTo: "",
+                                                                assigned_to: "",
                                                                 deadline: "",
                                                             },
                                                         ],
@@ -4440,7 +4440,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                                     </Label>
                                                                     <Select
                                                                         value={
-                                                                            task.assignedTo
+                                                                            task.assigned_to
                                                                         }
                                                                         onValueChange={(
                                                                             val,
@@ -4451,7 +4451,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                                                 ];
                                                                             newTasks[
                                                                                 index
-                                                                            ].assignedTo =
+                                                                            ].assigned_to =
                                                                                 val;
                                                                             setNewMeeting(
                                                                                 {
