@@ -30,6 +30,8 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { createClient } from "@supabase/supabase-js";
+import { useAuth } from "@/lib/auth-context";
+import { useQueryClient } from "@tanstack/react-query";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -75,6 +77,8 @@ export default function AddStaffDialog({
     open,
     onOpenChange,
 }: AddStaffDialogProps) {
+    const { userRole, user } = useAuth();
+    const queryClient = useQueryClient();
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
     const [formData, setFormData] = useState({
@@ -84,8 +88,7 @@ export default function AddStaffDialog({
         designation: "",
         password: "",
         role: "staff",
-        requireReset: true,
-        hasManagerAccess: false,
+        systemRole: "staff", // New field for system role (manager/staff)
     });
 
     const patch = (key: string, value: string | boolean) =>
@@ -117,7 +120,41 @@ export default function AddStaffDialog({
                 }
             }
 
-            console.log("Creating new user:", { email, username, fullName });
+            if (userRole === "MANAGER") {
+                // Create a request for the CEO
+                const { error: requestError } = await supabase.from("requests").insert({
+                    type: "add_staff",
+                    submitted_by: user?.id,
+                    title: `Staff Addition: ${fullName}`,
+                    description: `Request to add new staff member ${fullName} (@${username}) as ${designation} in ${formData.role} department.`,
+                    priority: "normal",
+                    status: "pending",
+                    metadata: {
+                        ...formData,
+                        department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
+                    }
+                });
+
+                if (requestError) throw requestError;
+
+                // Invalidate requests query to show the new request in the list
+                queryClient.invalidateQueries({ queryKey: ["requests"] });
+
+                toast.success("Request sent to CEO for final deployment authorization.");
+                onOpenChange(false);
+                setFormData({
+                    fullName: "",
+                    email: "",
+                    username: "",
+                    designation: "",
+                    password: "",
+                    role: "staff",
+                    systemRole: "staff",
+                });
+                return;
+            }
+
+            console.log("Creating new user (Direct CEO Action):", { email, username, fullName });
             
             // Create the user in Supabase Auth
             const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -150,8 +187,8 @@ export default function AddStaffDialog({
                 full_name: fullName,
                 username: username,
                 designation: designation,
-                role: formData.role,
-                is_manager: formData.hasManagerAccess,
+                role: formData.systemRole === "manager" ? "manager" : formData.systemRole,
+                is_manager: formData.systemRole === "manager",
                 department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
                 status: "offline",
             }).select();
@@ -174,6 +211,10 @@ export default function AddStaffDialog({
             toast.success(
                 `Personnel @${username} successfully provisioned.`,
             );
+            
+            // Invalidate staff query
+            queryClient.invalidateQueries({ queryKey: ["staff"] });
+            
             onOpenChange(false);
             setFormData({
                 fullName: "",
@@ -182,8 +223,7 @@ export default function AddStaffDialog({
                 designation: "",
                 password: "",
                 role: "staff",
-                requireReset: true,
-                hasManagerAccess: false,
+                systemRole: "staff",
             });
             
             // Trigger a refresh of the staff list in the parent component
@@ -308,7 +348,7 @@ export default function AddStaffDialog({
 
                         {/* ── System Role ── */}
                         <div className="mb-6">
-                            <FieldLabel text="System Role" />
+                            <FieldLabel text="Department" />
                             <div className="grid grid-cols-2 gap-3 mt-2">
                                 {ROLES.map(({ value, label, desc, Icon }) => {
                                     const active = formData.role === value;
@@ -316,9 +356,11 @@ export default function AddStaffDialog({
                                         <button
                                             key={value}
                                             type="button"
-                                            onClick={() =>
-                                                patch("role", value)
-                                            }
+                                            onClick={() => {
+                                                patch("role", value);
+                                                // Reset systemRole when department changes
+                                                patch("systemRole", "staff");
+                                            }}
                                             className="relative rounded-xl p-3.5 text-left transition-all duration-300 focus:outline-none"
                                             style={{
                                                 border: active
@@ -381,69 +423,79 @@ export default function AddStaffDialog({
                             </div>
                         </div>
 
-                        {/* ── Manager Access ── */}
+                        {/* ── System Role (Manager/Staff) ── */}
                         <div className="mb-6">
-                            <FieldLabel text="Additional Access" Icon={ShieldCheck} />
-                            <div
-                                className="flex items-center gap-3 mt-2 p-3.5 rounded-xl cursor-pointer select-none transition-all duration-200"
-                                style={{
-                                    border: formData.hasManagerAccess
-                                        ? `1px solid rgba(45,42,119,0.25)`
-                                        : "1px solid #E5E7EB",
-                                    background: formData.hasManagerAccess
-                                        ? `rgba(45,42,119,0.04)`
-                                        : "rgba(249,250,251,0.8)",
-                                }}
-                                onClick={() =>
-                                    patch("hasManagerAccess", !formData.hasManagerAccess)
-                                }
-                            >
-                                {/* Custom styled checkbox */}
-                                <div
-                                    className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200"
-                                    style={{
-                                        border: formData.hasManagerAccess
-                                            ? "none"
-                                            : `2px solid #D1D5DB`,
-                                        background: formData.hasManagerAccess
-                                            ? `linear-gradient(135deg, ${ORANGE}, ${VIOLET})`
-                                            : "white",
-                                        boxShadow: formData.hasManagerAccess
-                                            ? `0 2px 8px rgba(45,42,119,0.3)`
-                                            : "none",
-                                    }}
-                                >
-                                    {formData.hasManagerAccess && (
-                                        <svg
-                                            className="w-3 h-3 text-white"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth={3}
+                            <FieldLabel text="System Role" Icon={ShieldCheck} />
+                            <div className="grid grid-cols-2 gap-3 mt-2">
+                                {[
+                                    { value: "staff", label: "Staff", desc: "Standard access" },
+                                    { value: "manager", label: "Manager", desc: "Manager access" },
+                                ].map(({ value, label, desc }) => {
+                                    const active = formData.systemRole === value;
+                                    return (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => patch("systemRole", value)}
+                                            className="relative rounded-xl p-3.5 text-left transition-all duration-300 focus:outline-none"
+                                            style={{
+                                                border: active
+                                                    ? `2px solid ${ORANGE}`
+                                                    : "2px solid #E5E7EB",
+                                                background: active
+                                                    ? `linear-gradient(135deg, rgba(241,90,36,0.07), rgba(241,90,36,0.04))`
+                                                    : "rgba(249,250,251,0.8)",
+                                                boxShadow: active
+                                                    ? `0 0 0 4px rgba(241,90,36,0.08), 0 4px 12px rgba(241,90,36,0.12)`
+                                                    : "none",
+                                                transform: active
+                                                    ? "translateY(-1px)"
+                                                    : "translateY(0)",
+                                            }}
                                         >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M5 13l4 4L19 7"
-                                            />
-                                        </svg>
-                                    )}
-                                </div>
-                                <div className="flex-1">
-                                    <span
-                                        className="text-[12px] font-semibold tracking-wide"
-                                        style={{
-                                            color: formData.hasManagerAccess
-                                                ? VIOLET
-                                                : "#6B7280",
-                                        }}
-                                    >
-                                        Grant Manager Access
-                                    </span>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">
-                                        Allows staff to access management portal and team operations
-                                    </p>
-                                </div>
+                                            {/* Active dot */}
+                                            {active && (
+                                                <span
+                                                    className="absolute top-2.5 right-2.5 w-2 h-2 rounded-full"
+                                                    style={{
+                                                        background: ORANGE,
+                                                        boxShadow: `0 0 6px ${ORANGE}`,
+                                                    }}
+                                                />
+                                            )}
+                                            <div
+                                                className="w-8 h-8 rounded-lg mb-2 flex items-center justify-center"
+                                                style={{
+                                                    background: active
+                                                        ? `linear-gradient(135deg, ${ORANGE}22, ${ORANGE}11)`
+                                                        : "#F3F4F6",
+                                                }}
+                                            >
+                                                <ShieldCheck
+                                                    className="w-4 h-4"
+                                                    style={{
+                                                        color: active
+                                                            ? ORANGE
+                                                            : "#9CA3AF",
+                                                    }}
+                                                />
+                                            </div>
+                                            <p
+                                                className="text-[12px] font-bold uppercase tracking-wider"
+                                                style={{
+                                                    color: active
+                                                        ? ORANGE
+                                                        : "#374151",
+                                                }}
+                                            >
+                                                {label}
+                                            </p>
+                                            <p className="text-[10px] text-gray-400 mt-0.5">
+                                                {desc}
+                                            </p>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -490,70 +542,11 @@ export default function AddStaffDialog({
                                     ) : (
                                         <Eye className="w-4 h-4" />
                                     )}
-                                </button>
-                            </div>
+                                    </button>
+                                    </div>
+                                    </div>
 
-                            {/* Custom checkbox */}
-                            <div
-                                className="flex items-center gap-3 mt-4 p-3.5 rounded-xl cursor-pointer select-none transition-all duration-200"
-                                style={{
-                                    border: formData.requireReset
-                                        ? `1px solid rgba(45,42,119,0.25)`
-                                        : "1px solid #E5E7EB",
-                                    background: formData.requireReset
-                                        ? `rgba(45,42,119,0.04)`
-                                        : "rgba(249,250,251,0.8)",
-                                }}
-                                onClick={() =>
-                                    patch("requireReset", !formData.requireReset)
-                                }
-                            >
-                                {/* Custom styled checkbox */}
-                                <div
-                                    className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0 transition-all duration-200"
-                                    style={{
-                                        border: formData.requireReset
-                                            ? "none"
-                                            : `2px solid #D1D5DB`,
-                                        background: formData.requireReset
-                                            ? `linear-gradient(135deg, ${ORANGE}, ${VIOLET})`
-                                            : "white",
-                                        boxShadow: formData.requireReset
-                                            ? `0 2px 8px rgba(45,42,119,0.3)`
-                                            : "none",
-                                    }}
-                                >
-                                    {formData.requireReset && (
-                                        <svg
-                                            className="w-3 h-3 text-white"
-                                            fill="none"
-                                            viewBox="0 0 24 24"
-                                            stroke="currentColor"
-                                            strokeWidth={3}
-                                        >
-                                            <path
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                                d="M5 13l4 4L19 7"
-                                            />
-                                        </svg>
-                                    )}
-                                </div>
-                                <span
-                                    className="text-[12px] font-semibold tracking-wide"
-                                    style={{
-                                        color: formData.requireReset
-                                            ? VIOLET
-                                            : "#6B7280",
-                                    }}
-                                >
-                                    Require password reset on first login
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* ── Action Buttons ── */}
-                        <div
+                                    {/* ── Action Buttons ── */}                        <div
                             className="flex items-center justify-between pt-5"
                             style={{
                                 borderTop: "1px solid rgba(229,231,235,0.8)",

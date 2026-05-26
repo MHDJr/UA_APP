@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Plus, X, UserPlus, Lightbulb, FileText, Target } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/lib/auth-context";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -28,18 +29,19 @@ interface MobileFABProps {
 
 export function MobileFAB({ actions, onMainClick, variant = "default" }: MobileFABProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const { userRole } = useAuth();
 
     const defaultActions: FABAction[] = [
         {
-            id: "new-idea",
-            label: "New Idea",
-            icon: Lightbulb,
+            id: "assign-task",
+            label: "Assign Task",
+            icon: Target,
             onClick: () => {
-                window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "new-idea" } }));
+                window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "new-directive" } }));
             },
-            color: "#FBBF24",
+            color: BRAND_COLORS.indigo,
         },
-        {
+        ...(userRole === 'CEO' ? [{
             id: "add-staff",
             label: "Add Staff",
             icon: UserPlus,
@@ -47,16 +49,7 @@ export function MobileFAB({ actions, onMainClick, variant = "default" }: MobileF
                 window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "add-staff" } }));
             },
             color: "#10B981",
-        },
-        {
-            id: "new-directive",
-            label: "New Directive",
-            icon: Target,
-            onClick: () => {
-                window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "new-directive" } }));
-            },
-            color: BRAND_COLORS.orange,
-        },
+        }] : []),
     ];
 
     const currentActions = actions || defaultActions;
@@ -86,7 +79,7 @@ export function MobileFAB({ actions, onMainClick, variant = "default" }: MobileF
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
                             transition={{ duration: 0.2 }}
-                            className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-40 md:hidden"
+                            className="fixed inset-0 bg-black/20 backdrop-blur-[2px] z-40"
                             onClick={() => setIsOpen(false)}
                         />
 

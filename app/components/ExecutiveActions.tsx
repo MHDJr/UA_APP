@@ -92,6 +92,25 @@ export default function ExecutiveActions({
 
             if (error) throw error;
 
+            // If this is a directive, also insert into ceo_directives table with assigned_to = 'MANAGER'
+            if (broadcastType === "directive") {
+                const { error: directiveError } = await supabase.from("ceo_directives").insert({
+                    title: "EXECUTIVE DIRECTIVE",
+                    message: broadcastMessage.trim(),
+                    priority: "high",
+                    assigned_to: "MANAGER",
+                    target_all_staff: false,
+                    is_active: true,
+                });
+
+                if (directiveError) {
+                    console.error("Failed to create directive:", directiveError);
+                    toast.error("Broadcast sent but directive creation failed");
+                } else {
+                    toast.success("Directive assigned to MANAGER");
+                }
+            }
+
             // Call the broadcast API if it exists
             try {
                 await fetch("/api/admin/broadcast-push", {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { LayoutDashboard, Users, Mail, ChevronRight, ChevronLeft, TrendingUp, LogOut, Wallet, Brain } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 import { useBadgeCounts } from "@/hooks/use-badge-counts";
 import { supabase } from "@/lib/supabase";
 import { SystemSyncButton } from "./system-sync-button";
+import { useAuth } from "@/lib/auth-context";
+import { motion, AnimatePresence } from "framer-motion";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -22,50 +24,62 @@ type NavItem = {
     badge?: number;
 };
 
-const navItems: NavItem[] = [
+const topNavItems: NavItem[] = [
     {
         id: "command-center",
-        label: "Command Center",
+        label: "Dashboard",
         icon: LayoutDashboard,
     },
     {
         id: "financial-intelligence",
-        label: "Financial Intelligence",
+        label: "Financial Intel",
         icon: Wallet,
     },
     {
         id: "sales-intelligence",
-        label: "Sales Intelligence",
+        label: "Sales Intel",
         icon: TrendingUp,
     },
+];
+
+const middleNavItems: NavItem[] = [
     {
         id: "staff-management",
-        label: "Staff Management",
+        label: "Staff Portal",
         icon: Users,
     },
     {
         id: "inbox",
-        label: "Inbox",
+        label: "Executive Inbox",
         icon: Mail,
     },
 ];
 
 interface CEOSidebarProps {
     activeView: string;
-    onViewChange: (view: string) => void;
     onMinimizedChange?: (isMinimized: boolean) => void;
+    onViewChange?: (view: string) => void;
 }
 
-export function CEOSidebar({ activeView, onViewChange, onMinimizedChange }: CEOSidebarProps) {
+export function CEOSidebar({ activeView, onMinimizedChange, onViewChange }: CEOSidebarProps) {
     const [isMinimized, setIsMinimized] = useState(true);
     const [hoveredItem, setHoveredItem] = useState<string | null>(null);
     const { badgeCounts } = useBadgeCounts();
+    const { userRole, profile } = useAuth();
     const router = useRouter();
 
     const handleToggleMinimized = () => {
         const newState = !isMinimized;
         setIsMinimized(newState);
         onMinimizedChange?.(newState);
+    };
+
+    const handleNavigate = (id: string) => {
+        onViewChange?.(id);
+        if (id === "command-center") router.push("/ceo");
+        else if (id === "financial-intelligence") router.push("/ceo/financial-intelligence");
+        else if (id === "sales-intelligence") router.push("/ceo/sales");
+        else router.push(`/ceo?view=${id}`);
     };
 
     const handleLogout = async () => {
@@ -77,209 +91,204 @@ export function CEOSidebar({ activeView, onViewChange, onMinimizedChange }: CEOS
         }
     };
 
+    const renderNavItem = (item: NavItem) => {
+        const isActive = activeView === item.id;
+        const isHovered = hoveredItem === item.id;
+        const Icon = item.icon;
+
+        const badgeCount = (item.id === "staff-management") ? badgeCounts.pendingRequests : 
+                           (item.id === "inbox") ? badgeCounts.victories : 0;
+
+        return (
+            <li key={item.id}>
+                <button
+                    onClick={() => handleNavigate(item.id)}
+                    onMouseEnter={() => setHoveredItem(item.id)}
+                    onMouseLeave={() => setHoveredItem(null)}
+                    className={cn(
+                        "w-full flex items-center gap-3 transition-all duration-500 group relative",
+                        isMinimized ? "justify-center px-0 py-4" : "px-4 py-4 rounded-2xl",
+                        isActive 
+                            ? "bg-gradient-to-r from-[#31267D]/15 to-transparent text-[#31267D]" 
+                            : isHovered 
+                                ? "bg-[#31267D]/5 text-[#31267D]" 
+                                : "text-[var(--theme-text-40)] hover:text-[#31267D]"
+                    )}
+                    title={isMinimized ? item.label : undefined}
+                >
+                    <div className="relative flex items-center justify-center">
+                        {/* Cinematic Radial Backglow */}
+                        {isActive && (
+                            <motion.div 
+                                layoutId="backglow"
+                                className="absolute inset-[-12px] rounded-full opacity-100 z-0"
+                                style={{
+                                    background: 'radial-gradient(circle, rgba(49, 38, 125, 0.12) 0%, transparent 70%)',
+                                    filter: 'blur(4px)'
+                                }}
+                            />
+                        )}
+                        
+                        <Icon
+                            className={cn(
+                                "w-5 h-5 transition-all duration-500 relative z-10",
+                                isActive ? "text-[#31267D] scale-110" : "text-[var(--theme-text-30)] group-hover:text-[#31267D] group-hover:scale-110"
+                            )}
+                            strokeWidth={isActive ? 2.5 : 2}
+                        />
+
+                        {/* Micro Activity Dot */}
+                        {badgeCount > 0 && isMinimized && (
+                            <span className="absolute -top-1 -right-1 flex h-2 w-2 z-20">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500 border border-white"></span>
+                            </span>
+                        )}
+                    </div>
+
+                    {!isMinimized && (
+                        <span
+                            className={cn(
+                                "text-[11px] font-black uppercase tracking-[0.15em] flex-1 text-left transition-all duration-500",
+                                isActive ? "text-[#31267D] translate-x-1" : "text-[var(--theme-text-40)] group-hover:text-[#31267D] group-hover:translate-x-1"
+                            )}
+                        >
+                            {item.label}
+                        </span>
+                    )}
+
+                    {badgeCount > 0 && !isMinimized && (
+                        <span
+                            className="flex items-center justify-center px-1.5 py-0.5 rounded-full text-[9px] font-black bg-orange-500 text-white shadow-lg shadow-orange-500/20 animate-subtle-slide-up"
+                        >
+                            {badgeCount > 99 ? "99+" : badgeCount}
+                        </span>
+                    )}
+                </button>
+            </li>
+        );
+    };
+
     return (
         <aside
             className={cn(
                 "fixed left-0 top-0 h-screen flex flex-col z-50",
-                "backdrop-blur-[12px] bg-white/80",
-                "border-r border-black/[0.05]",
-                "transition-all duration-300 ease-out"
+                "sidebar-theme-transition",
+                "transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)]"
             )}
-            style={{ width: isMinimized ? 80 : 260 }}
+            style={{ 
+                width: isMinimized ? 80 : 260,
+            }}
         >
-            {/* Header & Branding */}
+            {/* Cinematic Glass Container - Borderless look with faint transparent white border */}
             <div className={cn(
-                "px-5 pt-6 pb-4",
-                isMinimized && "px-3"
-            )}>
-                {/* Logo Section */}
+                "absolute inset-y-4 left-4 right-0 rounded-l-[2.5rem] border-y border-l",
+                "border-white/50 dark:border-white/10",
+                "bg-white/40 dark:bg-black/10 backdrop-blur-2xl shadow-[40px_0_100px_rgba(0,0,0,0.05)]"
+            )} />
+
+            <div className="relative h-full flex flex-col py-10 overflow-hidden">
+                {/* Branding Section */}
                 <div className={cn(
-                    "flex items-center gap-3",
-                    isMinimized && "justify-center"
+                    "pl-12 pr-8 mt-8 mb-12 transition-all duration-500",
+                    isMinimized && "px-4 flex justify-center mt-6"
                 )}>
-                    <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ backgroundColor: BRAND_COLORS.indigo }}
-                    >
-                        <span className="text-white font-black text-sm tracking-wider">UA</span>
+                    <div className="relative group cursor-pointer">
+                        <div
+                            className="w-10 h-10 rounded-[1.25rem] flex items-center justify-center bg-white shadow-[0_10px_30px_rgba(49,38,125,0.15)] group-hover:shadow-[0_15px_40px_rgba(49,38,125,0.25)] transition-all duration-500 border border-indigo-50/50 overflow-hidden ring-4 ring-indigo-500/5"
+                        >
+                            <img 
+                                src="/images/usthadacademylogo2.svg" 
+                                alt="UA Logo" 
+                                className="w-7 h-7 object-contain drop-shadow-[0_2px_4px_rgba(49,38,125,0.1)]"
+                            />
+                        </div>
+                        {!isMinimized && (
+                            <div className="absolute left-14 top-1/2 -translate-y-1/2 whitespace-nowrap">
+                                <h1 className="text-sm font-black uppercase tracking-[0.25em] text-[#31267D]">AcademyOS</h1>
+                                <p className="text-[7px] font-black uppercase tracking-[0.3em] text-[var(--theme-text-20)] mt-0.5">Strategic Command</p>
+                            </div>
+                        )}
                     </div>
-                    {!isMinimized && (
-                        <div className="flex flex-col">
-                            <span
-                                className="font-bold text-lg leading-tight tracking-tight"
-                                style={{ color: BRAND_COLORS.indigo }}
-                            >
-                                AcademyOS
-                            </span>
-                            <span className="text-xs text-gray-400 font-medium">
-                                Management Platform
-                            </span>
+                </div>
+
+                {/* Primary Navigation - Top Group */}
+                <nav className="flex-1 px-8 space-y-2 overflow-y-auto custom-scrollbar">
+                    <ul className="space-y-1">
+                        {topNavItems.map(renderNavItem)}
+                    </ul>
+
+                    {/* Subtle Divider - Minimal Spacing */}
+                    <div className="py-2">
+                        <div className="h-px w-full bg-gradient-to-r from-transparent via-[#31267D]/10 to-transparent mx-auto opacity-50" />
+                    </div>
+
+                    {/* Secondary Navigation - Middle Group */}
+                    <ul className="space-y-1">
+                        {middleNavItems.map(renderNavItem)}
+                    </ul>
+                </nav>
+
+                {/* Anchored Bottom Controls */}
+                <div className="px-8 mt-auto pt-8 space-y-6">
+                    <button
+                        onClick={handleToggleMinimized}
+                        className={cn(
+                            "w-full flex items-center transition-all duration-500 group",
+                            isMinimized ? "justify-center" : "gap-3 px-4 py-3 rounded-2xl hover:bg-[#31267D]/5"
+                        )}
+                    >
+                        <div className="w-8 h-8 rounded-full bg-[#31267D]/5 flex items-center justify-center group-hover:bg-[#31267D]/10 group-hover:scale-110 transition-all duration-500">
+                            {isMinimized ? (
+                                <ChevronRight className="w-4 h-4 text-[#31267D]" />
+                            ) : (
+                                <ChevronLeft className="w-4 h-4 text-[#31267D]" />
+                            )}
+                        </div>
+                        {!isMinimized && (
+                            <span className="text-[9px] font-black uppercase tracking-[0.2em] text-[var(--theme-text-30)] group-hover:text-[#31267D] transition-colors">Minimize Console</span>
+                        )}
+                    </button>
+
+                    {userRole === 'CEO' && (
+                        <div className={cn("px-1", isMinimized && "flex justify-center")}>
+                            <SystemSyncButton variant={isMinimized ? "icon" : "full"} />
                         </div>
                     )}
-                </div>
-            </div>
 
-            {/* Navigation */}
-            <nav className="flex-1 px-3 py-6">
-                <ul className="space-y-2">
-                    {navItems.map((item) => {
-                        const isActive = activeView === item.id;
-                        const isHovered = hoveredItem === item.id;
-                        const Icon = item.icon;
-
-                        // Get dynamic badge count based on item ID
-                        const getBadgeCount = () => {
-                            switch (item.id) {
-                                case "staff-management":
-                                    return badgeCounts.pendingRequests;
-                                case "inbox":
-                                    return badgeCounts.victories;
-                                default:
-                                    return 0;
-                            }
-                        };
-
-                        const badgeCount = getBadgeCount();
-
-                        return (
-                            <li key={item.id}>
-                                <button
-                                    onClick={() => onViewChange(item.id)}
-                                    onMouseEnter={() => setHoveredItem(item.id)}
-                                    onMouseLeave={() => setHoveredItem(null)}
-                                    className={cn(
-                                        "w-full flex items-center gap-3 rounded-xl transition-all duration-200 group relative",
-                                        isMinimized ? "justify-center px-3 py-3.5" : "px-4 py-4",
-                                        isActive
-                                            ? "text-white"
-                                            : isHovered
-                                                ? "bg-[#31267D]/5"
-                                                : "text-gray-500 hover:text-gray-700"
-                                    )}
-                                    style={{
-                                        backgroundColor: isActive ? BRAND_COLORS.indigo : undefined,
-                                    }}
-                                    title={isMinimized ? item.label : undefined}
-                                >
-                                    <Icon
-                                        className="w-5 h-5 flex-shrink-0"
-                                        strokeWidth={2}
-                                        style={{
-                                            color: isActive ? "white" : isHovered ? BRAND_COLORS.indigo : undefined,
-                                        }}
-                                    />
-                                    {!isMinimized && (
-                                        <span
-                                            className="text-sm font-medium flex-1 text-left"
-                                            style={{ color: isActive ? "white" : undefined }}
-                                        >
-                                            {item.label}
-                                        </span>
-                                    )}
-                                    {/* Badge */}
-                                    {badgeCount > 0 && (
-                                        <span
-                                            className={cn(
-                                                "flex items-center justify-center rounded-full text-[10px] font-bold text-white flex-shrink-0",
-                                                isMinimized ? "absolute -top-1 -right-1 w-4 h-4" : "w-5 h-5"
-                                            )}
-                                            style={{ backgroundColor: BRAND_COLORS.orange }}
-                                        >
-                                            {!isMinimized && badgeCount > 99 ? "99+" : badgeCount}
-                                        </span>
-                                    )}
-                                </button>
-                            </li>
-                        );
-                    })}
-                </ul>
-            </nav>
-
-            {/* Minimize Toggle Button & System Sync */}
-            <div className="px-3 pb-2 space-y-2">
-                <div className={cn(
-                    "flex items-center gap-2",
-                    isMinimized && "justify-center"
-                )}>
-                    <SystemSyncButton 
-                        variant={isMinimized ? "icon" : "full"}
-                        className={cn(
-                            "flex-shrink-0",
-                            !isMinimized && "flex-1"
-                        )}
-                    />
-                </div>
-                <button
-                    onClick={handleToggleMinimized}
-                    className="w-full flex items-center justify-center py-2 rounded-lg text-gray-300 hover:text-gray-500 hover:bg-black/[0.03] transition-all duration-200"
-                >
-                    {isMinimized ? (
-                        <ChevronRight className="w-4 h-4" />
-                    ) : (
-                        <ChevronLeft className="w-4 h-4" />
-                    )}
-                </button>
-            </div>
-
-            {/* Footer Profile Section */}
-            <div className="p-4 border-t border-black/[0.05] space-y-2">
-                <button
-                    className={cn(
-                        "w-full flex items-center rounded-xl hover:bg-red-50 transition-all duration-200 group",
-                        isMinimized ? "justify-center p-2" : "gap-3 p-3"
-                    )}
-                    onClick={handleLogout}
-                    title={isMinimized ? "Logout" : undefined}
-                >
-                    <LogOut 
-                        className="w-5 h-5 flex-shrink-0 text-red-600"
-                        strokeWidth={2}
-                    />
-                    {!isMinimized && (
-                        <>
-                            <div className="flex-1 text-left">
-                                <p className="text-sm font-medium text-red-600">
-                                    Logout
-                                </p>
-                            </div>
-                        </>
-                    )}
-                </button>
-                
-                <button
-                    className={cn(
-                        "w-full flex items-center rounded-xl hover:bg-[#31267D]/5 transition-all duration-200 group",
-                        isMinimized ? "justify-center p-2" : "gap-3 p-3"
-                    )}
-                    title={isMinimized ? "SALIM PA - CEO" : undefined}
-                >
-                    <Avatar className="w-10 h-10 border-2 border-white shadow-sm flex-shrink-0">
-                        <AvatarImage
-                            src="/images/ceo.jpeg"
-                            alt="SALIM PA"
-                        />
-                        <AvatarFallback
-                            className="text-white text-sm font-bold"
-                            style={{ backgroundColor: BRAND_COLORS.indigo }}
+                    <div className="space-y-2">
+                        <button
+                            onClick={handleLogout}
+                            className={cn(
+                                "w-full flex items-center transition-all duration-500 group",
+                                isMinimized ? "justify-center py-3" : "gap-3 px-4 py-3 rounded-2xl hover:bg-red-50"
+                            )}
                         >
-                            SP
-                        </AvatarFallback>
-                    </Avatar>
-                    {!isMinimized && (
-                        <>
-                            <div className="flex-1 text-left">
-                                <p
-                                    className="text-sm font-bold"
-                                    style={{ color: BRAND_COLORS.indigo }}
-                                >
-                                    SALIM PA
-                                </p>
-                                <p className="text-xs text-gray-400">CEO</p>
-                            </div>
-                            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors" />
-                        </>
-                    )}
-                </button>
+                            <LogOut className="w-5 h-5 text-red-400 group-hover:text-red-600 transition-all duration-500" strokeWidth={2} />
+                            {!isMinimized && (
+                                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-red-400 group-hover:text-red-600">Terminate</span>
+                            )}
+                        </button>
+
+                        <div className={cn(
+                            "flex items-center transition-all duration-700",
+                            isMinimized ? "justify-center py-4" : "gap-3 p-2 bg-[#31267D]/[0.03] rounded-[1.75rem] border border-[#31267D]/5"
+                        )}>
+                            <Avatar className="w-10 h-10 border-2 border-white shadow-xl flex-shrink-0 transition-transform duration-500 hover:scale-105">
+                                <AvatarImage src={userRole === 'CEO' ? "/images/ceo.jpeg" : undefined} />
+                                <AvatarFallback className="bg-[#31267D] text-white font-black text-xs">
+                                    {(profile?.full_name || 'U').split(' ').map(n => n[0]).join('')}
+                                </AvatarFallback>
+                            </Avatar>
+                            {!isMinimized && (
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[10px] font-black text-gray-900 truncate uppercase tracking-tighter">{profile?.full_name || 'Executive'}</p>
+                                    <p className="text-[8px] font-bold text-[#31267D] uppercase tracking-[0.1em] opacity-60">{userRole}</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
         </aside>
     );

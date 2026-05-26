@@ -49,6 +49,7 @@
         "@simplewebauthn/browser": "^13.2.2",
         "@simplewebauthn/server": "^13.2.2",
         "@supabase/supabase-js": "^2.58.0",
+        "@tanstack/react-query": "^5.100.14",
         "@types/node": "20.6.2",
         "@types/react": "18.2.22",
         "@types/react-dom": "18.2.7",
@@ -88,6 +89,10 @@
         "zod": "^3.23.8"
     },
     "devDependencies": {
+        "@capacitor/cli": "^8.3.4",
+        "@capacitor/core": "^8.3.4",
+        "@capacitor/ios": "^8.3.4",
+        "@tanstack/react-query-devtools": "^5.100.14",
         "@types/gsap": "^1.20.2",
         "@types/simple-peer": "^9.11.9",
         "@types/web-push": "^3.6.4",

@@ -9,6 +9,7 @@ import {
     Target,
     Rocket,
     CheckCircle2,
+    CheckCircle,
     XCircle,
     Clock,
     Zap,
@@ -48,6 +49,8 @@ import {
     Sun,
     Moon,
     BarChart3,
+    Shield,
+    UserPlus,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
@@ -57,6 +60,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Label } from "@/components/ui/label";
 import {
     Select,
     SelectContent,
@@ -64,6 +68,14 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+    DialogClose,
+} from "@/components/ui/dialog";
 import { format } from "date-fns";
 import Link from "next/link";
 
@@ -227,7 +239,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
             toast.error("Failed to logout");
         }
     };
-    const [staffData] = useState(mockStaffData);
+    const [staffData, setStaffData] = useState<any[]>([]);
     const [recentTasks] = useState(mockRecentTasks);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
@@ -235,6 +247,12 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
     const [activeTab, setActiveTab] = useState("ALL");
     const [showCompleted, setShowCompleted] = useState(false);
     const [isDeploying, setIsDeploying] = useState(false);
+    
+    // CEO Directives state
+    const [ceoDirectives, setCeoDirectives] = useState<any[]>([]);
+    const [delegateModalOpen, setDelegateModalOpen] = useState(false);
+    const [selectedDirective, setSelectedDirective] = useState<any>(null);
+    const [selectedStaffForDelegation, setSelectedStaffForDelegation] = useState("");
     
     // Task deployment form state
     const [taskDescription, setTaskDescription] = useState("");
@@ -295,32 +313,134 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
 
     const fetchTasks = async () => {
         if (!profile) return;
-        
+
         try {
-            // Fetch tasks assigned to staff in manager's department
-            const { data: tasksData, error } = await supabase
+            // Fetch active tasks (pending, in_progress)
+            let activeQuery = supabase
                 .from("tasks")
                 .select("*")
-                .in("status", ["pending", "in_progress"])
-                .order("created_at", { ascending: false });
-            
-            if (error) {
-                console.error('Error fetching tasks:', error);
-                return;
+                .in("status", ["pending", "in_progress"]);
+
+            // Fetch completed unreviewed tasks
+            let completedQuery = supabase
+                .from("tasks")
+                .select("*")
+                .eq("status", "completed")
+                .is("reviewed_at", null);
+
+            // If restricted manager, only show tasks for their department or assigned to them
+            if (managerDepartmentAccess) {
+                // Get IDs of staff in accessible departments
+                const accessibleStaffIds = staffData
+                    .filter(s => s.department && managerDepartmentAccess.includes(s.department))
+                    .map(s => s.id);
+
+                // Also include manager's own tasks
+                accessibleStaffIds.push(profile.id);
+
+                activeQuery = activeQuery.in("assigned_to", accessibleStaffIds);
+                completedQuery = completedQuery.in("assigned_to", accessibleStaffIds);
             }
-            
-            if (tasksData) {
-                setTasks(tasksData);
+
+            const [activeRes, completedRes] = await Promise.all([
+                activeQuery.order("created_at", { ascending: false }),
+                completedQuery.order("updated_at", { ascending: false })
+            ]);
+
+            if (activeRes.error) {
+                console.error('Error fetching active tasks:', activeRes.error);
+            } else if (activeRes.data) {
+                setTasks(activeRes.data);
+            }
+
+            if (completedRes.error) {
+                console.error('Error fetching completed tasks:', completedRes.error);
+            } else if (completedRes.data) {
+                setCompletedTasks(completedRes.data);
             }
         } catch (error) {
             console.error('Error fetching tasks:', error);
         }
     };
-
-    // Fetch tasks from database
+    // Fetch tasks from database - depends on profile and staffData for filtering
     useEffect(() => {
-        fetchTasks();
+        if (profile && staffData.length > 0) {
+            fetchTasks();
+        }
+    }, [profile, staffData]);
+
+    // Fetch staff data from database
+    useEffect(() => {
+        if (profile) {
+            fetchStaffData();
+        }
     }, [profile]);
+
+    const fetchStaffData = async () => {
+        if (!profile) return;
+        
+        try {
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("*")
+                .neq("role", "ceo")
+                .neq("id", profile.id)
+                .order("full_name");
+            
+            if (error) {
+                console.error('Error fetching staff data:', error);
+                return;
+            }
+            
+            if (data) {
+                // Transform data to match the expected format
+                const transformedStaff = data.map((staff: any) => ({
+                    id: staff.id,
+                    name: staff.full_name,
+                    role: staff.designation || staff.role || 'Staff',
+                    department: staff.department || 'Administration',
+                    email: staff.email,
+                    status: staff.status || 'offline',
+                    vibe: 'Active',
+                    currentTask: 'Working',
+                    avatar: staff.full_name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase() || 'NA',
+                    lastActive: 'Just now',
+                }));
+                setStaffData(transformedStaff);
+            }
+        } catch (error) {
+            console.error('Error fetching staff data:', error);
+        }
+    };
+
+    // Fetch CEO directives assigned to MANAGER
+    useEffect(() => {
+        fetchCEODirectives();
+    }, [profile]);
+
+    const fetchCEODirectives = async () => {
+        if (!profile) return;
+        
+        try {
+            const { data, error } = await supabase
+                .from("ceo_directives")
+                .select("*")
+                .eq("assigned_to", "MANAGER")
+                .eq("is_active", true)
+                .order("created_at", { ascending: false });
+            
+            if (error) {
+                console.error('Error fetching CEO directives:', error);
+                return;
+            }
+            
+            if (data) {
+                setCeoDirectives(data);
+            }
+        } catch (error) {
+            console.error('Error fetching CEO directives:', error);
+        }
+    };
 
     // Get vibe icon
     const getVibeIcon = (vibe: string) => {
@@ -445,6 +565,118 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
         }
     };
 
+    // Handle delegation of CEO directive to staff member
+    const handleDelegateDirective = async () => {
+        if (!selectedDirective || !selectedStaffForDelegation) {
+            toast.error("Please select a staff member");
+            return;
+        }
+
+        try {
+            const staffMember = staffData.find(s => s.id === selectedStaffForDelegation);
+            const managerName = profile?.full_name || "Manager";
+
+            // Update the directive with the assigned staff member and delegation info
+            const { error: directiveError } = await supabase
+                .from("ceo_directives")
+                .update({
+                    assigned_to: "STAFF",
+                    assigned_to_user_id: selectedStaffForDelegation,
+                    delegated_by: profile?.id,
+                    delegated_by_name: managerName,
+                    delegated_at: new Date().toISOString(),
+                })
+                .eq("id", selectedDirective.id);
+
+            if (directiveError) {
+                console.error('Error delegating directive:', directiveError);
+                toast.error("Failed to delegate directive");
+                return;
+            }
+
+            // Create a task for the staff member
+            const { error: taskError } = await supabase
+                .from('tasks')
+                .insert({
+                    assigned_to: selectedStaffForDelegation,
+                    title: selectedDirective.title,
+                    description: selectedDirective.message,
+                    priority: selectedDirective.priority || 'medium',
+                    priority_level: selectedDirective.priority || 'medium',
+                    task_type: 'ceo_directive',
+                    created_by: profile?.id,
+                    status: 'pending',
+                    directive_id: selectedDirective.id,
+                });
+
+            if (taskError) {
+                console.error('Error creating task:', taskError);
+                toast.error("Directive delegated but task creation failed");
+            } else {
+                toast.success(`Directive delegated to ${staffMember?.name}`);
+            }
+
+            // Close modal and refresh directives
+            setDelegateModalOpen(false);
+            setSelectedDirective(null);
+            setSelectedStaffForDelegation("");
+            await fetchCEODirectives();
+
+        } catch (error) {
+            console.error('Error delegating directive:', error);
+            toast.error("An error occurred while delegating directive");
+        }
+    };
+
+    const markTaskAsReviewed = async (id: string) => {
+        try {
+            const { error } = await supabase
+                .from("tasks")
+                .update({
+                    ceo_reviewed: true,
+                    reviewed_at: new Date().toISOString()
+                })
+                .eq("id", id);
+
+            if (error) {
+                toast.error("Failed to mark task as reviewed");
+                return;
+            }
+
+            toast.success("Task marked as reviewed");
+            setCompletedTasks(prev => prev.filter(t => t.id !== id));
+        } catch (error) {
+            console.error('Error marking task as reviewed:', error);
+            toast.error("An error occurred");
+        }
+    };
+
+    const markAllAsReviewed = async () => {
+        if (completedTasks.length === 0) return;
+        if (!confirm(`Mark all ${completedTasks.length} completed tasks as reviewed?`)) return;
+
+        try {
+            const { error } = await supabase
+                .from("tasks")
+                .update({
+                    ceo_reviewed: true,
+                    reviewed_at: new Date().toISOString()
+                })
+                .in("id", completedTasks.map(t => t.id));
+
+            if (error) {
+                toast.error("Failed to mark tasks as reviewed");
+                return;
+            }
+
+            toast.success("All completed tasks marked as reviewed");
+            setCompletedTasks([]);
+        } catch (error) {
+            console.error('Error marking all tasks as reviewed:', error);
+            toast.error("An error occurred");
+        }
+    };
+
     // Get selected staff member
     const selectedStaffMember = accessibleStaff.find(s => s.id === selectedStaff);
 
@@ -460,8 +692,8 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
 
     return (
         <div className={`min-h-screen ${className}`} style={{ backgroundColor: BRAND.bg }}>
-            {/* Header - Mirroring Staff Hub Exactly */}
-            <header className="bg-white border-b border-slate-200 sticky top-0 z-50">
+            {/* Header - Mirroring Staff Hub Exactly - Hidden on Mobile */}
+            <header className="bg-white border-b border-slate-200 sticky top-0 z-50 hidden md:block">
                 <div className="max-w-[1700px] mx-auto px-4 md:px-8 py-4">
                     <div className="flex items-center justify-between">
                         {/* Logo */}
@@ -509,7 +741,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                 </p>
                             </div>
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2F1E73] to-[#F15A24] flex items-center justify-center text-white font-bold text-sm shadow-lg">
-                                {(profile?.full_name || "M").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()}
+                                {(profile?.full_name || "M").split(" ").map((n: string) => n[0]).join("").slice(0, 2).toUpperCase()}
                             </div>
                             {/* Logout Button */}
                             <button
@@ -602,7 +834,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                         </div>
                     </div>
 
-                    {/* CEO Broadcast Card */}],
+                    {/* CEO Broadcast Card */}
                     <div 
                         style={{ backgroundColor: BRAND.navy }}
                         className="rounded-2xl md:rounded-[2.5rem] p-5 md:p-7 text-white shadow-2xl relative overflow-hidden"
@@ -656,6 +888,77 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Pending CEO Directives Card */}
+                    <div className="bg-white rounded-2xl md:rounded-[2.5rem] p-5 md:p-6 shadow-sm border border-slate-100">
+                        <div className="flex items-center justify-between mb-5">
+                            <div className="flex items-center gap-2">
+                                <div className="w-8 h-8 bg-orange-500/10 rounded-lg flex items-center justify-center">
+                                    <Shield className="w-4 h-4 text-orange-500" />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-slate-900">Pending CEO Directives</h3>
+                                    <p className="text-xs text-slate-500">From Executive Office</p>
+                                </div>
+                            </div>
+                            {ceoDirectives.length > 0 && (
+                                <Badge variant="outline" className="bg-orange-50 text-orange-600 border-orange-200 text-xs">
+                                    {ceoDirectives.length}
+                                </Badge>
+                            )}
+                        </div>
+
+                        {ceoDirectives.length === 0 ? (
+                            <div className="text-center py-8">
+                                <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                    <CheckCircle className="w-6 h-6 text-slate-400" />
+                                </div>
+                                <p className="text-sm text-slate-500">No pending directives</p>
+                            </div>
+                        ) : (
+                            <ScrollArea className="h-[320px] pr-2">
+                                <div className="space-y-3">
+                                    {ceoDirectives.map((directive) => (
+                                        <div
+                                            key={directive.id}
+                                            className="p-4 rounded-xl bg-orange-50 border border-orange-100 hover:border-orange-200 transition-all"
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <div className="w-8 h-8 bg-orange-500 rounded-lg flex items-center justify-center shrink-0">
+                                                    <Crown className="w-4 h-4 text-white" />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-start justify-between gap-2 mb-2">
+                                                        <p className="text-sm font-semibold text-slate-900">{directive.title}</p>
+                                                        <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-200 text-[10px] shrink-0">
+                                                            {directive.priority?.toUpperCase()}
+                                                        </Badge>
+                                                    </div>
+                                                    <p className="text-xs text-slate-600 mb-3 line-clamp-2">{directive.message}</p>
+                                                    <div className="flex items-center justify-between">
+                                                        <p className="text-[10px] text-slate-400">
+                                                            {format(new Date(directive.created_at), 'MMM d, h:mm a')}
+                                                        </p>
+                                                        <Button
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                setSelectedDirective(directive);
+                                                                setDelegateModalOpen(true);
+                                                            }}
+                                                            className="h-7 px-3 text-[10px] bg-[#2F1E73] hover:bg-[#2F1E73]/90"
+                                                        >
+                                                            <UserPlus className="w-3 h-3 mr-1" />
+                                                            Delegate
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        )}
                     </div>
 
                     {/* Team Live Feed */}
@@ -739,6 +1042,18 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                     Assign Task
                                 </button>
                             </div>
+                            {/* Mark All Reviewed for Managers */}
+                            {showCompleted && completedTasks.length > 0 && (
+                                <div className="flex justify-end mt-2">
+                                    <button
+                                        onClick={markAllAsReviewed}
+                                        className="text-[10px] font-black uppercase text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 hover:bg-emerald-100 transition-all flex items-center gap-1.5"
+                                    >
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        Mark All Reviewed
+                                    </button>
+                                </div>
+                            )}
                             {/* Mobile: Horizontal scrolling filter tabs */}
                             <div className="flex bg-white md:bg-transparent p-1 rounded-xl md:rounded-2xl shadow-sm md:shadow-none border md:border-0 border-slate-100 overflow-x-auto scrollbar-hide -mx-4 px-4 md:mx-0 md:px-0">
                                 {["ALL", "URGENT", "DAILY", "COMPLETED"].map((tab) => (
@@ -823,7 +1138,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                                     {selectedStaffMember ? (
                                                         <>
                                                             <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shadow-md" style={{ backgroundColor: BRAND.navy }}>
-                                                                {selectedStaffMember.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                                {selectedStaffMember.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                                                             </div>
                                                             <div>
                                                                 <p className="text-sm font-semibold text-slate-800">{selectedStaffMember.name}</p>
@@ -871,7 +1186,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                                                 >
                                                                     <div className="relative">
                                                                         <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white" style={{ backgroundColor: BRAND.navy }}>
-                                                                            {staff.name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                                            {staff.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
                                                                         </div>
                                                                         <div className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border-2 border-white ${getStatusColor(staff.status)}`} />
                                                                     </div>
@@ -1055,14 +1370,24 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                             <h3 className="text-base md:text-xl font-black text-slate-900 leading-tight">
                                                 {task.title}
                                             </h3>
-                                            {task.due_date && (
-                                                <div className="flex items-center gap-1.5 mt-1 text-red-500">
-                                                    <Clock className="w-3 h-3" />
-                                                    <span className="text-[10px] font-black uppercase tracking-widest">
-                                                        Due: {new Date(task.due_date).toLocaleDateString()}
-                                                    </span>
-                                                </div>
-                                            )}
+                                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                                                {task.assigned_to && (
+                                                    <div className="flex items-center gap-1.5 text-slate-500">
+                                                        <UserPlus className="w-3 h-3" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">
+                                                            Assignee: {staffData.find(s => s.id === task.assigned_to)?.name || 'Unknown Staff'}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {task.due_date && (
+                                                    <div className="flex items-center gap-1.5 text-red-500">
+                                                        <Clock className="w-3 h-3" />
+                                                        <span className="text-[10px] font-black uppercase tracking-widest">
+                                                            Due: {new Date(task.due_date).toLocaleDateString()}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
                                     </div>
                                     <ChevronDown
@@ -1075,6 +1400,15 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                             <Info className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
                                             "{task.description}"
                                         </div>
+                                        {showCompleted && (
+                                            <Button
+                                                onClick={() => markTaskAsReviewed(task.id)}
+                                                className="w-full bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl py-6 font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                                            >
+                                                <CheckCircle2 className="w-5 h-5" />
+                                                Mark Reviewed
+                                            </Button>
+                                        )}
                                     </div>
                                 )}
                             </div>
@@ -1135,6 +1469,90 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
 
                 </div>
             </main>
+
+            {/* Delegate Directive Modal */}
+            <Dialog open={delegateModalOpen} onOpenChange={setDelegateModalOpen}>
+                <DialogContent className="bg-white/90 backdrop-blur-xl border-slate-200 text-slate-900 max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="text-lg font-semibold flex items-center gap-2">
+                            <UserPlus className="w-5 h-5 text-[#2F1E73]" />
+                            Delegate Directive
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                        {selectedDirective && (
+                            <div className="p-3 bg-gradient-to-r from-orange-50 to-orange-100/50 rounded-xl border border-orange-200">
+                                <p className="text-sm font-semibold text-slate-900 mb-1">{selectedDirective.title}</p>
+                                <p className="text-xs text-slate-600 line-clamp-2">{selectedDirective.message}</p>
+                            </div>
+                        )}
+                        <div className="space-y-2">
+                            <Label className="text-slate-700 text-xs uppercase tracking-wide font-semibold">
+                                Select Staff Member
+                            </Label>
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                                {accessibleStaff.map((s) => {
+                                    const staffTasks = tasks.filter(t => t.assigned_to === s.id && t.status !== 'completed').length;
+                                    return (
+                                        <button
+                                            key={s.id}
+                                            onClick={() => setSelectedStaffForDelegation(s.id)}
+                                            className={`w-full p-3 rounded-xl border-2 text-left transition-all ${
+                                                selectedStaffForDelegation === s.id
+                                                    ? 'border-[#2F1E73] bg-[#2F1E73]/5'
+                                                    : 'border-slate-200 bg-white hover:border-[#2F1E73]/30 hover:bg-slate-50'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div 
+                                                        className="w-10 h-10 rounded-lg flex items-center justify-center text-xs font-bold text-white"
+                                                        style={{ backgroundColor: BRAND.navy }}
+                                                    >
+                                                        {s.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()}
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-sm font-semibold text-slate-900">{s.name}</p>
+                                                        <p className="text-xs text-slate-500">{s.department}</p>
+                                                    </div>
+                                                </div>
+                                                <Badge 
+                                                    variant="outline" 
+                                                    className="bg-slate-100 text-slate-600 border-slate-200 text-[10px]"
+                                                >
+                                                    {staffTasks} {staffTasks === 1 ? 'task' : 'tasks'}
+                                                </Badge>
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                        <p className="text-[10px] text-slate-500 bg-slate-50 p-3 rounded border border-slate-100">
+                            This will assign the directive to the selected staff member and create a task in their feed.
+                        </p>
+                    </div>
+                    <DialogFooter className="pt-2">
+                        <DialogClose asChild>
+                            <Button
+                                type="button"
+                                variant="outline"
+                                className="border-slate-200 hover:bg-slate-50"
+                            >
+                                Cancel
+                            </Button>
+                        </DialogClose>
+                        <Button
+                            onClick={handleDelegateDirective}
+                            disabled={!selectedStaffForDelegation}
+                            className="bg-[#2F1E73] hover:bg-[#2F1E73]/90 text-white"
+                        >
+                            <UserPlus className="w-4 h-4 mr-2" />
+                            Delegate
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

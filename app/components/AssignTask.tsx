@@ -51,6 +51,7 @@ export default function AssignTask({ staffList, currentUserId, variant }: Assign
                 assigned_to: taskAssignee,
                 status: "pending",
                 subtasks: JSON.stringify(subtasks),
+                created_by: currentUserId,
                 created_at: new Date().toISOString(),
             };
 

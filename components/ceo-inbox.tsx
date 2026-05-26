@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Mail, Megaphone, Lightbulb, Trophy, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageToggle } from "@/components/message-dialog";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { useTabResiliency } from "./tab-resiliency-engine";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -41,30 +42,47 @@ export function CEOInbox() {
     const [victories, setVictories] = useState<Victory[]>([]);
     const [loading, setLoading] = useState(true);
     const [clearingAll, setClearingAll] = useState(false);
+    const [inboxFilter, setInboxFilter] = useState<'all' | 'directives' | 'alerts'>('all');
+    const dailyIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Tab Resiliency Engine Integration
+    useTabResiliency(
+        () => {
+            fetchIdeas();
+            fetchVictories();
+        },
+        loading,
+        setLoading
+    );
 
     useEffect(() => {
-        console.log("CEO Inbox: Component mounted, starting data fetch");
         fetchIdeas();
         fetchVictories();
-        
+
         // Set up daily refresh at midnight to clear the victory feed
         const now = new Date();
         const tomorrow = new Date(now);
         tomorrow.setDate(tomorrow.getDate() + 1);
         tomorrow.setHours(0, 0, 0, 0);
         const msUntilMidnight = tomorrow.getTime() - now.getTime();
-        
+
         const midnightTimer = setTimeout(() => {
             fetchIdeas();
             fetchVictories(); // Refresh at midnight to clear previous day's victories
+
             // Set up recurring daily refresh
-            setInterval(() => {
+            dailyIntervalRef.current = setInterval(() => {
                 fetchIdeas();
                 fetchVictories();
             }, 24 * 60 * 60 * 1000);
         }, msUntilMidnight);
-        
-        return () => clearTimeout(midnightTimer);
+
+        return () => {
+            clearTimeout(midnightTimer);
+            if (dailyIntervalRef.current) {
+                clearInterval(dailyIntervalRef.current);
+            }
+        };
     }, []);
 
     const fetchIdeas = async () => {
@@ -254,26 +272,24 @@ export function CEOInbox() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <header className="backdrop-blur-lg bg-white/80 border-b border-white/20 sticky top-0 z-40">
-                <div className="px-8 py-6">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <h1 className="text-4xl font-bold text-gray-900 tracking-tight">
-                                Command Intelligence
-                            </h1>
-                            <p className="text-gray-600 mt-1 text-sm">Executive Dashboard & Communications Hub</p>
-                        </div>
-                        <div className="flex items-center gap-4">
-                            <MessageToggle />
-                        </div>
+        <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#050505] p-2 md:p-6 lg:p-8">
+            {/* Premium Glass-Morphism Header */}
+            <div className="mb-6 md:mb-8 bg-white/60 dark:bg-zinc-900/50 backdrop-blur-xl border border-white/40 dark:border-zinc-800/60 rounded-[20px] md:rounded-[24px] shadow-sm p-4 md:p-6 lg:p-8">
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 md:gap-6">
+                    {/* Title and Quote */}
+                    <div className="min-w-0 flex-1">
+                        <h1 className="text-xl md:text-3xl lg:text-4xl font-black text-[#1e293b] dark:text-zinc-100 uppercase tracking-tight leading-tight truncate">
+                            Command Intelligence
+                        </h1>
+                        <p className="text-xs md:text-sm italic text-slate-400 dark:text-zinc-400 mt-0.5 md:mt-1 line-clamp-2">
+                            "Executive Dashboard & Communications Hub."
+                        </p>
                     </div>
                 </div>
-            </header>
+            </div>
 
             {/* Main Content Grid */}
-            <div className="flex h-[calc(100vh-120px)] gap-6 p-6">
+            <div className="flex flex-col lg:flex-row h-[calc(100vh-220px)] gap-6">
                 {/* Spark Inbox - Center Column */}
                 <div className="flex-1 backdrop-blur-lg bg-white/80 border border-white/20 rounded-2xl p-8 shadow-xl overflow-y-auto">
                     <div className="max-w-5xl mx-auto">
@@ -285,22 +301,8 @@ export function CEOInbox() {
                                 <Button
                                     onClick={clearAllIdeas}
                                     disabled={clearingAll}
-                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200"
-                                    style={{
-                                        background: "linear-gradient(135deg, #DC2626, #991B1B)",
-                                        color: "white",
-                                        border: "none"
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        if (!clearingAll) {
-                                            e.currentTarget.style.transform = "translateY(-1px)";
-                                            e.currentTarget.style.boxShadow = "0 4px 20px rgba(220,38,38,0.4)";
-                                        }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        e.currentTarget.style.transform = "translateY(0)";
-                                        e.currentTarget.style.boxShadow = "none";
-                                    }}
+                                    variant="ghost"
+                                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all duration-200 text-red-500/70 border border-red-500/20 hover:bg-red-500/10 hover:text-red-600 hover:border-red-500/30"
                                 >
                                     {clearingAll ? (
                                         <>
@@ -316,7 +318,40 @@ export function CEOInbox() {
                                 </Button>
                             )}
                         </div>
-                        <p className="text-gray-600 mb-10">Innovation sparks from your team</p>
+                        <p className="text-gray-600 dark:text-zinc-400 mb-6">Innovation sparks from your team</p>
+
+                        <div className="flex items-center gap-2 mb-6 bg-gray-100/50 dark:bg-zinc-800/50 p-1 rounded-xl w-fit">
+                            <button
+                                onClick={() => setInboxFilter('all')}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                                    inboxFilter === 'all'
+                                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                        : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                                }`}
+                            >
+                                All Sparks
+                            </button>
+                            <button
+                                onClick={() => setInboxFilter('directives')}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                                    inboxFilter === 'directives'
+                                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                        : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                                }`}
+                            >
+                                Directives
+                            </button>
+                            <button
+                                onClick={() => setInboxFilter('alerts')}
+                                className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${
+                                    inboxFilter === 'alerts'
+                                        ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
+                                        : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                                }`}
+                            >
+                                System Alerts
+                            </button>
+                        </div>
 
                         <div className="space-y-3">
                             {loading ? (
@@ -336,7 +371,7 @@ export function CEOInbox() {
                                 ideas.map((idea) => (
                                     <div
                                         key={idea.id}
-                                        className="group bg-white border border-gray-100 rounded-lg p-4 hover:shadow-md transition-all duration-200 hover:border-gray-200 cursor-pointer"
+                                        className="group bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 rounded-lg p-4 hover:shadow-md hover:translate-x-1 transition-all duration-200 hover:border-gray-200 dark:hover:border-zinc-700 cursor-pointer"
                                         style={{ borderLeftWidth: 3, borderLeftColor: BRAND_COLORS.orange }}
                                     >
                                         <div className="flex items-start gap-3">
@@ -349,8 +384,8 @@ export function CEOInbox() {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between mb-2">
                                                     <div className="flex items-center gap-2">
-                                                        <h3 className="font-semibold text-gray-900 text-sm truncate">{idea.created_by_name}</h3>
-                                                        <span className="text-xs text-gray-400">{idea.created_at}</span>
+                                                        <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">{idea.created_by_name}</h3>
+                                                        <span className="text-xs text-slate-400 dark:text-zinc-500">{idea.created_at}</span>
                                                     </div>
                                                     <button
                                                         onClick={(e) => {
@@ -364,13 +399,13 @@ export function CEOInbox() {
                                                     </button>
                                                 </div>
                                                 <div className="space-y-1">
-                                                    <h4 className="font-medium text-gray-900 text-sm leading-tight truncate">{idea.title}</h4>
+                                                    <h4 className="font-medium text-gray-900 dark:text-zinc-100 text-sm leading-tight truncate">{idea.title}</h4>
                                                     <div className="flex items-start gap-2">
                                                         <Lightbulb
                                                             className="w-4 h-4 flex-shrink-0 mt-0.5"
                                                             style={{ color: BRAND_COLORS.orange }}
                                                         />
-                                                        <p className="text-gray-600 text-xs leading-relaxed line-clamp-2">{idea.description}</p>
+                                                        <p className="text-gray-600 dark:text-zinc-400 text-xs leading-relaxed whitespace-pre-wrap">{idea.description}</p>
                                                     </div>
                                                 </div>
                                             </div>
@@ -383,7 +418,7 @@ export function CEOInbox() {
                 </div>
 
                 {/* Victory Feed - Right Sidebar */}
-                <div className="flex-1 backdrop-blur-lg border border-white/20 rounded-2xl p-6 shadow-xl overflow-y-auto" style={{ background: `linear-gradient(180deg, ${BRAND_COLORS.indigo} 0%, #1E1A5C 100%)` }}>
+                <div className="flex-1 lg:max-w-md backdrop-blur-lg border border-white/20 rounded-2xl p-6 shadow-xl overflow-y-auto" style={{ background: `linear-gradient(180deg, ${BRAND_COLORS.indigo} 0%, #1E1A5C 100%)` }}>
                     <h2 className="text-xl font-bold mb-6 text-white">
                         Victory Feed
                     </h2>
@@ -407,7 +442,7 @@ export function CEOInbox() {
                             victories.map((victory: Victory) => (
                                 <div
                                     key={victory.id}
-                                    className="bg-white/10 border border-white/20 rounded-xl p-5 hover:bg-white/15 transition-all duration-200"
+                                    className="bg-white/10 border border-white/20 rounded-xl p-5 hover:bg-white/15 hover:translate-x-1 transition-all duration-200"
                                 >
                                     <div className="flex items-start gap-3">
                                         <Trophy className="w-6 h-6 text-yellow-400 flex-shrink-0 mt-1" />
@@ -415,7 +450,7 @@ export function CEOInbox() {
                                             <h4 className="font-semibold text-white text-base">{victory.staff}</h4>
                                             <p className="text-indigo-200 text-sm mt-2 leading-relaxed">{victory.achievement}</p>
                                             <div className="flex items-center justify-between mt-4">
-                                                <span className="text-xs text-indigo-300">{victory.time}</span>
+                                                <span className="text-xs text-indigo-300/80">{victory.time}</span>
                                             </div>
                                         </div>
                                     </div>

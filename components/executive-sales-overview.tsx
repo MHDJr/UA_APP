@@ -28,6 +28,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { AdvancedViewToggle } from "@/components/ui/advanced-view-toggle";
 import { DetailedMatrix } from "@/components/detailed-matrix";
 import { CEOStaffVelocity } from "./ceo-staff-velocity";
+import { useAuth } from "@/lib/auth-context";
+import { useTabResiliency } from "./tab-resiliency-engine";
 import { supabase, DailyReport, Profile } from "@/lib/supabase";
 
 // Brand colors
@@ -119,21 +121,33 @@ const MetricCard = ({
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay, duration: 0.5 }}
-        className="glass-card-ua rounded-2xl p-5 hover:shadow-lg transition-all duration-300"
+        className="glass-card-ua rounded-2xl p-5 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 relative overflow-hidden group"
     >
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between relative z-10">
             <div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
+                <p className="text-xs font-medium text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">
                     {title}
                 </p>
-                <h3 className="text-2xl font-bold text-gray-900">{value}</h3>
+                <div className="flex items-baseline gap-3">
+                    <h3 className="text-2xl font-black text-gray-900 dark:text-white">{value}</h3>
+                    {/* Micro Sparkline */}
+                    <svg className="w-12 h-4 opacity-50 group-hover:opacity-100 transition-opacity" viewBox="0 0 48 16" fill="none">
+                        <path 
+                            d={trendUp ? "M0 16 L10 8 L20 12 L30 4 L40 6 L48 0" : "M0 0 L10 6 L20 4 L30 10 L40 8 L48 16"} 
+                            stroke={trendUp ? "#10b981" : "#ef4444"} 
+                            strokeWidth="2" 
+                            strokeLinecap="round" 
+                            strokeLinejoin="round"
+                        />
+                    </svg>
+                </div>
                 <div className="flex items-center gap-1 mt-2">
                     <TrendingUp
                         className={`w-3 h-3 ${trendUp ? "text-green-500" : "text-red-500 rotate-180"}`}
                     />
                     <span
-                        className={`text-xs font-medium ${
-                            trendUp ? "text-green-600" : "text-red-600"
+                        className={`text-xs font-bold ${
+                            trendUp ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                         }`}
                     >
                         {trend}
@@ -142,7 +156,7 @@ const MetricCard = ({
                 </div>
             </div>
             <div
-                className="p-3 rounded-xl"
+                className="p-3 rounded-xl transition-colors group-hover:bg-[#2F1E73]/20"
                 style={{ backgroundColor: `${BRAND_COLORS.indigo}10` }}
             >
                 <Icon className="w-5 h-5" style={{ color: BRAND_COLORS.indigo }} />
@@ -168,47 +182,50 @@ const FunnelStep = ({
     isFirst: boolean;
     isLast: boolean;
     delay: number;
-}) => (
-    <motion.div
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ delay, duration: 0.4 }}
-        className="flex-1 relative"
-    >
-        <div className="flex items-center">
-            {/* Connector line */}
-            {!isFirst && (
-                <div className="absolute left-0 top-1/2 -translate-y-1/2 w-4 h-0.5 -ml-2">
-                    <div
-                        className="w-full h-full rounded-full"
-                        style={{
-                            background: `linear-gradient(90deg, ${BRAND_COLORS.indigo}40, ${BRAND_COLORS.orange})`,
-                        }}
-                    />
-                </div>
-            )}
+}) => {
+    // Determine color tier based on stage/conversion
+    const isLoss = stage === "Not Converted";
+    const tagBg = isLoss ? "bg-red-500/10 dark:bg-red-500/20" : "bg-indigo-500/10 dark:bg-indigo-500/20";
+    const tagText = isLoss ? "text-red-600 dark:text-red-400" : "text-indigo-600 dark:text-indigo-400";
 
-            <div className="flex-1 glass-card-ua rounded-xl p-4 text-center relative hover:shadow-md transition-all duration-300 group">
+    return (
+        <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay, duration: 0.4 }}
+            className="flex-1 relative flex items-center"
+        >
+            <div className="flex-1 rounded-2xl p-4 md:p-5 text-center relative hover:shadow-lg hover:-translate-y-1 transition-all duration-300 group z-10 bg-white/75 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/40 dark:border-zinc-800/50 shadow-sm flex flex-col items-center justify-between h-full min-h-[140px]">
                 <div
-                    className="w-10 h-10 rounded-lg flex items-center justify-center mx-auto mb-3 transition-transform group-hover:scale-110"
+                    className="w-10 h-10 md:w-12 md:h-12 rounded-xl flex items-center justify-center mx-auto mb-3 transition-transform duration-300 group-hover:scale-110 shadow-sm"
                     style={{ backgroundColor: `${BRAND_COLORS.indigo}15` }}
                 >
-                    <Icon className="w-5 h-5" style={{ color: BRAND_COLORS.indigo }} />
+                    <Icon className="w-5 h-5 md:w-6 md:h-6" style={{ color: BRAND_COLORS.indigo }} />
                 </div>
-                <p className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1">
-                    {stage}
-                </p>
-                <h4 className="text-xl font-bold text-gray-900">{count}</h4>
-                <p
-                    className="text-xs font-semibold mt-1"
-                    style={{ color: BRAND_COLORS.orange }}
-                >
-                    {conversion}
-                </p>
+                <div className="flex-1 flex flex-col justify-center">
+                    <h4 className="text-2xl md:text-3xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter leading-none mb-1">{count}</h4>
+                    <p className="text-[9px] md:text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest truncate w-full px-2 mb-2">
+                        {stage}
+                    </p>
+                </div>
+                
+                {/* Polished tag indicator */}
+                <div className={`inline-flex items-center justify-center px-3 py-1 rounded-full ${tagBg}`}>
+                    <span className={`text-[10px] font-black tracking-widest ${tagText}`}>
+                        {conversion}
+                    </span>
+                </div>
             </div>
-        </div>
-    </motion.div>
-);
+
+            {/* Elegant Chevron Connector */}
+            {!isLast && (
+                <div className="w-6 md:w-8 lg:w-10 flex justify-center items-center z-0 flex-shrink-0 -mx-2 md:-mx-3">
+                    <ArrowRight className="w-5 h-5 md:w-6 md:h-6 text-slate-300 dark:text-zinc-600 opacity-50" strokeWidth={3} />
+                </div>
+            )}
+        </motion.div>
+    );
+};
 
 // Sales rep row component
 const SalesRepRow = ({ rep, index }: { rep: SalesRepData; index: number }) => (
@@ -334,6 +351,7 @@ const DeploymentItem = ({ deployment, index }: { deployment: any; index: number 
 );
 
 export function ExecutiveSalesOverview() {
+    const { userRole } = useAuth();
     const [currentTime, setCurrentTime] = useState(new Date());
     const [salesReps, setSalesReps] = useState<SalesRepData[]>([]);
     const [assignments, setAssignments] = useState<any[]>([]);
@@ -341,6 +359,20 @@ export function ExecutiveSalesOverview() {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [isAdvancedView, setIsAdvancedView] = useState(false);
+    
+    // Pipeline specific state
+    const [pipelineFilter, setPipelineFilter] = useState<'today' | 'week' | 'month'>('month');
+    const [pipelineData, setPipelineData] = useState<SalesRepData[]>([]);
+
+    // Tab Resiliency Engine Integration
+    useTabResiliency(
+        () => {
+            fetchDailyReports();
+            fetchAssignments();
+        },
+        loading,
+        setLoading
+    );
 
     // Calculate real metrics from sales data
     const calculateMetrics = (reports: SalesRepData[]) => {
@@ -418,6 +450,61 @@ export function ExecutiveSalesOverview() {
             console.error("Error fetching assignments:", error);
         }
     };
+
+    const fetchPipelineData = async (filter: 'today' | 'week' | 'month') => {
+        try {
+            const today = new Date();
+            let startDate = new Date(today);
+            
+            if (filter === 'week') {
+                startDate.setDate(today.getDate() - 7);
+            } else if (filter === 'month') {
+                startDate.setDate(today.getDate() - 30);
+            }
+
+            const startDateStr = startDate.toISOString().split('T')[0];
+            const endDateStr = today.toISOString().split('T')[0];
+            
+            let query = supabase.from('daily_reports').select('*');
+            
+            if (filter === 'today') {
+                query = query.eq('report_date', startDateStr);
+            } else {
+                query = query.gte('report_date', startDateStr).lte('report_date', endDateStr);
+            }
+
+            const { data, error } = await query;
+            
+            if (error) {
+                console.error('Error fetching pipeline data:', error);
+                return;
+            }
+
+            const mappedData: SalesRepData[] = (data || []).map((report: any) => ({
+                id: report.id,
+                name: '', // Not needed for funnel sum
+                initials: '',
+                leadsClaimed: report.total_leads || 0,
+                contacted: (report.total_leads || 0) - (report.lost_leads || 0),
+                evaluations: report.evaluations_taken || 0,
+                closed: report.conversions || 0,
+                rank: 0,
+                efficiency_score: 0,
+                conversion_rate: 0,
+                lead_quality_rating: 0,
+                report_date: report.report_date,
+                submitted_at: report.submitted_at,
+            }));
+
+            setPipelineData(mappedData);
+        } catch (error) {
+            console.error('Error fetching pipeline data:', error);
+        }
+    };
+
+    useEffect(() => {
+        fetchPipelineData(pipelineFilter);
+    }, [pipelineFilter]);
 
     // Fetch daily reports data
     const fetchDailyReports = async () => {
@@ -510,16 +597,10 @@ export function ExecutiveSalesOverview() {
         return () => clearInterval(timer);
     }, []);
 
+    // Initial fetch
     useEffect(() => {
         fetchDailyReports();
         fetchAssignments();
-        
-        // Refresh every 5 minutes
-        const interval = setInterval(() => {
-            fetchDailyReports();
-            fetchAssignments();
-        }, 300000);
-        return () => clearInterval(interval);
     }, []);
 
     const handleRefresh = () => {
@@ -528,43 +609,65 @@ export function ExecutiveSalesOverview() {
     };
 
     return (
-        <div className="min-h-screen bg-ua-mesh-gradient p-6">
-            {/* Header */}
+        <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#050505] p-2 md:p-6 lg:p-8">
+            {/* Premium Glass-Morphism Header */}
             <motion.div
                 initial={{ opacity: 0, y: -20 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="mb-8"
+                className="mb-6 md:mb-8 bg-white/60 dark:bg-zinc-900/50 backdrop-blur-xl border border-white/40 dark:border-zinc-800/60 rounded-[20px] md:rounded-[24px] shadow-lg p-4 md:p-6 lg:p-8"
             >
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1
-                            className="text-2xl font-bold mb-1"
-                            style={{ color: BRAND_COLORS.indigo }}
-                        >
-                            Sales Intelligence
-                        </h1>
-                        <p className="text-sm text-gray-500">
-                            Real-time visibility into the acquisition pipeline
-                        </p>
+                <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 md:gap-6">
+                    {/* Left Side: Brand Section */}
+                    <div className="flex items-center gap-3 md:gap-5 w-full lg:w-auto">
+                        {/* Gradient Icon Box */}
+                        <div className="relative flex items-center justify-center w-14 h-14 md:w-20 md:h-20 flex-shrink-0">
+                            {/* Blurred radial accent glow */}
+                            <div className="absolute inset-0 bg-[#2F1E73]/15 blur-md rounded-full"></div>
+                            {/* Icon directly on glass */}
+                            <Target className="relative z-10 w-8 h-8 md:w-10 md:h-10 text-[#2F1E73] dark:text-purple-400" />
+                        </div>
+
+                        {/* Title and Quote */}
+                        <div className="min-w-0 flex-1">
+                            <h1 className="text-xl md:text-3xl lg:text-4xl font-black text-[#1e293b] dark:text-zinc-100 uppercase tracking-tight leading-tight truncate">
+                                Sales Intelligence
+                            </h1>
+                            <p className="text-xs md:text-sm italic text-slate-400 dark:text-zinc-400 mt-0.5 md:mt-1 line-clamp-2">
+                                "Real-time visibility into the acquisition pipeline."
+                            </p>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-4">
+
+                    {/* Right Side: Functional Metrics */}
+                    <div className="flex flex-row items-center gap-3 md:gap-4 w-full lg:w-auto justify-between lg:justify-end flex-shrink-0">
+                        {/* Advanced View Toggle */}
                         <AdvancedViewToggle
                             isAdvanced={isAdvancedView}
                             onToggle={setIsAdvancedView}
                         />
-                        <div className="glass-card-ua rounded-lg px-4 py-2 flex items-center gap-2">
-                            <Clock className="w-4 h-4 text-gray-400" />
-                            <span className="text-sm text-gray-600">
+
+                        {/* Live System Status */}
+                        <div className="flex items-center gap-1.5 md:gap-2 px-3 py-1.5 md:py-2 rounded-full bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 flex-shrink-0">
+                            <div className="relative flex items-center justify-center">
+                                <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-green-500 rounded-full"></div>
+                                <div className="absolute w-1.5 h-1.5 md:w-2 md:h-2 bg-green-500 rounded-full animate-ping"></div>
+                            </div>
+                            <span className="text-[10px] md:text-xs font-bold text-green-700 dark:text-green-400 tracking-wide whitespace-nowrap">
+                                LIVE FEED
+                            </span>
+                        </div>
+
+                        {/* Vertical faint line */}
+                        <div className="w-px h-6 md:h-8 bg-slate-200 dark:bg-zinc-700 flex-shrink-0 hidden lg:block"></div>
+
+                        {/* Date/Time Stamp */}
+                        <div className="px-2.5 md:px-3 py-1.5 md:py-2 rounded-full bg-slate-100 dark:bg-zinc-800/50 border border-slate-200 dark:border-zinc-700 flex-shrink-0 hidden xl:block">
+                            <span className="text-[10px] md:text-xs font-medium text-slate-500 dark:text-zinc-400 whitespace-nowrap flex items-center gap-2">
+                                <Clock className="w-3 h-3 text-slate-400" />
                                 {currentTime.toLocaleTimeString([], {
                                     hour: "2-digit",
                                     minute: "2-digit",
                                 })}
-                            </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="ua-live-dot" />
-                            <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Live Feed
                             </span>
                         </div>
                     </div>
@@ -627,21 +730,48 @@ export function ExecutiveSalesOverview() {
                             className="w-1 h-5 rounded-full"
                             style={{ backgroundColor: BRAND_COLORS.orange }}
                         />
-                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-gray-400">
+                        <h3 className="text-xs font-black uppercase tracking-[0.2em] text-gray-400 dark:text-zinc-500">
                             Pipeline Flow
                         </h3>
                     </div>
-                    <Badge
-                        variant="outline"
-                        className="text-xs"
-                        style={{ borderColor: BRAND_COLORS.indigo, color: BRAND_COLORS.indigo }}
-                    >
-                        Last 30 Days
-                    </Badge>
+                    
+                    {/* Pipeline Filter */}
+                    <div className="flex bg-gray-100/50 dark:bg-zinc-800/50 rounded-lg p-1">
+                        <button
+                            onClick={() => setPipelineFilter('today')}
+                            className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                pipelineFilter === 'today'
+                                    ? 'bg-white dark:bg-zinc-700 text-[#FA4615] shadow-sm'
+                                    : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                            }`}
+                        >
+                            Today
+                        </button>
+                        <button
+                            onClick={() => setPipelineFilter('week')}
+                            className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                pipelineFilter === 'week'
+                                    ? 'bg-white dark:bg-zinc-700 text-[#FA4615] shadow-sm'
+                                    : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                            }`}
+                        >
+                            Week
+                        </button>
+                        <button
+                            onClick={() => setPipelineFilter('month')}
+                            className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all ${
+                                pipelineFilter === 'month'
+                                    ? 'bg-white dark:bg-zinc-700 text-[#FA4615] shadow-sm'
+                                    : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700 dark:hover:text-zinc-300'
+                            }`}
+                        >
+                            Month
+                        </button>
+                    </div>
                 </div>
 
-                <div className="flex items-center gap-3">
-                    {calculateFunnelData(salesReps).map((step: any, index: number) => (
+                <div className="flex flex-col md:flex-row items-center gap-3">
+                    {calculateFunnelData(pipelineData).map((step: any, index: number) => (
                         <FunnelStep
                             key={step.stage}
                             stage={step.stage}
@@ -649,7 +779,7 @@ export function ExecutiveSalesOverview() {
                             conversion={step.conversion}
                             icon={step.icon}
                             isFirst={index === 0}
-                            isLast={index === calculateFunnelData(salesReps).length - 1}
+                            isLast={index === calculateFunnelData(pipelineData).length - 1}
                             delay={0.4 + index * 0.1}
                         />
                     ))}
@@ -682,15 +812,17 @@ export function ExecutiveSalesOverview() {
                                 Today's Reports
                             </Badge>
                         </div>
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 text-xs text-gray-500 hover:text-gray-700"
-                            onClick={handleRefresh}
-                            disabled={refreshing}
-                        >
-                            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-                        </Button>
+                        {userRole === 'CEO' && (
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 text-xs text-gray-500 hover:text-gray-700"
+                                onClick={handleRefresh}
+                                disabled={refreshing}
+                            >
+                                <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+                            </Button>
+                        )}
                     </div>
 
                     <div className="overflow-x-auto">
@@ -728,15 +860,28 @@ export function ExecutiveSalesOverview() {
                                         </td>
                                     </tr>
                                 ) : salesReps.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={6} className="py-8 text-center">
-                                            <div className="flex flex-col items-center gap-2">
-                                                <Users className="w-8 h-8 text-gray-300" />
-                                                <p className="text-sm text-gray-500 font-medium">No daily reports submitted today</p>
-                                                <p className="text-xs text-gray-400">Sales staff reports will appear here once submitted</p>
-                                            </div>
-                                        </td>
-                                    </tr>
+                                    <>
+                                        <tr>
+                                            <td colSpan={6} className="py-12">
+                                                <div className="flex flex-col items-center gap-2 relative z-10">
+                                                    <Users className="w-8 h-8 text-gray-300 dark:text-zinc-600 mb-2" />
+                                                    <p className="text-sm text-gray-500 dark:text-zinc-400 font-medium">No daily reports submitted today</p>
+                                                    <p className="text-xs text-gray-400 dark:text-zinc-500">Sales staff reports will appear here once submitted</p>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {/* Faint uniform rows for structured data skeleton */}
+                                        {[...Array(3)].map((_, i) => (
+                                            <tr key={`skeleton-${i}`} className="border-b border-gray-50/50 dark:border-zinc-800/30 opacity-40">
+                                                <td className="py-3 px-4"><div className="h-6 w-32 bg-gray-100 dark:bg-zinc-800 rounded animate-pulse" /></td>
+                                                <td className="py-3 px-4 text-center"><div className="h-6 w-8 bg-gray-100 dark:bg-zinc-800 rounded mx-auto animate-pulse" /></td>
+                                                <td className="py-3 px-4 text-center"><div className="h-6 w-8 bg-gray-100 dark:bg-zinc-800 rounded mx-auto animate-pulse" /></td>
+                                                <td className="py-3 px-4 text-center"><div className="h-6 w-8 bg-gray-100 dark:bg-zinc-800 rounded mx-auto animate-pulse" /></td>
+                                                <td className="py-3 px-4 text-center"><div className="h-6 w-8 bg-gray-100 dark:bg-zinc-800 rounded mx-auto animate-pulse" /></td>
+                                                <td className="py-3 px-4"><div className="h-6 w-16 bg-gray-100 dark:bg-zinc-800 rounded ml-auto animate-pulse" /></td>
+                                            </tr>
+                                        ))}
+                                    </>
                                 ) : (
                                     salesReps.map((rep, index) => (
                                         <SalesRepRow key={rep.id} rep={rep} index={index} />
@@ -779,12 +924,15 @@ export function ExecutiveSalesOverview() {
                                     />
                                 ))}
                                 {assignments.length === 0 && (
-                                    <div className="text-center py-8">
-                                        <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-3">
-                                            <Users className="w-6 h-6 text-white/60" />
+                                    <div className="text-center py-12 relative">
+                                        {/* Radial gradient aura */}
+                                        <div className="absolute top-12 left-1/2 -translate-x-1/2 w-24 h-24 bg-white/10 blur-xl rounded-full" />
+                                        
+                                        <div className="relative w-12 h-12 rounded-full bg-white/10 flex items-center justify-center mx-auto mb-4 border border-white/5 shadow-inner">
+                                            <Users className="w-6 h-6 text-white/80" />
                                         </div>
-                                        <p className="text-white/60 text-sm">No student assignments yet</p>
-                                        <p className="text-white/40 text-xs mt-1">Assignments will appear here when managers assign tutors to students</p>
+                                        <p className="text-white/80 text-sm font-semibold tracking-wide">No student assignments yet</p>
+                                        <p className="text-white/40 text-xs mt-1">Assignments will appear here when managers assign tutors</p>
                                     </div>
                                 )}
                             </div>

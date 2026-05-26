@@ -153,7 +153,7 @@ export default function AddIdeaDialog({
                 .from("ideas")
                 .insert({
                     title: title.trim(),
-                    description: description.trim(),
+                    content: description.trim(),
                     category,
                     priority,
                     created_by: currentUserId,

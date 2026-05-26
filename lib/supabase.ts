@@ -72,7 +72,8 @@ export type Request = {
         | "feedback"
         | "budget"
         | "access_elevation"
-        | "role_change";
+        | "role_change"
+        | "add_staff";
     submitted_by: string;
     title: string;
     description?: string;
@@ -81,6 +82,7 @@ export type Request = {
     status: "pending" | "approved" | "rejected";
     reviewed_by?: string;
     reviewed_at?: string;
+    metadata?: any;
     // Leave request fields
     dates?: string;
     total_days?: number;
@@ -323,6 +325,9 @@ export type Idea = {
     created_by: string;
     shared_with: string[];
     archived: boolean;
+    completed?: boolean;
+    completed_at?: string;
+    updated_at?: string;
     created_at: string;
     expires_at: string;
     reactions?: string[]; // Array of staff IDs who reacted with 👍

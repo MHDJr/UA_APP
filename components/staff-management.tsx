@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Search, Plus, Star, CheckCircle2, Clock, XCircle, Wifi, Building2, Pencil, Trash2, Loader2, X } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { Search, Plus, Star, CheckCircle2, Clock, XCircle, Wifi, Building2, Pencil, Trash2, Loader2, X, Mail, Users } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -12,6 +12,10 @@ import AddStaffDialog from "./AddStaffDialog";
 import { PendingApprovals, PendingRequest } from "./PendingApprovals";
 import { StatCards } from "./StatCards";
 import { toast } from "sonner";
+import { useTabResiliency } from "./tab-resiliency-engine";
+import { useAuth } from "@/lib/auth-context";
+import { useStaff, useTasks, useRequests } from "@/hooks/use-dashboard-data";
+import { useQueryClient } from "@tanstack/react-query";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -70,311 +74,165 @@ const calculateRating = (completed: number, total: number): number => {
 };
 
 export function StaffManagement() {
+    const { userRole, profile } = useAuth();
+    const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState("");
     const [hoveredRow, setHoveredRow] = useState<string | null>(null);
     const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
-    const [staffData, setStaffData] = useState<StaffMember[]>([]);
-    const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [stats, setStats] = useState({
-        present: 0,
-        remote: 0,
-        late: 0,
-        absent: 0,
-        total: 0,
-        pending: 0,
-        approved: 0,
-        rejected: 0,
-    });
+    
+    // TanStack Query Hooks
+    const { data: staffProfiles = [], isLoading: isLoadingStaff } = useStaff();
+    const { activeTasks = [], completedTasks = [], isLoading: isLoadingTasks } = useTasks();
+    const { data: rawRequests = [], isLoading: isLoadingRequests } = useRequests();
 
     const [staffToDelete, setStaffToDelete] = useState<StaffMember | null>(null);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [confirmName, setConfirmName] = useState("");
 
+    const loading = isLoadingStaff || isLoadingTasks || isLoadingRequests;
+
+    // Process staff data for UI
+    const staffData = useMemo(() => {
+        const allTasks = [...activeTasks, ...completedTasks];
+        const taskMap = new Map();
+        
+        allTasks.forEach(t => {
+            if (!taskMap.has(t.assigned_to)) {
+                taskMap.set(t.assigned_to, { total: 0, completed: 0 });
+            }
+            const stats = taskMap.get(t.assigned_to);
+            stats.total++;
+            if (t.status === "completed") stats.completed++;
+        });
+
+        return staffProfiles.map((profile: Profile) => {
+            const stats = taskMap.get(profile.id) || { total: 0, completed: 0 };
+            return {
+                id: profile.id,
+                name: profile.full_name || profile.username || "Unknown",
+                role: profile.designation || profile.role || "Staff",
+                department: profile.department || "General",
+                status: mapProfileStatus(profile.status),
+                tasksCompleted: stats.completed,
+                tasksTotal: stats.total || 0, 
+                rating: Math.round(calculateRating(stats.completed, stats.total || 0) * 10) / 10,
+                avatar: profile.avatar_url || "",
+                email: profile.email || "",
+                phone: profile.phone || "",
+            };
+        });
+    }, [staffProfiles, activeTasks, completedTasks]);
+
+    // Process pending requests for UI
+    const pendingRequests = useMemo(() => {
+        const filtered = rawRequests.filter(req => req.type !== 'idea');
+        
+        return filtered.map((req: any) => {
+            const staffName = req.submitted_by?.full_name || req.submitted_by?.username || "Unknown Staff";
+            const staffInitials = staffName.split(" ").map((n: string) => n[0]).join("").toUpperCase().slice(0, 2);
+
+            let requestType: PendingRequest["requestType"] = "leave";
+            switch (req.type) {
+                case "leave": requestType = "leave"; break;
+                case "permission": requestType = "permission"; break;
+                case "work_adjustment": requestType = "work_adjustment"; break;
+                case "expense": requestType = "expense"; break;
+                case "feedback": requestType = "feedback"; break;
+                case "budget": requestType = "budget"; break;
+                case "access_elevation": requestType = "access_elevation"; break;
+                case "role_change": requestType = "role_change"; break;
+                case "add_staff": requestType = "add_staff"; break;
+            }
+
+            let leaveType: PendingRequest["leaveType"];
+            if (req.type === "leave") {
+                const purpose = req.purpose?.toLowerCase() || req.title?.toLowerCase() || "";
+                if (purpose.includes("medical")) leaveType = "medical";
+                else if (purpose.includes("emergency")) leaveType = "emergency";
+                else if (purpose.includes("early")) leaveType = "early";
+                else leaveType = "casual";
+            }
+
+            return {
+                id: req.id,
+                staffId: req.submitted_by?.id,
+                staffName,
+                staffInitials,
+                requestType,
+                description: req.description || req.title || "No description provided",
+                requestedAt: req.created_at,
+                urgency: req.priority === "urgent" ? "urgent" : req.priority === "high" ? "high" : undefined,
+                amount: req.amount,
+                leaveType,
+                dates: req.dates,
+                totalDays: req.total_days,
+            };
+        });
+    }, [rawRequests]);
+
+    // Calculate overall stats
+    const stats = useMemo(() => {
+        return {
+            present: staffData.filter((s) => s.status === "Present").length,
+            remote: staffData.filter((s) => s.status === "Remote").length,
+            late: staffData.filter((s) => s.status === "Late").length,
+            absent: staffData.filter((s) => s.status === "Absent").length,
+            total: staffData.length,
+            pending: pendingRequests.length,
+            approved: 0, // Placeholder
+            rejected: 0, // Placeholder
+        };
+    }, [staffData, pendingRequests]);
+
+    // Tab Resiliency Engine Integration
+    useTabResiliency(
+        () => {
+            queryClient.invalidateQueries();
+        },
+        loading,
+        () => {}
+    );
+
     const deleteStaff = async () => {
         if (!staffToDelete) return;
 
         try {
-            console.log("Attempting to delete staff:", staffToDelete);
-            
-            // Use the cascade deletion function
             const { error: cascadeError } = await supabase.rpc('delete_profile_cascade', {
                 profile_uuid: staffToDelete.id
             });
 
-            console.log("Cascade delete result:", { cascadeError });
-
             if (cascadeError) {
-                console.log("Cascade delete failed, trying manual deletion:", cascadeError);
-                
-                // Fallback to manual deletion
-                // 1. Unassign active tasks
-                const { error: taskError } = await supabase
-                    .from("tasks")
-                    .update({ assigned_to: null })
-                    .eq("assigned_to", staffToDelete.id);
-                
-                if (taskError) {
-                    console.error("Error unassigning tasks:", taskError);
-                }
-
-                // 2. Permanently delete from database
-                const { error: deleteError } = await supabase
-                    .from("profiles")
-                    .delete()
-                    .eq("id", staffToDelete.id);
-
-                console.log("Manual delete result:", { deleteError });
-
+                await supabase.from("tasks").update({ assigned_to: null }).eq("assigned_to", staffToDelete.id);
+                const { error: deleteError } = await supabase.from("profiles").delete().eq("id", staffToDelete.id);
                 if (deleteError) {
-                    console.log("Manual delete failed, trying soft delete:", deleteError);
-                    // Fallback to soft delete
-                    const { error: updateError } = await supabase
-                        .from("profiles")
-                        .update({ full_name: "[DELETED]", status: "offline" })
-                        .eq("id", staffToDelete.id);
-                    
-                    console.log("Soft delete result:", { updateError });
-                    
-                    if (updateError) {
-                        throw new Error(`All deletion methods failed: ${updateError.message}`);
-                    }
+                    await supabase.from("profiles").update({ full_name: "[DELETED]", status: "offline" }).eq("id", staffToDelete.id);
                 }
             }
 
-            toast.success("Staff member terminated successfully");
-            
-            // Update local state immediately
-            setStaffData(prev => prev.filter(s => s.id !== staffToDelete.id));
-            
-            // Close modal and reset state
+            toast.success("Personnel terminated successfully");
             setIsDeleteModalOpen(false);
             setStaffToDelete(null);
             setConfirmName("");
-            
-            // Refresh data to ensure consistency
-            await fetchStaffData();
+            queryClient.invalidateQueries();
         } catch (e) {
-            console.error("Complete deletion error:", e);
-            toast.error(`Failed to delete staff member: ${e instanceof Error ? e.message : 'Unknown error'}`);
+            console.error("Deletion error:", e);
+            toast.error("Failed to delete staff member");
         }
     };
 
     useEffect(() => {
-        fetchStaffData();
-        fetchPendingRequests();
-        
-        // Listen for staff creation events
-        const handleStaffCreated = () => {
-            console.log('Staff created event received, refreshing data');
-            fetchStaffData();
-        };
-        
+        const handleStaffCreated = () => queryClient.invalidateQueries({ queryKey: ["staff"] });
         window.addEventListener('staff-created', handleStaffCreated);
-        
-        return () => {
-            window.removeEventListener('staff-created', handleStaffCreated);
-        };
-    }, []);
+        return () => window.removeEventListener('staff-created', handleStaffCreated);
+    }, [queryClient]);
 
-    // Listen for FAB actions from mobile FAB component
     useEffect(() => {
         const handleFabAction = (event: CustomEvent) => {
-            const { action } = event.detail;
-            if (action === "add-staff") {
-                setIsAddStaffOpen(true);
-            }
+            if (event.detail.action === "add-staff") setIsAddStaffOpen(true);
         };
-
         window.addEventListener("fab-action", handleFabAction as EventListener);
-        return () => {
-            window.removeEventListener("fab-action", handleFabAction as EventListener);
-        };
+        return () => window.removeEventListener("fab-action", handleFabAction as EventListener);
     }, []);
-
-    const fetchPendingRequests = async () => {
-        try {
-            // Fetch pending requests with staff profile data (excluding ideas)
-            const { data: requests, error: requestsError } = await supabase
-                .from("requests")
-                .select(`
-                    *,
-                    profiles!requests_submitted_by_fkey (
-                        id,
-                        full_name,
-                        username,
-                        avatar_url
-                    )
-                `)
-                .eq("status", "pending")
-                .neq("type", "idea") // Exclude ideas from requests
-                .order("created_at", { ascending: false });
-
-            if (requestsError) throw requestsError;
-
-            // Transform requests to PendingRequest format
-            const transformedRequests: PendingRequest[] = (requests || []).map((req: Request & { profiles: Profile }) => {
-                const staffName = req.profiles?.full_name || req.profiles?.username || "Unknown Staff";
-                const staffInitials = staffName
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")
-                    .toUpperCase()
-                    .slice(0, 2);
-
-                // Map request type to PendingRequest type
-                let requestType: PendingRequest["requestType"];
-                switch (req.type) {
-                    case "leave":
-                        requestType = "leave";
-                        break;
-                    case "permission":
-                        requestType = "permission";
-                        break;
-                    case "work_adjustment":
-                        requestType = "work_adjustment";
-                        break;
-                    case "expense":
-                        requestType = "expense";
-                        break;
-                    case "feedback":
-                        requestType = "feedback";
-                        break;
-                    case "budget":
-                        requestType = "budget";
-                        break;
-                    case "access_elevation":
-                        requestType = "access_elevation";
-                        break;
-                    case "role_change":
-                        requestType = "role_change";
-                        break;
-                    default:
-                        requestType = "leave"; // Default to leave instead of other
-                }
-
-                // Extract leave type for leave requests
-                let leaveType: PendingRequest["leaveType"];
-                if (req.type === "leave") {
-                    // Determine leave type from purpose or title
-                    const purpose = req.purpose?.toLowerCase() || req.title?.toLowerCase() || req.description?.toLowerCase() || "";
-                    if (purpose.includes("medical") || purpose.includes("sick") || purpose.includes("health")) {
-                        leaveType = "medical";
-                    } else if (purpose.includes("emergency") || purpose.includes("urgent")) {
-                        leaveType = "emergency";
-                    } else if (purpose.includes("early") || purpose.includes("half day")) {
-                        leaveType = "early";
-                    } else {
-                        leaveType = "casual"; // Default to casual leave
-                    }
-                }
-
-                return {
-                    id: req.id,
-                    staffId: req.submitted_by,
-                    staffName,
-                    staffInitials,
-                    requestType,
-                    description: req.description || req.title || "No description provided",
-                    requestedAt: req.created_at,
-                    urgency: req.priority === "urgent" ? "urgent" : req.priority === "high" ? "high" : undefined,
-                    // Leave-specific fields
-                    leaveType: requestType === "leave" ? leaveType : undefined,
-                    dates: req.dates,
-                    totalDays: req.total_days,
-                };
-            });
-
-            setPendingRequests(transformedRequests);
-
-            // Update stats with real counts
-            setStats((prev) => ({
-                ...prev,
-                pending: transformedRequests.length,
-            }));
-        } catch (err) {
-            console.error("Error fetching pending requests:", err);
-            // Set empty array on error to avoid showing dummy data
-            setPendingRequests([]);
-        }
-    };
-
-    const fetchStaffData = async () => {
-        try {
-            setLoading(true);
-            setError(null);
-
-            // Fetch staff profiles (excluding CEO)
-            const { data: profiles, error: profilesError } = await supabase
-                .from("profiles")
-                .select("*")
-                .in("role", ["staff", "sales", "tutor"])
-                .order("created_at", { ascending: false });
-
-            if (profilesError) throw profilesError;
-
-            // Fetch all tasks to calculate completion rates
-            const { data: tasks, error: tasksError } = await supabase
-                .from("tasks")
-                .select("assigned_to, status");
-
-            if (tasksError) throw tasksError;
-
-            // Fetch requests stats
-            const { data: allRequests, error: allRequestsError } = await supabase
-                .from("requests")
-                .select("status");
-
-            if (allRequestsError) throw allRequestsError;
-
-            // Process staff data
-            const processedStaff: StaffMember[] = (profiles || []).map((profile: Profile) => {
-                // Count tasks for this staff member
-                const staffTasks = tasks?.filter((t: any) => t.assigned_to === profile.id) || [];
-                const completedTasks = staffTasks.filter((t: any) => t.status === "completed").length;
-                const totalTasks = staffTasks.length;
-
-                return {
-                    id: profile.id,
-                    name: profile.full_name || profile.username || "Unknown",
-                    role: profile.designation || profile.role || "Staff",
-                    department: profile.department || "General",
-                    status: mapProfileStatus(profile.status),
-                    tasksCompleted: completedTasks,
-                    tasksTotal: totalTasks || 1, // Avoid division by zero
-                    rating: Math.round(calculateRating(completedTasks, totalTasks || 1) * 10) / 10,
-                    avatar: profile.avatar_url || "",
-                    email: profile.email || "",
-                    phone: profile.phone || "",
-                };
-            });
-
-            setStaffData(processedStaff);
-
-            // Calculate stats with real data
-            const pendingCount = allRequests?.filter((r: any) => r.status === "pending").length || 0;
-            const approvedCount = allRequests?.filter((r: any) => r.status === "approved").length || 0;
-            const rejectedCount = allRequests?.filter((r: any) => r.status === "rejected").length || 0;
-
-            const newStats = {
-                present: processedStaff.filter((s) => s.status === "Present").length,
-                remote: processedStaff.filter((s) => s.status === "Remote").length,
-                late: processedStaff.filter((s) => s.status === "Late").length,
-                absent: processedStaff.filter((s) => s.status === "Absent").length,
-                total: processedStaff.length,
-                pending: pendingCount,
-                approved: approvedCount,
-                rejected: rejectedCount,
-            };
-            setStats(newStats);
-        } catch (err) {
-            console.error("Error fetching staff data:", err);
-            setError("Failed to load staff data. Please try again.");
-        } finally {
-            setLoading(false);
-        }
-    };
 
     const filteredStaff = staffData.filter(
         (staff) =>
@@ -383,477 +241,291 @@ export function StaffManagement() {
             staff.department.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    // Stats cards data (dynamic based on real data)
-    const statsData = [
-        { label: "Present", value: stats.present, color: "bg-emerald-500", icon: CheckCircle2 },
-        { label: "Remote", value: stats.remote, color: "bg-blue-500", icon: Wifi },
-        { label: "Late", value: stats.late, color: "bg-orange-500", icon: Clock },
-        { label: "Absent", value: stats.absent, color: "bg-red-500", icon: XCircle },
-    ];
-
     if (loading) {
         return (
             <div className="h-screen bg-[#F9FAFB] flex items-center justify-center">
                 <div className="flex items-center gap-3">
                     <Loader2 className="w-6 h-6 animate-spin" style={{ color: BRAND_COLORS.indigo }} />
-                    <span className="text-gray-500 font-medium">Loading staff data...</span>
-                </div>
-            </div>
-        );
-    }
-
-    if (error) {
-        return (
-            <div className="h-screen bg-[#F9FAFB] flex items-center justify-center">
-                <div className="text-center">
-                    <p className="text-red-500 font-medium mb-3">{error}</p>
-                    <Button
-                        onClick={fetchStaffData}
-                        className="px-4 py-2 rounded-xl text-white font-semibold text-sm"
-                        style={{ backgroundColor: BRAND_COLORS.indigo }}
-                    >
-                        Retry
-                    </Button>
+                    <span className="text-gray-500 font-medium">Synchronizing Personnel Data...</span>
                 </div>
             </div>
         );
     }
 
     return (
-        <div className="min-h-[calc(100vh-80px)] bg-[#F9FAFB] overflow-y-auto pb-24 md:pb-8">
-            <div className="max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-8">
+        <div className="min-h-[calc(100vh-80px)] bg-[#F9FAFB] overflow-y-auto pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8">
+            <div className="max-w-[1600px] mx-auto px-4 md:px-6 lg:px-8 py-6 md:py-8">
                 {/* Header Section */}
-                <div className="mb-4 md:mb-6">
-                    <div className="mb-4 md:mb-6">
-                        <div>
-                            <h1 className="text-xl md:text-3xl font-bold text-gray-900 tracking-tight">
-                                Staff Management
-                            </h1>
-                            <p className="text-sm md:text-base text-gray-500 mt-1">
-                                {stats.total} active staff member{stats.total !== 1 ? "s" : ""} across multiple departments
-                            </p>
-                        </div>
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+                    <div>
+                        <h1 className="text-2xl md:text-3xl font-black text-gray-900 tracking-tight uppercase">
+                            Staff Management
+                        </h1>
+                        <p className="text-xs md:text-sm text-gray-500 font-medium mt-1 tracking-wide">
+                            <span className="text-[#31267D] font-bold">{stats.total}</span> ACTIVE PERSONNEL RECOGNIZED ACROSS ACADEMY DEPARTMENTS
+                        </p>
                     </div>
-
-                    {/* Updated Metric Cards */}
-                    <StatCards
-                        activeStaff={stats.total}
-                        pending={stats.pending}
-                        approved={stats.approved}
-                        rejected={stats.rejected}
-                        className="mb-8"
-                    />
-
-                    {/* Priority Action Hub - Pending Approvals */}
-                    <PendingApprovals
-                        requests={pendingRequests}
-                        onApprove={async (id) => {
-                            try {
-                                // Update request in database
-                                const { error } = await supabase
-                                    .from("requests")
-                                    .update({
-                                        status: "approved",
-                                        reviewed_at: new Date().toISOString(),
-                                        reviewed_by: (await supabase.auth.getUser()).data.user?.id,
-                                    })
-                                    .eq("id", id);
-
-                                if (error) throw error;
-
-                                // Refresh requests and stats
-                                await fetchPendingRequests();
-                                await fetchStaffData();
-                            } catch (err) {
-                                console.error("Error approving request:", err);
-                            }
-                        }}
-                        onDecline={async (id) => {
-                            try {
-                                // Update request in database
-                                const { error } = await supabase
-                                    .from("requests")
-                                    .update({
-                                        status: "rejected",
-                                        reviewed_at: new Date().toISOString(),
-                                        reviewed_by: (await supabase.auth.getUser()).data.user?.id,
-                                    })
-                                    .eq("id", id);
-
-                                if (error) throw error;
-
-                                // Refresh requests and stats
-                                await fetchPendingRequests();
-                                await fetchStaffData();
-                            } catch (err) {
-                                console.error("Error declining request:", err);
-                            }
-                        }}
-                        className="mb-8"
-                    />
+                    {userRole === 'CEO' && (
+                        <Button
+                            onClick={() => setIsAddStaffOpen(true)}
+                            className="w-full md:w-auto px-6 py-6 md:py-2.5 rounded-2xl text-white font-black uppercase tracking-widest text-[11px] items-center gap-2 shadow-xl shadow-orange-500/20 hover:shadow-orange-500/40 hover:scale-[1.02] active:scale-95 transition-all"
+                            style={{ backgroundColor: BRAND_COLORS.orange }}
+                        >
+                            <Plus className="w-4 h-4 stroke-[3px]" />
+                            Provision Personnel
+                        </Button>
+                    )}
                 </div>
 
-                {/* Staff Directory Section */}
-                <div className="bg-white rounded-2xl shadow-[0_2px_16px_rgba(0,0,0,0.06)] overflow-hidden border border-gray-100">
-                    <div className="px-4 md:px-6 py-3 md:py-4 border-b border-gray-100 bg-gray-50/50">
-                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-                            <div>
-                                <h2 className="text-base md:text-lg font-semibold text-gray-900">Staff Directory</h2>
-                                <p className="text-xs md:text-sm text-gray-500">Manage and monitor all team members</p>
-                            </div>
-                            <div className="flex items-center gap-2 md:gap-3">
-                                <div className="relative flex-1 md:flex-none">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                    <Input
-                                        type="text"
-                                        placeholder="Search staff..."
-                                        value={searchQuery}
-                                        onChange={(e) => setSearchQuery(e.target.value)}
-                                        className="pl-10 pr-4 py-2 md:py-2.5 w-full md:w-72 bg-white border-gray-200 rounded-xl text-sm text-gray-900 focus:ring-2 focus:ring-[#31267D]/20 focus:border-[#31267D]"
-                                    />
+                <StatCards
+                    activeStaff={stats.total}
+                    pending={stats.pending}
+                    approved={stats.approved}
+                    rejected={stats.rejected}
+                    className="mb-8"
+                />
+
+                <PendingApprovals
+                    requests={pendingRequests}
+                    className="mb-8"
+                    onApprove={async (id) => {
+                        try {
+                            const { data: requestData, error: fetchError } = await supabase.from("requests").select("*").eq("id", id).single();
+                            if (fetchError) throw fetchError;
+                            if (requestData.type === "add_staff" && requestData.metadata) {
+                                const { fullName, email, username, designation, password, systemRole, hasManagerAccess, department } = requestData.metadata;
+                                const { data: authData, error: authError } = await supabase.auth.signUp({
+                                    email, password, options: { data: { full_name: fullName, username: username } }
+                                });
+                                if (authError) throw authError;
+                                if (!authData.user) throw new Error("Auth failed");
+                                await supabase.from("profiles").insert({
+                                    id: authData.user.id, email, full_name: fullName, username, designation,
+                                    role: systemRole === "manager" || hasManagerAccess ? "manager" : systemRole,
+                                    is_manager: systemRole === "manager" || hasManagerAccess,
+                                    department: department || "Administration", status: "offline"
+                                });
+                            }
+                            
+                            const reviewerId = profile?.id || null;
+                            const { error: updateError } = await supabase.from("requests").update({
+                                status: "approved", 
+                                reviewed_at: new Date().toISOString(),
+                                reviewed_by: reviewerId
+                            }).eq("id", id);
+                            
+                            if (updateError) throw updateError;
+                            
+                            queryClient.invalidateQueries();
+                            toast.success("Request Approved");
+                        } catch (err: any) {
+                            console.error("Approval error:", err);
+                            toast.error(err.message || "Approval failed");
+                        }
+                    }}
+                    onDecline={async (id) => {
+                        try {
+                            const reviewerId = profile?.id || null;
+                            const { error: updateError } = await supabase.from("requests").update({
+                                status: "rejected", 
+                                reviewed_at: new Date().toISOString(),
+                                reviewed_by: reviewerId
+                            }).eq("id", id);
+                            
+                            if (updateError) throw updateError;
+                            
+                            queryClient.invalidateQueries();
+                            toast.success("Request Declined");
+                        } catch (err: any) {
+                            console.error("Decline error:", err);
+                            toast.error(err.message || "Decline failed");
+                        }
+                    }}
+                />
+
+                <div className="bg-white/80 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/40 dark:border-zinc-800/60 rounded-[24px] shadow-[0_12px_40px_rgba(0,0,0,0.03)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)] overflow-hidden">
+                    <div className="px-6 py-6 border-b border-gray-100 dark:border-zinc-800/60 bg-white/30 dark:bg-zinc-900/30">
+                        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 rounded-2xl bg-[#31267D]/10 flex items-center justify-center">
+                                    <Users className="w-5 h-5 text-[#31267D]" />
                                 </div>
-                                <Button
-                                    onClick={() => setIsAddStaffOpen(true)}
-                                    className="hidden md:flex px-5 py-2.5 rounded-xl text-white font-semibold text-sm items-center gap-2 shadow-lg shadow-orange-500/20 hover:shadow-orange-500/30 transition-all"
-                                    style={{ backgroundColor: BRAND_COLORS.orange }}
-                                >
-                                    <Plus className="w-4 h-4" />
-                                    Add Staff
-                                </Button>
+                                <div>
+                                    <h2 className="text-sm font-black uppercase tracking-widest text-gray-900">Personnel Directory</h2>
+                                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Active Deployment Monitoring</p>
+                                </div>
+                            </div>
+                            <div className="relative w-full lg:w-96">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <Input
+                                    type="text"
+                                    placeholder="Search personnel..."
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    className="pl-11 pr-4 py-6 bg-white border-gray-200 rounded-2xl text-sm text-gray-900 focus:ring-4 focus:ring-[#31267D]/5 focus:border-[#31267D] transition-all shadow-sm placeholder:text-gray-400"
+                                />
                             </div>
                         </div>
                     </div>
                     
                     {/* Mobile Card View */}
-                    <div className="md:hidden">
+                    <div className="lg:hidden bg-gray-50/50 p-4 space-y-4">
                         {filteredStaff.length === 0 ? (
-                            <div className="flex items-center justify-center py-12">
-                                <div className="text-center">
-                                    <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                        <Search className="w-6 h-6 text-gray-400" />
-                                    </div>
-                                    <p className="text-gray-500 font-medium text-sm">No staff members found</p>
-                                    <p className="text-xs text-gray-400 mt-1">Try adjusting your search</p>
-                                </div>
+                            <div className="flex flex-col items-center justify-center py-12 text-center">
+                                <Search className="w-8 h-8 text-gray-300 mb-4" />
+                                <p className="text-gray-500 font-bold uppercase tracking-widest text-xs">No Results</p>
                             </div>
                         ) : (
-                            <div className="divide-y divide-gray-100">
-                                {filteredStaff.map((staff) => {
-                                    const statusStyle = statusStyles[staff.status];
-                                    const StatusIcon = statusStyle.icon;
-                                    const progressPercent = (staff.tasksCompleted / staff.tasksTotal) * 100;
-
-                                    return (
-                                        <div
-                                            key={staff.id}
-                                            className="p-4 active:bg-gray-50 transition-colors"
-                                            style={{ touchAction: "manipulation" }}
-                                        >
-                                            {/* Top Row: Avatar, Name, Status */}
-                                            <div className="flex items-start justify-between mb-3">
-                                                <div className="flex items-center gap-3">
-                                                    <Avatar className="w-12 h-12 border-2 border-white shadow-sm">
-                                                        <AvatarImage src={staff.avatar} alt={staff.name} />
-                                                        <AvatarFallback
-                                                            className="text-white text-sm font-bold"
-                                                            style={{ backgroundColor: BRAND_COLORS.indigo }}
-                                                        >
-                                                            {staff.name.split(" ").map((n) => n[0]).join("").slice(0, 2)}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    <div className="min-w-0">
-                                                        <p className="font-semibold text-gray-900 text-sm leading-tight truncate">{staff.name}</p>
-                                                        <p className="text-xs text-gray-500 truncate">{staff.role}</p>
-                                                        <div className="flex items-center gap-1.5 text-gray-400 text-xs mt-0.5">
-                                                            <Building2 className="w-3 h-3" />
-                                                            <span className="truncate">{staff.department}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <span
-                                                    className={cn(
-                                                        "inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium flex-shrink-0",
-                                                        statusStyle.bg,
-                                                        statusStyle.text
-                                                    )}
-                                                >
-                                                    <StatusIcon className="w-3 h-3" />
-                                                    {staff.status}
-                                                </span>
-                                            </div>
-
-                                            {/* Middle Row: Tasks & Rating */}
-                                            <div className="flex items-center justify-between mb-3">
-                                                {/* Tasks Progress */}
-                                                <div className="flex items-center gap-2 flex-1">
-                                                    <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden max-w-[100px]">
-                                                        <div
-                                                            className="h-full rounded-full transition-all duration-500"
-                                                            style={{
-                                                                width: `${progressPercent}%`,
-                                                                backgroundColor: BRAND_COLORS.indigo,
-                                                            }}
-                                                        />
-                                                    </div>
-                                                    <span className="text-xs text-gray-500 font-medium">
-                                                        {staff.tasksCompleted}/{staff.tasksTotal}
-                                                    </span>
-                                                </div>
-
-                                                {/* Rating */}
-                                                <div className="flex items-center gap-1">
-                                                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                                                    <span className="text-sm font-semibold text-gray-900">
-                                                        {staff.rating}
-                                                    </span>
+                            filteredStaff.map((staff) => {
+                                const style = statusStyles[staff.status];
+                                const StatusIcon = style.icon;
+                                return (
+                                    <div key={staff.id} className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
+                                        <div className="flex items-start justify-between mb-4">
+                                            <div className="flex items-center gap-4">
+                                                <Avatar className="w-12 h-12 border-2 border-gray-50 shadow-sm">
+                                                    <AvatarImage src={staff.avatar} />
+                                                    <AvatarFallback className="text-white font-black" style={{ backgroundColor: BRAND_COLORS.indigo }}>
+                                                        {staff.name.split(" ").map(n => n[0]).join("").slice(0,2)}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="min-w-0">
+                                                    <p className="font-black text-gray-900 text-sm truncate uppercase">{staff.name}</p>
+                                                    <p className="text-[10px] font-black uppercase text-[#31267D] tracking-widest">{staff.role}</p>
                                                 </div>
                                             </div>
-
-                                            {/* Bottom Row: Actions */}
-                                            <div className="flex items-center justify-end gap-2">
-                                                <button
-                                                    onClick={() => {
-                                                        setStaffToDelete(staff);
-                                                        setIsDeleteModalOpen(true);
-                                                    }}
-                                                    className="p-2 rounded-lg bg-red-50 text-red-600 hover:bg-red-100 transition-all active:scale-95"
-                                                    style={{ touchAction: "manipulation" }}
-                                                    title="Terminate"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
+                                            <span className={cn("inline-flex items-center gap-1 px-2 py-1 rounded-full text-[8px] font-black uppercase tracking-widest", style.bg, style.text)}>
+                                                <StatusIcon className="w-2.5 h-2.5 stroke-[3px]" />
+                                                {staff.status}
+                                            </span>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-4 py-3 border-y border-gray-50 mb-4">
+                                            <div>
+                                                <p className="text-[7px] font-black text-gray-400 uppercase tracking-widest mb-1">Pulse</p>
+                                                <span className="text-[10px] font-black text-gray-900">{staff.tasksCompleted}/{staff.tasksTotal} Tasks</span>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[7px] font-black text-gray-400 uppercase tracking-widest mb-1">Rating</p>
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                                                    <span className="text-[10px] font-black">{staff.rating}</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    );
-                                })}
-                            </div>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex gap-2">
+                                                <a href={`mailto:${staff.email}`} className="p-2 rounded-xl bg-gray-50 text-gray-500"><Mail className="w-3.5 h-3.5" /></a>
+                                                <a href={`tel:${staff.phone}`} className="p-2 rounded-xl bg-gray-50 text-gray-500"><Wifi className="w-3.5 h-3.5 rotate-90" /></a>
+                                            </div>
+                                            {userRole === 'CEO' && (
+                                                <Button variant="ghost" onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className="h-8 px-3 rounded-xl text-red-600 font-black uppercase text-[8px] gap-1.5">
+                                                    <Trash2 className="w-3 h-3" /> Terminate
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })
                         )}
                     </div>
 
                     {/* Desktop Table View */}
-                    <div className="hidden md:block overflow-x-auto">
-                        {filteredStaff.length === 0 ? (
-                            <div className="flex items-center justify-center py-20">
-                                <div className="text-center">
-                                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <Search className="w-8 h-8 text-gray-400" />
-                                    </div>
-                                    <p className="text-gray-500 font-medium">No staff members found</p>
-                                    <p className="text-sm text-gray-400 mt-1">Try adjusting your search</p>
-                                </div>
-                            </div>
-                        ) : (
-                            <table className="w-full">
-                                <thead className="bg-gray-50/80 sticky top-0 z-10">
-                                    <tr className="border-b border-gray-200">
-                                        <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            Staff Member
-                                        </th>
-                                        <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            Department
-                                        </th>
-                                        <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            Status
-                                        </th>
-                                        <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            Tasks
-                                        </th>
-                                        <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            Rating
-                                        </th>
-                                        <th className="text-left py-4 px-6 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                                            Actions
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {filteredStaff.map((staff) => {
-                                        const statusStyle = statusStyles[staff.status];
-                                        const StatusIcon = statusStyle.icon;
-                                        const progressPercent = (staff.tasksCompleted / staff.tasksTotal) * 100;
-                                        const isHovered = hoveredRow === staff.id;
-
-                                        return (
-                                            <tr
-                                                key={staff.id}
-                                                className={cn(
-                                                    "border-b border-gray-100 last:border-0 transition-all duration-200",
-                                                    isHovered && "bg-gray-50"
+                    <div className="hidden lg:block overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50/50 border-b border-gray-100">
+                                <tr>
+                                    <th className="text-left py-5 px-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Personnel Profile</th>
+                                    <th className="text-left py-5 px-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Department</th>
+                                    <th className="text-left py-5 px-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Status</th>
+                                    <th className="text-left py-5 px-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Pulse</th>
+                                    <th className="text-left py-5 px-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Rating</th>
+                                    <th className="text-right py-5 px-8 text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-50">
+                                {filteredStaff.map((staff) => {
+                                    const style = statusStyles[staff.status];
+                                    const isHovered = hoveredRow === staff.id;
+                                    return (
+                                        <tr key={staff.id} className={cn("group transition-all duration-300", isHovered && "bg-[#31267D]/[0.02]")} onMouseEnter={() => setHoveredRow(staff.id)} onMouseLeave={() => setHoveredRow(null)}>
+                                            <td className="py-5 px-8">
+                                                <div className="flex items-center gap-4">
+                                                    <Avatar className="w-10 h-10 border-2 border-white shadow-sm">
+                                                        <AvatarImage src={staff.avatar} />
+                                                        <AvatarFallback className="text-white text-xs font-black" style={{ backgroundColor: BRAND_COLORS.indigo }}>
+                                                            {staff.name.split(" ").map(n => n[0]).join("")}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div>
+                                                        <p className="font-black text-gray-900 text-sm leading-tight uppercase tracking-tight">{staff.name}</p>
+                                                        <p className="text-[10px] text-[#31267D] font-black uppercase tracking-widest mt-0.5">{staff.role}</p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="py-5 px-8">
+                                                <div className="flex items-center gap-2.5 text-gray-600">
+                                                    <Building2 className="w-3.5 h-3.5 text-gray-400" />
+                                                    <span className="text-[11px] font-bold uppercase tracking-tight">{staff.department}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-5 px-8">
+                                                <span className={cn("inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[9px] font-black uppercase tracking-widest", style.bg, style.text)}>
+                                                    <style.icon className="w-3 h-3 stroke-[3px]" />
+                                                    {staff.status}
+                                                </span>
+                                            </td>
+                                            <td className="py-5 px-8">
+                                                <div className="flex items-center gap-4">
+                                                    <div className="flex-1 h-1 bg-gray-100 rounded-full overflow-hidden w-24">
+                                                        <div className="h-full bg-[#31267D] transition-all duration-1000" style={{ width: `${(staff.tasksCompleted / (staff.tasksTotal || 1)) * 100}%` }} />
+                                                    </div>
+                                                    <span className="text-[10px] font-black text-gray-900">{staff.tasksCompleted}/{staff.tasksTotal}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-5 px-8">
+                                                <div className="flex items-center gap-1.5">
+                                                    <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                                    <span className="text-sm font-black text-gray-900">{staff.rating}</span>
+                                                </div>
+                                            </td>
+                                            <td className="py-5 px-8 text-right">
+                                                {userRole === 'CEO' && (
+                                                    <button onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className={cn("p-2 rounded-xl transition-all duration-300", isHovered ? "bg-red-50 text-red-600" : "opacity-0")}>
+                                                        <Trash2 className="w-4 h-4" />
+                                                    </button>
                                                 )}
-                                                onMouseEnter={() => setHoveredRow(staff.id)}
-                                                onMouseLeave={() => setHoveredRow(null)}
-                                            >
-                                                {/* Staff Member */}
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <Avatar className="w-10 h-10 border-2 border-white shadow-sm">
-                                                            <AvatarImage src={staff.avatar} alt={staff.name} />
-                                                            <AvatarFallback
-                                                                className="text-white text-sm font-bold"
-                                                                style={{ backgroundColor: BRAND_COLORS.indigo }}
-                                                            >
-                                                                {staff.name.split(" ").map((n) => n[0]).join("")}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                        <div>
-                                                            <p className="font-semibold text-gray-900 text-sm leading-tight">{staff.name}</p>
-                                                            <p className="text-xs text-gray-500">{staff.role}</p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-
-                                                {/* Department */}
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-2 text-gray-600">
-                                                        <Building2 className="w-4 h-4 text-gray-400" />
-                                                        <span className="text-sm">{staff.department}</span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Status */}
-                                                <td className="py-4 px-6">
-                                                    <span
-                                                        className={cn(
-                                                            "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium",
-                                                            statusStyle.bg,
-                                                            statusStyle.text
-                                                        )}
-                                                    >
-                                                        <StatusIcon className="w-3.5 h-3.5" />
-                                                        {staff.status}
-                                                    </span>
-                                                </td>
-
-                                                {/* Tasks Progress */}
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden w-24">
-                                                            <div
-                                                                className="h-full rounded-full transition-all duration-500"
-                                                                style={{
-                                                                    width: `${progressPercent}%`,
-                                                                    backgroundColor: BRAND_COLORS.indigo,
-                                                                }}
-                                                            />
-                                                        </div>
-                                                        <span className="text-xs text-gray-500 font-medium min-w-[50px]">
-                                                            {staff.tasksCompleted}/{staff.tasksTotal}
-                                                        </span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Rating */}
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-1.5">
-                                                        <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                                                        <span className="text-sm font-semibold text-gray-900">
-                                                            {staff.rating}
-                                                        </span>
-                                                    </div>
-                                                </td>
-
-                                                {/* Actions - Edit & Terminate */}
-                                                <td className="py-4 px-6">
-                                                    <div className="flex items-center gap-2">
-                                                        <button
-                                                            onClick={() => {
-                                                                setStaffToDelete(staff);
-                                                                setIsDeleteModalOpen(true);
-                                                            }}
-                                                            className={cn(
-                                                                "p-2 rounded-lg transition-all duration-200",
-                                                                isHovered
-                                                                    ? "opacity-100 bg-red-50 text-red-600"
-                                                                    : "opacity-50 text-gray-400",
-                                                                "hover:bg-red-100 hover:scale-105"
-                                                            )}
-                                                            title="Terminate"
-                                                        >
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
             <AddStaffDialog open={isAddStaffOpen} onOpenChange={setIsAddStaffOpen} />
-
-            {/* Delete Staff Confirmation Modal */}
             <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
-                <DialogContent className="max-w-md p-0 bg-white border-gray-200">
-                    {/* Header */}
-                    <div className="bg-gradient-to-r from-red-600 to-red-800 px-6 py-4 text-white">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <h3 className="text-lg font-bold">Terminate Staff</h3>
-                                <p className="text-sm opacity-80">This action cannot be undone</p>
-                            </div>
-                            <button
-                                onClick={() => setIsDeleteModalOpen(false)}
-                                className="text-white/60 hover:text-white/80 transition-colors"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
+                <DialogContent className="max-w-md p-0 overflow-hidden rounded-3xl border-0">
+                    <div className="bg-red-600 px-6 py-6 text-white text-center">
+                        <Trash2 className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                        <h3 className="text-lg font-black uppercase tracking-widest">Terminate Personnel</h3>
+                        <p className="text-[10px] font-bold uppercase tracking-tighter opacity-80 mt-1">Irreversible Deployment Extraction</p>
                     </div>
-
-                    {/* Content */}
-                    <div className="p-6 bg-white">
-                        <div className="flex items-center gap-4 mb-6">
-                            <div className="p-3 bg-red-50 rounded-lg">
-                                <Trash2 className="w-6 h-6 text-red-600" />
-                            </div>
-                            <div>
-                                <h4 className="font-semibold text-gray-900">Confirm Termination</h4>
-                                <p className="text-sm text-gray-600 mt-1">
-                                    Are you sure you want to permanently delete <span className="font-semibold">{staffToDelete?.name}</span>?
-                                </p>
-                            </div>
+                    <div className="p-8 bg-white space-y-6">
+                        <p className="text-sm text-gray-600 font-medium text-center">Are you certain you want to remove <span className="font-black text-gray-900">@{staffToDelete?.name}</span> from active academy records?</p>
+                        <div className="space-y-2">
+                            <label className="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Security Confirmation</label>
+                            <Input value={confirmName} onChange={(e) => setConfirmName(e.target.value)} placeholder="Type personnel name to confirm" className="py-6 rounded-2xl border-gray-100 focus:ring-red-500/10 focus:border-red-500" />
                         </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Type <span className="font-semibold">{staffToDelete?.name}</span> to confirm:
-                                </label>
-                                <Input
-                                    value={confirmName}
-                                    onChange={(e) => setConfirmName(e.target.value)}
-                                    placeholder="Enter full name"
-                                    className="w-full"
-                                />
-                            </div>
-
-                            <div className="flex gap-3 justify-end">
-                                <Button
-                                    variant="outline"
-                                    onClick={() => setIsDeleteModalOpen(false)}
-                                >
-                                    Cancel
-                                </Button>
-                                <Button
-                                    variant="destructive"
-                                    disabled={confirmName !== staffToDelete?.name}
-                                    onClick={deleteStaff}
-                                    className="min-w-[120px]"
-                                >
-                                    <Trash2 className="w-4 h-4 mr-2" />
-                                    Delete
-                                </Button>
-                            </div>
+                        <div className="flex gap-3">
+                            <Button variant="outline" onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-6 rounded-2xl font-black uppercase tracking-widest text-[10px] border-gray-100">Abort</Button>
+                            <Button variant="destructive" disabled={confirmName !== staffToDelete?.name} onClick={deleteStaff} className="flex-1 py-6 rounded-2xl font-black uppercase tracking-widest text-[10px] bg-red-600 shadow-lg shadow-red-500/20">Confirm</Button>
                         </div>
                     </div>
                 </DialogContent>
             </Dialog>
         </div>
     );
-};
-
+}
 
 export default StaffManagement;

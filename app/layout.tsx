@@ -8,10 +8,13 @@ import "@fontsource/jetbrains-mono/500.css";
 import type { Metadata } from "next";
 import { AuthProvider } from "@/lib/auth-context";
 import { FocusProvider } from "@/lib/focus-context";
+import { QueryProvider } from "@/lib/query-provider";
 import { Toaster } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { NetworkStatusProvider } from "@/components/network-status-provider";
+import { TabResiliencyEngine } from "@/components/tab-resiliency-engine";
+import { MobileBottomNav } from "@/components/mobile-bottom-nav";
 
 export const metadata: Metadata = {
     title: "Usthad Academy - Executive Command",
@@ -48,22 +51,33 @@ export default function RootLayout({
                     }}
                 />
             </head>
-            <body className="font-sans min-h-screen bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground">
+            <body 
+                className="font-sans min-h-screen bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground"
+                style={{
+                    paddingTop: 'env(safe-area-inset-top, 20px)',
+                    paddingBottom: 'env(safe-area-inset-bottom, 20px)'
+                }}
+            >
                 <ErrorBoundary>
                     <NetworkStatusProvider>
                         <ThemeProvider>
                             <FocusProvider>
-                                <AuthProvider>
-                                    {children}
-                                    <Toaster
-                                        position="top-right"
-                                        theme="dark"
-                                        toastOptions={{
-                                            className:
-                                                "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
-                                        }}
-                                    />
-                                </AuthProvider>
+                                <QueryProvider>
+                                    <AuthProvider>
+                                        <TabResiliencyEngine>
+                                            {children}
+                                            <MobileBottomNav />
+                                        </TabResiliencyEngine>
+                                        <Toaster
+                                            position="top-right"
+                                            theme="dark"
+                                            toastOptions={{
+                                                className:
+                                                    "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
+                                            }}
+                                        />
+                                    </AuthProvider>
+                                </QueryProvider>
                             </FocusProvider>
                         </ThemeProvider>
                     </NetworkStatusProvider>

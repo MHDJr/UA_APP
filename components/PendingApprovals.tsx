@@ -18,6 +18,9 @@ import {
     Clock,
     MessageSquare,
     Settings,
+    UserPlus,
+    Building2,
+    Code2,
 } from "lucide-react";
 
 // Brand colors
@@ -27,7 +30,7 @@ const BRAND_COLORS = {
 };
 
 // Types of pending requests
-export type RequestType = "leave" | "permission" | "work_adjustment" | "expense" | "feedback" | "budget" | "access_elevation" | "role_change";
+export type RequestType = "leave" | "permission" | "work_adjustment" | "expense" | "feedback" | "budget" | "access_elevation" | "role_change" | "add_staff";
 
 export interface PendingRequest {
     id: string;
@@ -39,6 +42,7 @@ export interface PendingRequest {
     description: string;
     requestedAt: string;
     urgency?: "normal" | "high" | "urgent";
+    amount?: number;
     // Leave request specific fields
     leaveType?: "casual" | "medical" | "emergency" | "early";
     dates?: string;
@@ -105,6 +109,12 @@ const requestTypeConfig: Record<
         color: "text-[#31267D]",
         bgColor: "bg-[#31267D]/10",
     },
+    add_staff: {
+        icon: UserPlus,
+        label: "Add Staff Request",
+        color: "text-emerald-600",
+        bgColor: "bg-emerald-50",
+    },
 };
 
 // Leave type configuration
@@ -149,6 +159,108 @@ const formatRelativeTime = (dateString: string): string => {
     return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
+// Helper to parse budget requests and extract details from the description string
+const parseBudgetRequest = (description: string, dbAmount?: number) => {
+    let amountStr = dbAmount ? `₹${dbAmount.toLocaleString('en-IN')}` : "";
+    let category = "office";
+    let reason = description;
+
+    if (description.includes(" | ")) {
+        const parts = description.split(" | ");
+        parts.forEach(part => {
+            const index = part.indexOf(":");
+            if (index !== -1) {
+                const key = part.slice(0, index).trim().toLowerCase();
+                const val = part.slice(index + 1).trim();
+                if (key === "amount") {
+                    const cleanedVal = val.replace(/[₹$,]/g, '').trim();
+                    const numericVal = parseFloat(cleanedVal);
+                    if (!isNaN(numericVal) && !amountStr) {
+                        amountStr = `₹${numericVal.toLocaleString('en-IN')}`;
+                    }
+                } else if (key === "category") {
+                    category = val.toLowerCase();
+                } else if (key === "reason") {
+                    reason = val;
+                }
+            }
+        });
+    } else {
+        const match = description.match(/[₹$]\d+([,\d]+)?/);
+        if (match && !amountStr) {
+            amountStr = match[0].replace('$', '₹');
+        }
+    }
+
+    return { amountStr, category, reason };
+};
+
+// Helper to format dates beautifully (e.g. "2026-05-26 → 2026-05-28" to "May 26 to May 28")
+const formatDates = (datesStr?: string) => {
+    if (!datesStr) return "";
+    try {
+        const parts = datesStr.includes("→")
+            ? datesStr.split("→").map(p => p.trim())
+            : [datesStr.trim()];
+
+        const formatDatePart = (dStr: string) => {
+            const date = new Date(dStr);
+            if (isNaN(date.getTime())) return dStr;
+            return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        };
+
+        if (parts.length === 2) {
+            return `${formatDatePart(parts[0])} to ${formatDatePart(parts[1])}`;
+        }
+        return formatDatePart(parts[0]);
+    } catch (e) {
+        return datesStr;
+    }
+};
+
+// Helper to parse Access & Permission requests and strip raw text labels
+const parseAccessRequest = (description: string) => {
+    let system = "";
+    let duration = "";
+    let justification = description;
+
+    if (description.includes(" | ")) {
+        const parts = description.split(" | ");
+        parts.forEach(part => {
+            const index = part.indexOf(":");
+            if (index !== -1) {
+                const key = part.slice(0, index).trim().toLowerCase();
+                const val = part.slice(index + 1).trim();
+                if (key === "system" || key === "action") {
+                    system = val;
+                } else if (key === "duration" || key === "urgency") {
+                    duration = val;
+                } else if (key === "justification") {
+                    justification = val;
+                }
+            }
+        });
+    }
+    return { system, duration, justification };
+};
+
+// Helper to strip repetitive prefixes like "[CASUAL LEAVE] 3 days:" from descriptions
+const cleanDescription = (description: string) => {
+    if (!description) return "";
+    return description.replace(/^\[[^\]]+\]\s*\d+\s*(days|day):?\s*(-|→)?\s*/i, "").trim();
+};
+
+// Custom category icons and style mappings for budget/expense allocations
+const categoryConfig: Record<
+    string,
+    { icon: React.ElementType; label: string; color: string; bgColor: string }
+> = {
+    marketing: { icon: Building2, label: "Marketing", color: "text-[#31267D]", bgColor: "bg-[#31267D]/10" },
+    development: { icon: Code2, label: "Dev", color: "text-emerald-600", bgColor: "bg-emerald-50" },
+    dev: { icon: Code2, label: "Dev", color: "text-emerald-600", bgColor: "bg-emerald-50" },
+    office: { icon: Briefcase, label: "Office", color: "text-amber-600", bgColor: "bg-amber-50" },
+};
+
 // Individual request row component
 const RequestRow = ({
     request,
@@ -163,132 +275,359 @@ const RequestRow = ({
 }) => {
     const config = requestTypeConfig[request.requestType];
     const Icon = config.icon;
-    const urgencyColor =
-        request.urgency === "urgent"
-            ? "text-rose-600 bg-rose-50 border-rose-200"
-            : request.urgency === "high"
-            ? "text-amber-600 bg-amber-50 border-amber-200"
-            : null;
+    const leaveConfig = request.leaveType ? leaveTypeConfig[request.leaveType] : null;
 
+    const isLeave = request.requestType === "leave";
+    const isBudget = request.requestType === "budget" || request.requestType === "expense";
+    const isAccessOrPermission = request.requestType === "access_elevation" || request.requestType === "permission";
+
+    // 1. Variant A: LEAVE REQUEST LAYOUT
+    if (isLeave) {
+        return (
+            <div
+                className={cn(
+                    "group relative overflow-hidden transition-all duration-300",
+                    "bg-white dark:bg-zinc-900 p-5 rounded-xl border border-slate-100 dark:border-zinc-800/40 shadow-sm hover:shadow-md"
+                )}
+            >
+                {/* Crisp 3px vertical accent indicator bar on the far-left edge */}
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-400" />
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pl-1">
+                    {/* Left Column: Avatar, Name, Category Pill, Timeline Capsule, and Reason */}
+                    <div className="flex-1 min-w-0">
+                        {/* Top Row: Avatar + Name Stack */}
+                        <div className="flex items-start gap-4">
+                            <Avatar className="w-11 h-11 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
+                                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                                <AvatarFallback
+                                    className="text-white text-xs font-semibold"
+                                    style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                >
+                                    {request.staffInitials}
+                                </AvatarFallback>
+                            </Avatar>
+
+                            <div className="flex-1 min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <span className="font-semibold text-slate-900 dark:text-zinc-100 text-sm">
+                                        {request.staffName}
+                                    </span>
+                                    {leaveConfig && (
+                                        <span
+                                            className={cn(
+                                                "inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-semibold",
+                                                leaveConfig.bgColor,
+                                                leaveConfig.color
+                                            )}
+                                        >
+                                            {leaveConfig.label}
+                                        </span>
+                                    )}
+                                </div>
+
+                                {/* Timeline Capsule right below Name */}
+                                {request.totalDays && request.dates && (
+                                    <div className="inline-flex items-center gap-1.5 bg-slate-100/80 dark:bg-zinc-800/80 px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-slate-600 dark:text-zinc-400 mt-1.5 w-fit">
+                                        <span>📅</span>
+                                        <span>
+                                            {request.totalDays} {request.totalDays === 1 ? "Day" : "Days"} • {formatDates(request.dates)}
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Dedicated Message Block underneath */}
+                        <div className="mt-3.5 pl-0 sm:pl-[60px]">
+                            <p className="text-sm font-medium text-slate-600 dark:text-zinc-300 leading-relaxed">
+                                {cleanDescription(request.description)}
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Right Column: Isolated button controls centered vertically with the card layout */}
+                    <div className="flex items-center gap-3 self-end lg:self-center flex-shrink-0 w-full lg:w-auto justify-end">
+                        <button
+                            onClick={() => onDecline(request.id)}
+                            disabled={isProcessing}
+                            className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            Reject
+                        </button>
+                        <button
+                            onClick={() => onApprove(request.id)}
+                            disabled={isProcessing}
+                            className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            Approve
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // 2. Variant B: BUDGET / ALLOCATION TICKETS
+    if (isBudget) {
+        const budgetInfo = parseBudgetRequest(request.description, request.amount);
+        const catConfig = categoryConfig[budgetInfo.category] || categoryConfig["office"];
+        const CatIcon = catConfig.icon;
+
+        return (
+            <div
+                className={cn(
+                    "group relative overflow-hidden transition-all duration-300",
+                    "bg-white dark:bg-zinc-900 p-5 rounded-xl border border-slate-100 dark:border-zinc-800/40 shadow-sm hover:shadow-md"
+                )}
+            >
+                {/* Crisp 3px vertical accent indicator bar on the far-left edge */}
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-400" />
+
+                <div className="flex flex-col pl-1">
+                    {/* Header Row: Left Side (Avatar, Name, Category) | Right Side (Requested Allocation badge & buttons) */}
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        {/* Left Side: Avatar & Name details */}
+                        <div className="flex items-center gap-3">
+                            <Avatar className="w-10 h-10 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
+                                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                                <AvatarFallback
+                                    className="text-white text-xs font-semibold"
+                                    style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                >
+                                    {request.staffInitials}
+                                </AvatarFallback>
+                            </Avatar>
+                            <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <p className="font-semibold text-slate-900 dark:text-zinc-100 text-sm tracking-tight">
+                                        {request.staffName}
+                                    </p>
+                                    <span className="text-xs text-slate-400 dark:text-zinc-500">
+                                        {formatRelativeTime(request.requestedAt)}
+                                    </span>
+                                </div>
+                                <div
+                                    className={cn(
+                                        "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold mt-0.5",
+                                        catConfig.bgColor,
+                                        catConfig.color
+                                    )}
+                                >
+                                    <CatIcon className="w-3 h-3" />
+                                    <span>{catConfig.label}</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Right Side: Prominently Right-Aligned Requested Allocation badge + Buttons */}
+                        <div className="flex flex-wrap items-center gap-4 self-end md:self-center justify-end w-full md:w-auto mt-2 md:mt-0">
+                            {/* Prominent green Requested Allocation badge inline with header */}
+                            <div className="flex flex-col items-end bg-emerald-50/40 dark:bg-emerald-950/10 px-4 py-1.5 rounded-lg border border-emerald-100/50 dark:border-emerald-900/10 min-w-[130px]">
+                                <span className="text-[9px] font-bold text-emerald-600/80 dark:text-emerald-400/80 uppercase tracking-widest">REQUESTED ALLOCATION</span>
+                                <span className="text-base font-extrabold text-emerald-600 dark:text-emerald-400 mt-0.5">
+                                    {budgetInfo.amountStr || "₹0"}
+                                </span>
+                            </div>
+
+                            {/* Buttons */}
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => onDecline(request.id)}
+                                    disabled={isProcessing}
+                                    className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    Reject
+                                </button>
+                                <button
+                                    onClick={() => onApprove(request.id)}
+                                    disabled={isProcessing}
+                                    className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    Approve
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Dedicated Message description on its own row with clear padding */}
+                    <div className="mt-4 pl-0 sm:pl-[52px] border-t border-slate-100 dark:border-zinc-800/40 pt-3">
+                        <p className="text-sm font-medium text-slate-600 dark:text-zinc-300 leading-relaxed">
+                            {budgetInfo.reason}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // 3. Variant C: ACCESS & PERMISSION TICKETS
+    if (isAccessOrPermission) {
+        const info = parseAccessRequest(request.description);
+
+        return (
+            <div
+                className={cn(
+                    "group relative overflow-hidden transition-all duration-300",
+                    "bg-white dark:bg-zinc-900 p-5 rounded-xl border border-slate-100 dark:border-zinc-800/40 shadow-sm hover:shadow-md"
+                )}
+            >
+                {/* Crisp 3px vertical accent indicator bar on the far-left edge */}
+                <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-400" />
+
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pl-1">
+                    {/* Left Column: Header line & badges & justification */}
+                    <div className="flex-1 min-w-0">
+                        {/* Header Line */}
+                        <div className="flex items-center gap-3">
+                            <Avatar className="w-10 h-10 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
+                                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                                <AvatarFallback
+                                    className="text-white text-xs font-semibold"
+                                    style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                >
+                                    {request.staffInitials}
+                                </AvatarFallback>
+                            </Avatar>
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-slate-900 dark:text-zinc-100 text-sm">
+                                    {request.staffName}
+                                </span>
+                                <span className="text-xs text-slate-400 dark:text-zinc-500">
+                                    {formatRelativeTime(request.requestedAt)}
+                                </span>
+                                <span className="text-slate-300 dark:text-zinc-700">·</span>
+                                <div
+                                    className={cn(
+                                        "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                        config.bgColor,
+                                        config.color
+                                    )}
+                                >
+                                    <Icon className="w-3 h-3" />
+                                    {config.label}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Technical Metadata Badges Row */}
+                        {info.system && (
+                            <div className="flex flex-wrap items-center gap-2 mt-3 pl-0 sm:pl-[52px]">
+                                <span className="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 px-2.5 py-1 rounded-md text-[11px] font-mono border border-slate-100 dark:border-zinc-800">
+                                    🖥️ {info.system}
+                                </span>
+                                {info.duration && (
+                                    <span className="inline-flex items-center gap-1.5 bg-slate-50 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300 px-2.5 py-1 rounded-md text-[11px] font-mono border border-slate-100 dark:border-zinc-800">
+                                        ⏱️ {info.duration}
+                                    </span>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Clean Justification Box */}
+                        <div className="mt-3 pl-0 sm:pl-[52px]">
+                            <div className="bg-slate-50/50 dark:bg-zinc-900/50 border border-slate-100 dark:border-zinc-800/40 p-3 rounded-lg">
+                                <p className="text-sm text-slate-700 dark:text-zinc-300 font-medium leading-relaxed">
+                                    {info.justification}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right Column: Action Buttons */}
+                    <div className="flex items-center gap-3 self-end lg:self-center flex-shrink-0 w-full lg:w-auto justify-end">
+                        <button
+                            onClick={() => onDecline(request.id)}
+                            disabled={isProcessing}
+                            className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            Reject
+                        </button>
+                        <button
+                            onClick={() => onApprove(request.id)}
+                            disabled={isProcessing}
+                            className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                        >
+                            Approve
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // 4. Fallback Layout for other request types
     return (
         <div
             className={cn(
-                "group flex items-center gap-4 p-4 rounded-xl",
-                "transition-all duration-300",
-                "hover:bg-white/60 hover:shadow-sm",
-                "border border-transparent hover:border-[#31267D]/10"
+                "group relative overflow-hidden transition-all duration-300",
+                "bg-white dark:bg-zinc-900 p-5 rounded-xl border border-slate-100 dark:border-zinc-800/40 shadow-sm hover:shadow-md"
             )}
         >
-            {/* Avatar */}
-            <Avatar className="w-11 h-11 border-2 border-white shadow-sm flex-shrink-0">
-                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
-                <AvatarFallback
-                    className="text-white text-xs font-semibold"
-                    style={{ backgroundColor: BRAND_COLORS.indigo }}
-                >
-                    {request.staffInitials}
-                </AvatarFallback>
-            </Avatar>
+            {/* Crisp 3px vertical accent indicator bar on the far-left edge */}
+            <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-amber-400" />
 
-            {/* Request Info */}
-            <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-gray-900 text-sm">
-                        {request.staffName}
-                    </span>
-                    <span className="text-gray-400">·</span>
-                    <div
-                        className={cn(
-                            "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-medium",
-                            config.bgColor,
-                            config.color
-                        )}
-                    >
-                        <Icon className="w-3 h-3" />
-                        {config.label}
+            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 pl-1">
+                {/* Left side: content */}
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-4">
+                        <Avatar className="w-10 h-10 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
+                            <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                            <AvatarFallback
+                                className="text-white text-xs font-semibold"
+                                style={{ backgroundColor: BRAND_COLORS.indigo }}
+                            >
+                                {request.staffInitials}
+                            </AvatarFallback>
+                        </Avatar>
+
+                        <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-semibold text-slate-900 dark:text-zinc-100 text-sm">
+                                    {request.staffName}
+                                </span>
+                                <span className="text-xs text-slate-400 dark:text-zinc-500">
+                                    {formatRelativeTime(request.requestedAt)}
+                                </span>
+                                <span className="text-slate-300 dark:text-zinc-700">·</span>
+                                <div
+                                    className={cn(
+                                        "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold",
+                                        config.bgColor,
+                                        config.color
+                                    )}
+                                >
+                                    <Icon className="w-3 h-3" />
+                                    {config.label}
+                                </div>
+                            </div>
+                        </div>
                     </div>
-                    {request.urgency && request.urgency !== "normal" && (
-                        <span
-                            className={cn(
-                                "px-2 py-0.5 rounded-full text-[10px] font-medium border",
-                                urgencyColor
-                            )}
-                        >
-                            {request.urgency === "urgent" ? "Urgent" : "High Priority"}
-                        </span>
-                    )}
-                    {/* Leave type badge for leave requests */}
-                    {request.requestType === "leave" && request.leaveType && (
-                        <span
-                            className={cn(
-                                "px-2 py-0.5 rounded-full text-[10px] font-medium",
-                                leaveTypeConfig[request.leaveType].bgColor,
-                                leaveTypeConfig[request.leaveType].color
-                            )}
-                        >
-                            {leaveTypeConfig[request.leaveType].label}
-                        </span>
-                    )}
+
+                    <div className="mt-3 pl-0 sm:pl-[52px]">
+                        <p className="text-sm font-semibold text-slate-700 dark:text-zinc-300 leading-relaxed bg-white/40 dark:bg-zinc-950/10 p-3 rounded-lg border border-slate-100/50 dark:border-zinc-800/20">
+                            {request.description}
+                        </p>
+                    </div>
                 </div>
-                <p className="text-sm text-gray-600 mt-0.5 truncate">
-                    {request.description}
-                </p>
-                {/* Leave date information for leave requests */}
-                {request.requestType === "leave" && (request.dates || request.totalDays) && (
-                    <div className="flex items-center gap-3 mt-1">
-                        {request.dates && (
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                                <Calendar className="w-3 h-3" />
-                                <span>{request.dates}</span>
-                            </div>
-                        )}
-                        {request.totalDays && (
-                            <div className="flex items-center gap-1 text-[11px] text-gray-500">
-                                <Clock className="w-3 h-3" />
-                                <span>{request.totalDays} day{request.totalDays > 1 ? 's' : ''}</span>
-                            </div>
-                        )}
-                    </div>
-                )}
-                <p className="text-[11px] text-gray-400 mt-0.5">
-                    {formatRelativeTime(request.requestedAt)}
-                </p>
-            </div>
 
-            {/* Action Buttons */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-                <Button
-                    size="sm"
-                    onClick={() => onDecline(request.id)}
-                    disabled={isProcessing}
-                    className={cn(
-                        "h-9 px-4 rounded-lg text-white text-xs font-semibold",
-                        "shadow-lg shadow-red-500/20",
-                        "hover:shadow-xl hover:shadow-red-500/30 hover:scale-[1.02]",
-                        "active:scale-[0.98]",
-                        "transition-all duration-200"
-                    )}
-                    style={{ backgroundColor: "#EF4444" }}
-                >
-                    <X className="w-3.5 h-3.5 mr-1.5" />
-                    Reject
-                </Button>
-                <Button
-                    size="sm"
-                    onClick={() => onApprove(request.id)}
-                    disabled={isProcessing}
-                    className={cn(
-                        "h-9 px-4 rounded-lg text-white text-xs font-semibold",
-                        "shadow-lg shadow-green-500/20",
-                        "hover:shadow-xl hover:shadow-green-500/30 hover:scale-[1.02]",
-                        "active:scale-[0.98]",
-                        "transition-all duration-200"
-                    )}
-                    style={{ backgroundColor: "#10B981" }}
-                >
-                    <Check className="w-3.5 h-3.5 mr-1.5" />
-                    Approve
-                </Button>
+                {/* Tactical Action Buttons */}
+                <div className="flex items-center gap-3 self-end md:self-center flex-shrink-0 mt-3 md:mt-0 w-full md:w-auto justify-end">
+                    <button
+                        onClick={() => onDecline(request.id)}
+                        disabled={isProcessing}
+                        className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                    >
+                        Reject
+                    </button>
+                    <button
+                        onClick={() => onApprove(request.id)}
+                        disabled={isProcessing}
+                        className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                    >
+                        Approve
+                    </button>
+                </div>
             </div>
         </div>
     );
@@ -355,10 +694,8 @@ export function PendingApprovals({
     return (
         <div
             className={cn(
-                "relative rounded-2xl overflow-hidden",
-                "backdrop-blur-xl bg-white/60",
-                "border border-[#31267D]/10",
-                "shadow-[0_4px_24px_rgba(49,38,125,0.06)]",
+                "relative rounded-[24px] overflow-hidden transition-all duration-300",
+                "bg-white/80 dark:bg-zinc-900/60 backdrop-blur-xl border border-white/40 dark:border-zinc-800/60 shadow-[0_12px_40px_rgba(0,0,0,0.03)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",
                 className
             )}
         >
@@ -406,11 +743,11 @@ export function PendingApprovals({
             </div>
 
             {/* Content */}
-            <div className="relative p-2">
+            <div className="relative p-4">
                 {requests.length === 0 ? (
                     <EmptyState />
                 ) : (
-                    <div className="space-y-1">
+                    <div className="space-y-4">
                         {requests.map((request, index) => (
                             <div
                                 key={request.id}

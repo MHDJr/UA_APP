@@ -1,0 +1,10 @@
+{
+  "appId": "com.usthadacademy.command",
+  "appName": "UA Command",
+  "webDir": "out",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://dashboard.usthadacademy.com",
+    "cleartext": true
+  }
+}

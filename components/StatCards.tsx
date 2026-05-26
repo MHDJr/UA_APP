@@ -28,36 +28,36 @@ interface StatCardProps {
 const StatCard = ({ label, value, icon: Icon, variant, delay = 0 }: StatCardProps) => {
     const variantStyles = {
         neutral: {
-            bg: "bg-white/80",
-            iconBg: "bg-[#31267D]/10",
-            iconColor: "text-[#31267D]",
-            valueColor: "text-gray-900",
-            borderColor: "border-[#31267D]/5",
-            shadow: "shadow-[0_2px_16px_rgba(49,38,125,0.06)]",
+            bg: "bg-white/75 dark:bg-zinc-900/60",
+            iconBg: "bg-indigo-500/10 dark:bg-indigo-500/20",
+            iconColor: "text-indigo-600 dark:text-indigo-400",
+            valueColor: "text-slate-900 dark:text-zinc-100",
+            borderColor: "border-white/40 dark:border-zinc-800/50",
+            shadow: "shadow-sm dark:shadow-2xl",
         },
         pending: {
-            bg: "bg-[#F14D24]/5",
-            iconBg: "bg-[#F14D24]/15",
-            iconColor: "text-[#F14D24]",
-            valueColor: "text-[#F14D24]",
-            borderColor: "border-[#F14D24]/15",
-            shadow: "shadow-[0_2px_16px_rgba(241,77,36,0.08)]",
+            bg: "bg-amber-500/5 dark:bg-amber-500/10",
+            iconBg: "bg-amber-500/15 dark:bg-amber-500/20",
+            iconColor: "text-amber-600 dark:text-amber-400",
+            valueColor: "text-amber-700 dark:text-amber-300",
+            borderColor: "border-amber-500/20 dark:border-amber-800/50",
+            shadow: "shadow-sm",
         },
         approved: {
-            bg: "bg-emerald-50/80",
-            iconBg: "bg-emerald-100",
-            iconColor: "text-emerald-600",
-            valueColor: "text-emerald-700",
-            borderColor: "border-emerald-200/50",
-            shadow: "shadow-[0_2px_16px_rgba(16,185,129,0.06)]",
+            bg: "bg-emerald-50/75 dark:bg-emerald-900/20",
+            iconBg: "bg-emerald-100 dark:bg-emerald-500/20",
+            iconColor: "text-emerald-600 dark:text-emerald-400",
+            valueColor: "text-emerald-700 dark:text-emerald-300",
+            borderColor: "border-emerald-200/50 dark:border-emerald-800/50",
+            shadow: "shadow-sm",
         },
         rejected: {
-            bg: "bg-rose-50/80",
-            iconBg: "bg-rose-100",
-            iconColor: "text-rose-600",
-            valueColor: "text-rose-700",
-            borderColor: "border-rose-200/50",
-            shadow: "shadow-[0_2px_16px_rgba(244,63,94,0.06)]",
+            bg: "bg-rose-50/75 dark:bg-rose-900/20",
+            iconBg: "bg-rose-100 dark:bg-rose-500/20",
+            iconColor: "text-rose-600 dark:text-rose-400",
+            valueColor: "text-rose-700 dark:text-rose-300",
+            borderColor: "border-rose-200/50 dark:border-rose-800/50",
+            shadow: "shadow-sm",
         },
     };
 
@@ -66,9 +66,9 @@ const StatCard = ({ label, value, icon: Icon, variant, delay = 0 }: StatCardProp
     return (
         <div
             className={cn(
-                "relative overflow-hidden rounded-2xl p-5 backdrop-blur-xl",
+                "relative overflow-hidden rounded-[1.75rem] p-6 backdrop-blur-xl",
                 "border transition-all duration-500 ease-out",
-                "hover:scale-[1.02] hover:shadow-lg",
+                "hover:scale-[1.02] hover:shadow-xl",
                 styles.bg,
                 styles.borderColor,
                 styles.shadow,
@@ -76,35 +76,22 @@ const StatCard = ({ label, value, icon: Icon, variant, delay = 0 }: StatCardProp
             )}
             style={{ animationDelay: `${delay}ms` }}
         >
-            {/* Subtle gradient overlay */}
-            <div
-                className="absolute inset-0 opacity-30 pointer-events-none"
-                style={{
-                    background:
-                        variant === "pending"
-                            ? `linear-gradient(135deg, rgba(241,77,36,0.05) 0%, transparent 60%)`
-                            : `linear-gradient(135deg, rgba(49,38,125,0.03) 0%, transparent 60%)`,
-                }}
-            />
-
-            <div className="relative flex items-center gap-4">
-                {/* Icon container */}
+            <div className="relative flex items-center gap-5">
                 <div
                     className={cn(
-                        "w-12 h-12 rounded-xl flex items-center justify-center",
+                        "w-12 h-12 rounded-2xl flex items-center justify-center",
                         "transition-transform duration-300",
                         styles.iconBg
                     )}
                 >
-                    <Icon className={cn("w-5 h-5", styles.iconColor)} />
+                    <Icon className={cn("w-6 h-6", styles.iconColor)} />
                 </div>
 
-                {/* Content */}
                 <div className="flex flex-col">
-                    <span className={cn("text-2xl font-bold tracking-tight", styles.valueColor)}>
+                    <span className={cn("text-2xl font-black tracking-tight", styles.valueColor)}>
                         {value}
                     </span>
-                    <span className="text-xs font-medium text-gray-500 tracking-wide">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest">
                         {label}
                     </span>
                 </div>
@@ -121,7 +108,7 @@ export function StatCards({
     className,
 }: StatCardsProps) {
     return (
-        <div className={cn("grid grid-cols-2 lg:grid-cols-4 gap-4", className)}>
+        <div className={cn("grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6", className)}>
             <StatCard
                 label="Active Staff"
                 value={activeStaff}

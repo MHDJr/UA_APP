@@ -9,6 +9,7 @@ interface AuthContextType {
     user: User | null;
     profile: Profile | null;
     loading: boolean;
+    userRole: 'CEO' | 'MANAGER' | null;
     signIn: (email: string, password: string) => Promise<void>;
     signOut: () => Promise<void>;
 }
@@ -19,6 +20,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [user, setUser] = useState<User | null>(null);
     const [profile, setProfile] = useState<Profile | null>(null);
     const [loading, setLoading] = useState(true);
+    const [userRole, setUserRole] = useState<'CEO' | 'MANAGER' | null>(null);
     const router = useRouter();
 
     useEffect(() => {
@@ -62,6 +64,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (!error && data) {
             setProfile(data as Profile);
+            // Determine user role based on profile
+            if (data.role === 'ceo') {
+                setUserRole('CEO');
+            } else if (data.is_manager || data.role === 'manager') {
+                setUserRole('MANAGER');
+            } else {
+                setUserRole(null);
+            }
         }
     };
 
@@ -79,7 +89,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     return (
-        <AuthContext.Provider value={{ user, profile, loading, signIn, signOut }}>
+        <AuthContext.Provider value={{ user, profile, loading, userRole, signIn, signOut }}>
             {children}
         </AuthContext.Provider>
     );

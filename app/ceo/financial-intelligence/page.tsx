@@ -804,7 +804,7 @@ export default function CEOFinancialIntelligence() {
             <div className="hidden md:block">
                 <CEOSidebar
                     activeView="financial-intelligence"
-                    onViewChange={(view) => {
+                    onViewChange={(view: string) => {
                         if (view === "financial-intelligence") {
                             // Already on this page
                             return;

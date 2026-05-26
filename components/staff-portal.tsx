@@ -6,6 +6,7 @@ import { supabase, Task, Profile } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Clock,
@@ -52,6 +53,7 @@ import {
     Home,
     User,
     Wallet,
+    Circle,
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -211,7 +213,7 @@ const Modal: React.FC<ModalProps> = ({ title, type, onClose, children, onSubmitS
                     // Submit ideas to the ideas table instead of requests
                     const ideaData: any = {
                         title: title || "Idea Submission",
-                        description: description || "No description provided",
+                        content: description || "No description provided",
                         created_by: profile.id
                     };
                     
@@ -246,7 +248,7 @@ const Modal: React.FC<ModalProps> = ({ title, type, onClose, children, onSubmitS
                     // Fallback for idea modal without form
                     const ideaData = {
                         title: "Idea Submission",
-                        description: "Idea submitted from staff portal",
+                        content: "Idea submitted from staff portal",
                         category: "other",
                         priority: 'medium',
                         status: 'active',
@@ -457,6 +459,57 @@ const PreMeetingTasksIndicator = ({ meetingId, userId, meetingTitle }: { meeting
             </div>
         </div>
     );
+};
+
+// Helper to parse and format request tracker items
+const formatTrackerRequest = (req: any) => {
+    // 1. Determine Title
+    let title = req.type?.replace("_", " ").toUpperCase() || "REQUEST";
+    if (req.type === "access_elevation") title = "Access Elevation";
+    else if (req.type === "role_change") title = "Role Elevation";
+    else if (req.type === "permission") title = "Permission Access";
+    else if (req.type === "leave") title = "Leave Authorization";
+    else if (req.type === "budget") title = "Budget Allocation";
+    
+    // 2. Determine cleaned secondary metadata/description
+    let detail = "";
+    if (req.description) {
+        let desc = req.description;
+        // Check if it's a pipe-separated metadata string
+        if (desc.startsWith("[") && desc.endsWith("]")) {
+            const parts = desc.slice(1, -1).split("|");
+            const systemPart = parts.find((p: string) => p.trim().startsWith("System:"));
+            const justificationPart = parts.find((p: string) => p.trim().startsWith("Justification:"));
+            
+            const systemVal = systemPart ? systemPart.split(":")[1]?.trim() : "";
+            const justificationVal = justificationPart ? justificationPart.split(":")[1]?.trim() : "";
+            
+            if (systemVal && justificationVal) {
+                detail = `${systemVal} • "${justificationVal}"`;
+            } else if (justificationVal) {
+                detail = justificationVal;
+            } else {
+                detail = desc;
+            }
+        } else if (req.type === 'leave') {
+            const descParts = desc.split(':');
+            const category = descParts[0] || '';
+            const reason = descParts[1] || desc;
+            detail = category ? `${category} • "${reason.trim()}"` : reason.trim();
+        } else if (desc.includes("|")) {
+            // Replace pipes with elegant bullets
+            detail = desc.split("|").map((p: string) => p.trim()).join(" • ");
+        } else {
+            detail = desc;
+        }
+    }
+    
+    // Truncate detail for scannability
+    if (detail.length > 55) {
+        detail = detail.slice(0, 52) + "...";
+    }
+    
+    return { title, detail };
 };
 
 export default function StaffPortal() {
@@ -931,9 +984,9 @@ export default function StaffPortal() {
     }
 
     return (
-        <div className="min-h-screen bg-[#F4F7FE] text-slate-800 font-sans selection:bg-orange-100 pb-24 md:pb-8 max-w-[100vw] overflow-x-hidden">
-            {/* Mobile-Only Header Status Bar */}
-            <div className="md:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-40">
+        <div className="min-h-screen bg-[#F4F7FE] text-slate-800 font-sans selection:bg-orange-100 pb-[calc(6rem+env(safe-area-inset-bottom))] md:pb-8 max-w-[100vw] overflow-x-hidden">
+            {/* Mobile-Only Header Status Bar - Hidden (MobileBottomNav handles this) */}
+            <div className="hidden md:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-40">
                 <div className="flex items-center gap-2">
                     <div className="relative h-8 w-8">
                         <img
@@ -1093,9 +1146,9 @@ export default function StaffPortal() {
                 </div>
             </header>
 
-            <main className="p-4 md:p-8 max-w-[1700px] mx-auto grid grid-cols-12 gap-4 md:gap-8">
+            <main className="p-4 md:p-8 max-w-[1700px] mx-auto grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-8">
                 {/* Top Greeting Banner - Mobile Optimized */}
-                <div className="col-span-12">
+                <div className="col-span-1 md:col-span-12">
                     <div className="bg-white rounded-2xl md:rounded-[2.5rem] p-4 md:p-8 border border-slate-100 shadow-sm flex flex-col gap-4 md:flex-row md:items-center md:justify-between relative overflow-hidden">
                         <div className="flex items-center gap-3 md:gap-6 relative z-10">
                             <div className="w-12 h-12 md:w-20 md:h-20 bg-orange-50 rounded-xl md:rounded-[2rem] flex items-center justify-center shadow-inner shrink-0">
@@ -1111,8 +1164,8 @@ export default function StaffPortal() {
                                     </span>
                                 </h2>
                                 <p className="hidden md:flex text-slate-400 font-bold text-sm mt-2 items-center gap-2 italic">
-                                    "Your focus is the academy's greatest asset
-                                    today."{" "}
+                                    &quot;Your focus is the academy&apos;s greatest asset
+                                    today.&quot;{" "}
                                     <Sparkles className="w-4 h-4 text-orange-400" />
                                 </p>
                             </div>
@@ -1228,9 +1281,13 @@ export default function StaffPortal() {
                         <div className="relative z-10">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2">
-                                    <Megaphone className="w-4 h-4 text-orange-400" />
-                                    <span className="text-[10px] font-black tracking-widest uppercase">
+                                    <Megaphone className="w-4 h-4 text-orange-400 animate-bounce" />
+                                    <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
                                         CEO Broadcast
+                                        <span className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                                        </span>
                                     </span>
                                 </div>
                                 <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping"></div>
@@ -1301,14 +1358,18 @@ export default function StaffPortal() {
                 <div className="col-span-12 lg:col-span-3 space-y-6 hidden lg:block">
                     <div
                         style={{ backgroundColor: brand.navy }}
-                        className="rounded-[2.5rem] p-7 text-white shadow-2xl relative overflow-hidden"
+                        className="rounded-[2.5rem] p-7 text-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] border border-white/20 dark:border-zinc-800/30 relative overflow-hidden"
                     >
                         <div className="relative z-10">
                             <div className="flex items-center justify-between mb-6">
                                 <div className="flex items-center gap-2">
-                                    <Megaphone className="w-4 h-4 text-orange-400" />
-                                    <span className="text-[10px] font-black tracking-widest uppercase">
+                                    <Megaphone className="w-4 h-4 text-orange-400 animate-bounce" />
+                                    <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
                                         CEO Broadcast
+                                        <span className="relative flex h-2 w-2">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
+                                        </span>
                                     </span>
                                 </div>
                                 <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping"></div>
@@ -1349,7 +1410,7 @@ export default function StaffPortal() {
                                                 }
                                                 className={`w-full py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 border ${
                                                     isAck
-                                                        ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
+                                                        ? "bg-emerald-50/20 border-emerald-50/30 text-emerald-400"
                                                         : "bg-white/10 border-white/10 hover:bg-white/20 text-white"
                                                 }`}
                                             >
@@ -1370,7 +1431,7 @@ export default function StaffPortal() {
                     </div>
 
                     {/* New Share Idea Card */}
-                    <div className="bg-white rounded-[2rem] p-7 shadow-sm border border-slate-100 group hover:border-orange-200 transition-colors">
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-[2rem] p-7 shadow-[0_12px_40px_rgba(0,0,0,0.02)] border border-white/60 dark:border-zinc-800/50 group hover:border-orange-200 transition-all duration-300">
                         <div className="flex items-center gap-3 mb-4">
                             <div className="p-2 bg-orange-50 rounded-xl">
                                 <Lightbulb className="w-5 h-5 text-orange-500" />
@@ -1397,7 +1458,7 @@ export default function StaffPortal() {
                         </button>
                     </div>
 
-                    <div className="bg-white rounded-[2rem] p-7 shadow-sm border border-slate-100">
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-[2rem] p-7 shadow-[0_12px_40px_rgba(0,0,0,0.02)] border border-white/60 dark:border-zinc-800/50 transition-all duration-300">
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-3">
                                 <History className="w-4 h-4 text-slate-400" />
@@ -1438,59 +1499,41 @@ export default function StaffPortal() {
                                 Clear Requests
                             </button>
                         </div>
-                        <div className="space-y-3">
+                        <div className="space-y-1">
                             <div className="max-h-64 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-300 scrollbar-track-transparent">
                                 {requests.filter(req => req.status === 'pending' || req.status === 'rejected' || req.status === 'approved').map((req) => {
-                                    // Extract category from description for leave requests
-                                    let category = '';
-                                    let displayReason = req.description || 'No description';
-                                    
-                                    if (req.type === 'leave' && req.description) {
-                                        const descParts = req.description.split(':');
-                                        category = descParts[0] || '';
-                                        displayReason = descParts[1] || req.description;
-                                    }
+                                    const { title, detail } = formatTrackerRequest(req);
                                     
                                     return (
-                                    <div
-                                        key={req.id}
-                                        className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100 mb-3"
-                                    >
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-8 h-8 rounded-xl bg-white flex items-center justify-center shadow-sm">
-                                                <Calendar className="w-4 h-4 text-slate-400" />
-                                            </div>
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-800">
-                                                    {req.type
-                                                        ?.replace("_", " ")
-                                                        .toUpperCase() || "REQUEST"}
-                                                    {category && (
-                                                        <span className="ml-2 text-blue-600">
-                                                            ({category})
-                                                        </span>
-                                                    )}
-                                                </p>
-                                                <p className="text-[9px] text-slate-400 font-bold">
-                                                    {format(
-                                                        new Date(req.created_at),
-                                                        "MMM d, h:mm a",
-                                                    )}
-                                                </p>
-                                            </div>
-                                        </div>
-                                        <span
-                                            className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase tracking-tighter ${
-                                                req.status === "approved"
-                                                    ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                                                    : req.status === "pending"
-                                                      ? "bg-orange-50 text-orange-600 border border-orange-200"
-                                                      : "bg-red-50 text-red-600 border border-red-200"
-                                            }`}
+                                        <div
+                                            key={req.id}
+                                            className="flex items-center justify-between py-4 border-b border-slate-100 dark:border-zinc-800/40 last:border-b-0 hover:bg-slate-50/50 dark:hover:bg-zinc-950/20 px-2 transition-all"
                                         >
-                                            {req.status?.toUpperCase() || "UNKNOWN"}
-                                        </span>
-                                    </div>
+                                            <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                                <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-zinc-800 flex items-center justify-center shadow-sm shrink-0 border border-slate-100 dark:border-zinc-700/50">
+                                                    <Calendar className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 tracking-wide">
+                                                        {title}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium mt-1 truncate tracking-tight uppercase">
+                                                        {detail ? `${detail} • ` : ""}{format(new Date(req.created_at), "MMM d, h:mm a")}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <span
+                                                className={`text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ml-3 ${
+                                                    req.status === "approved"
+                                                        ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30"
+                                                        : req.status === "pending"
+                                                          ? "bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30"
+                                                          : "bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30"
+                                                }`}
+                                            >
+                                                {req.status?.toUpperCase() || "PENDING"}
+                                            </span>
+                                        </div>
                                     );
                                 })}
                             </div>
@@ -1584,17 +1627,21 @@ export default function StaffPortal() {
                             (showCompleted ? completedTasks : filteredTasks).map((task) => (
                             <div
                                 key={task.id}
-                                className={`bg-white rounded-2xl md:rounded-[2.5rem] transition-all border-2 overflow-hidden ${
+                                className={`bg-white dark:bg-zinc-900 rounded-2xl md:rounded-[2.5rem] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md border border-white/60 dark:border-zinc-800/50 overflow-hidden ${
+                                    showCompleted 
+                                        ? "border-l-[4px] border-l-emerald-500" 
+                                        : task.priority === "urgent" 
+                                            ? "border-l-[4px] border-l-rose-500" 
+                                            : task.priority === "high" 
+                                                ? "border-l-[4px] border-l-amber-500" 
+                                                : task.priority === "medium" 
+                                                    ? "border-l-[4px] border-l-indigo-600 dark:border-l-indigo-500" 
+                                                    : "border-l-[4px] border-l-slate-300 dark:border-l-zinc-700"
+                                } ${
                                     expandedTask && expandedTask === task.id
-                                        ? "shadow-xl"
-                                        : "shadow-sm border-transparent"
+                                        ? "shadow-md ring-1 ring-orange-500/20"
+                                        : "shadow-[0_12px_40px_rgba(0,0,0,0.02)]"
                                 }`}
-                                style={{
-                                    borderColor:
-                                        expandedTask && expandedTask === task.id
-                                            ? brand.orange
-                                            : "transparent",
-                                }}
                             >
                                 <div
                                     className="p-4 md:p-7 cursor-pointer flex items-center justify-between min-h-[56px]"
@@ -1607,9 +1654,9 @@ export default function StaffPortal() {
                                         )
                                     }
                                 >
-                                    <div className="flex items-center gap-3 md:gap-5">
+                                    <div className="flex items-center gap-3 md:gap-5 flex-1 min-w-0">
                                         <div
-                                            className={`w-10 h-10 md:w-14 md:h-14 rounded-2xl md:rounded-3xl flex items-center justify-center relative shrink-0 ${
+                                            className={`w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center relative shrink-0 ${
                                                 showCompleted
                                                     ? "bg-emerald-50 text-emerald-500"
                                                    : (task.priority === "urgent" || (task as any).category === "URGENT")
@@ -1631,16 +1678,15 @@ export default function StaffPortal() {
                                             )}
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                                                 <span
-                                                    className="text-[8px] md:text-[9px] font-black uppercase tracking-wider"
-                                                    style={{
-                                                        color: showCompleted
-                                                            ? "#10b981"
+                                                    className={`px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase border ${
+                                                        showCompleted
+                                                            ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/20"
                                                             : task.priority === "urgent"
-                                                                ? brand.orange
-                                                                : "#94a3b8",
-                                                    }}
+                                                                ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/20"
+                                                                : "bg-slate-50 dark:bg-zinc-800/50 text-slate-600 dark:text-zinc-400 border-slate-100 dark:border-zinc-800/30"
+                                                    }`}
                                                 >
                                                     {showCompleted ? "COMPLETED" : task.priority?.toUpperCase()}
                                                 </span>
@@ -1651,7 +1697,7 @@ export default function StaffPortal() {
                                                     </span>
                                                 )}
                                             </div>
-                                            <h3 className="text-base md:text-xl font-black text-slate-900 leading-tight">
+                                            <h3 className="text-base md:text-xl font-black text-slate-900 dark:text-zinc-100 leading-tight">
                                                 {task.title}
                                             </h3>
                                             {task.due_date && (
@@ -1663,24 +1709,69 @@ export default function StaffPortal() {
                                                 </div>
                                             )}
                                             {taskCreators[task.created_by] && (
-                                                <div className="flex items-center gap-1.5 mt-1 text-slate-500">
-                                                    <User className="w-3 h-3" />
-                                                    <span className="text-[10px] font-black uppercase tracking-widest">
-                                                        Assigned by: {taskCreators[task.created_by].role || 'Unknown'}
+                                                <div className="flex items-center gap-1.5 mt-2 text-slate-600 dark:text-zinc-400 text-[10px] font-bold tracking-wider uppercase">
+                                                    <User className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
+                                                    <span>
+                                                        Assigned by: <span className="text-slate-850 dark:text-zinc-250 font-extrabold">{
+                                                            taskCreators[task.created_by].role === 'ceo' 
+                                                                ? 'CEO' 
+                                                                : (taskCreators[task.created_by].is_manager || taskCreators[task.created_by].role === 'manager')
+                                                                    ? 'Manager'
+                                                                    : taskCreators[task.created_by].full_name || 'System'
+                                                        }</span>
                                                     </span>
                                                 </div>
-                                            )}
-                                        </div>
+                                            )}                                        </div>
                                     </div>
-                                    <ChevronDown
-                                        className={`w-5 h-5 text-slate-300 transition-transform ${expandedTask && expandedTask === task.id ? "rotate-180 text-orange-500" : ""}`}
-                                    />
+                                    <div className="flex items-center gap-3 shrink-0 ml-3">
+                                        {!showCompleted ? (
+                                            <button
+                                                onClick={async (e) => {
+                                                    e.stopPropagation();
+                                                    if (typeof window !== "undefined" && (window as any).confetti) {
+                                                        (window as any).confetti();
+                                                    }
+                                                    toast.success("Task completed!");
+                                                    
+                                                    try {
+                                                        const { error } = await supabase
+                                                            .from("tasks")
+                                                            .update({ 
+                                                                status: "completed",
+                                                                updated_at: new Date().toISOString() 
+                                                            })
+                                                            .eq("id", task.id);
+                                                            
+                                                        if (error) {
+                                                            console.error('Task update error:', error);
+                                                            toast.error("Failed to complete task in database");
+                                                            return;
+                                                        }
+                                                        
+                                                        setTasks(prev => prev.filter(t => t.id !== task.id));
+                                                        setCompletedTasks(prev => [...prev, { ...task, status: "completed" }]);
+                                                    } catch (err) {
+                                                        console.error('Task complete error:', err);
+                                                    }
+                                                }}
+                                                className="group/btn p-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-full transition-all shrink-0"
+                                                title="Complete Task"
+                                            >
+                                                <Circle className="w-5 h-5 text-slate-300 dark:text-zinc-650 group-hover/btn:text-emerald-500 group-hover/btn:scale-110 transition-all duration-200" />
+                                            </button>
+                                        ) : (
+                                            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
+                                        )}
+                                        <ChevronDown
+                                            className={`w-5 h-5 text-slate-350 transition-transform ${expandedTask && expandedTask === task.id ? "rotate-180 text-orange-500" : ""}`}
+                                        />
+                                    </div>
                                 </div>
                                 {expandedTask && expandedTask === task.id && (
                                     <div className="px-7 pb-7 space-y-5">
                                         <div className="p-5 bg-slate-50 rounded-3xl italic text-sm text-slate-600 border border-slate-100 flex items-start gap-3">
                                             <Info className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
-                                            "{task.description}"
+                                            &quot;{task.description}&quot;
                                         </div>
                                         <div className="flex gap-3">
                                             {showCompleted ? (
@@ -1692,10 +1783,12 @@ export default function StaffPortal() {
                                                         <X className="w-4 h-4" />{" "}
                                                         Delete Permanently
                                                     </button>
-                                                    <div className="px-3 py-2 bg-blue-50 text-blue-600 rounded-2xl text-[9px] font-black uppercase border border-blue-200 flex items-center gap-2">
-                                                        <Check className="w-3 h-3" />
-                                                        CEO Reviewed
-                                                    </div>
+                                                    {task.ceo_reviewed && (
+                                                        <div className="px-3 py-2 bg-blue-50 text-blue-600 rounded-2xl text-[9px] font-black uppercase border border-blue-200 flex items-center gap-2">
+                                                            <Check className="w-3 h-3" />
+                                                            CEO Reviewed
+                                                        </div>
+                                                    )}
                                                 </>
                                             ) : (
                                                 <button
@@ -1764,7 +1857,7 @@ export default function StaffPortal() {
                 {/* Mobile: Stacked Request Tracker & Action Portal (beneath Mission Control) */}
                 <div id="mobile-request-tracker" className="col-span-12 lg:hidden order-3 space-y-4">
                     {/* Mobile Request Tracker */}
-                    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-2xl p-5 shadow-[0_12px_40px_rgba(0,0,0,0.03)] border border-white/60 dark:border-zinc-800/60">
                         <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                                 <History className="w-4 h-4 text-slate-400" />
@@ -1796,43 +1889,38 @@ export default function StaffPortal() {
                                 Clear
                             </button>
                         </div>
-                        <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
+                        <div className="space-y-1 max-h-48 overflow-y-auto scrollbar-thin">
                             {requests.filter(req => req.status === 'pending' || req.status === 'rejected' || req.status === 'approved').slice(0, 5).map((req) => {
-                                let category = '';
-                                let displayReason = req.description || 'No description';
-                                if (req.type === 'leave' && req.description) {
-                                    const descParts = req.description.split(':');
-                                    category = descParts[0] || '';
-                                    displayReason = descParts[1] || req.description;
-                                }
+                                const { title, detail } = formatTrackerRequest(req);
+                                
                                 return (
                                     <div
                                         key={req.id}
-                                        className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100"
+                                        className="flex items-center justify-between py-4 border-b border-slate-100 dark:border-zinc-800/40 last:border-b-0 hover:bg-slate-50/50 dark:hover:bg-zinc-950/20 px-1 transition-all"
                                     >
-                                        <div className="flex items-center gap-2">
-                                            <div className="w-7 h-7 rounded-lg bg-white flex items-center justify-center shadow-sm">
-                                                <Calendar className="w-3 h-3 text-slate-400" />
+                                        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                            <div className="w-8 h-8 rounded-xl bg-slate-50 dark:bg-zinc-800 flex items-center justify-center shadow-sm shrink-0 border border-slate-100 dark:border-zinc-700/50">
+                                                <Calendar className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                                             </div>
-                                            <div>
-                                                <p className="text-[10px] font-black uppercase text-slate-800">
-                                                    {req.type?.replace("_", " ").toUpperCase() || "REQUEST"}
+                                            <div className="min-w-0 flex-1">
+                                                <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 tracking-wide">
+                                                    {title}
                                                 </p>
-                                                <p className="text-[8px] text-slate-400 font-bold">
-                                                    {format(new Date(req.created_at), "MMM d")}
+                                                <p className="text-[10px] text-slate-500 dark:text-zinc-400 font-medium mt-1 truncate tracking-tight uppercase">
+                                                    {detail ? `${detail} • ` : ""}{format(new Date(req.created_at), "MMM d, h:mm a")}
                                                 </p>
                                             </div>
                                         </div>
                                         <span
-                                            className={`text-[8px] font-black px-2 py-1 rounded-lg uppercase ${
+                                            className={`text-[8px] font-black px-2.5 py-1 rounded-full uppercase tracking-wider shrink-0 ml-3 ${
                                                 req.status === "approved"
-                                                    ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                                                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-950/20 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/30"
                                                     : req.status === "pending"
-                                                        ? "bg-orange-50 text-orange-600 border border-orange-200"
-                                                        : "bg-red-50 text-red-600 border border-red-200"
+                                                      ? "bg-amber-50 text-amber-600 dark:bg-amber-950/20 dark:text-amber-400 border border-amber-100 dark:border-amber-900/30"
+                                                      : "bg-rose-50 text-rose-600 dark:bg-rose-950/20 dark:text-rose-400 border border-rose-100 dark:border-rose-900/30"
                                             }`}
                                         >
-                                            {req.status?.toUpperCase()}
+                                            {req.status?.toUpperCase() || "PENDING"}
                                         </span>
                                     </div>
                                 );
@@ -1846,21 +1934,21 @@ export default function StaffPortal() {
                     </div>
 
                     {/* Mobile Action Portal */}
-                    <div className="bg-white rounded-2xl p-4 border border-slate-100 shadow-sm">
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="p-1.5 rounded-lg" style={{ backgroundColor: brand.softOrange }}>
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-3xl p-6 shadow-[0_12px_40px_rgba(0,0,0,0.03)] border border-white/60 dark:border-zinc-800/60">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 rounded-xl" style={{ backgroundColor: brand.softOrange }}>
                                 <FileText className="w-4 h-4" style={{ color: brand.orange }} />
                             </div>
                             <span className="text-xs font-black tracking-widest uppercase text-slate-400">
                                 Action Portal
                             </span>
                         </div>
-                        <div className="grid grid-cols-2 gap-2">
+                        <div className="grid grid-cols-2 gap-3">
                             {[
                                 { id: "new_request", label: "New Request", icon: Plus },
                                 { id: "leave_request", label: "Leave", icon: Calendar },
                                 { id: "idea", label: "Share Idea", icon: Lightbulb },
-                            ].map((item) => (
+                            ].map((item, index, array) => (
                                 <button
                                     key={item.id}
                                     onClick={() => {
@@ -1873,21 +1961,70 @@ export default function StaffPortal() {
                                         }
                                     }}
                                     style={{ backgroundColor: brand.navy }}
-                                    className="p-3 md:p-4 rounded-xl flex items-center justify-center gap-2 text-white hover:opacity-90 transition-all shadow-lg shadow-indigo-100 min-h-[56px] md:min-h-0"
+                                    className={cn(
+                                        "p-4 rounded-2xl flex items-center justify-center gap-2 text-white hover:opacity-90 transition-all shadow-lg shadow-indigo-100/50 min-h-[60px]",
+                                        index === array.length - 1 && index % 2 === 0 ? "col-span-2" : ""
+                                    )}
                                 >
                                     <item.icon className="w-4 h-4 text-orange-400" />
-                                    <span className="text-[10px] font-black uppercase tracking-wider">
+                                    <span className="text-[10px] font-black uppercase tracking-widest">
                                         {item.label}
                                     </span>
                                 </button>
                             ))}
                         </div>
                     </div>
+
+                    {/* Mobile: COMMUNITY & NOTICE BOARD */}
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-3xl p-6 shadow-[0_12px_40px_rgba(0,0,0,0.02)] border border-white/60 dark:border-zinc-800/50">
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="p-2 rounded-xl bg-orange-50 dark:bg-orange-950/20">
+                                <Megaphone className="w-4 h-4 text-orange-500 animate-pulse" />
+                            </div>
+                            <span className="text-xs font-black tracking-widest uppercase text-slate-400">
+                                Community Board
+                            </span>
+                        </div>
+                        
+                        <div className="space-y-3">
+                            {[
+                                {
+                                    icon: "🎯",
+                                    title: "General Staff Meeting",
+                                    time: "Today at 4:00 PM",
+                                    description: "Reviewing weekly summits & new tactical objectives."
+                                },
+                                {
+                                    icon: "💡",
+                                    title: "Submit Monthly Sparks",
+                                    time: "Due Friday",
+                                    description: "Pitch your ideas to the CEO Command OS innovation lab."
+                                }
+                            ].map((notice, idx) => (
+                                <div 
+                                    key={idx}
+                                    className="p-4 bg-slate-50/50 dark:bg-zinc-950/30 rounded-2xl border border-slate-100/50 dark:border-zinc-800/30 hover:border-orange-500/20 hover:bg-slate-50 dark:hover:bg-zinc-950/50 transition-all"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm">{notice.icon}</span>
+                                        <span className="text-xs font-bold text-slate-900 dark:text-zinc-100">
+                                            {notice.title}
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-bold mt-1 uppercase tracking-wider">
+                                        {notice.time}
+                                    </p>
+                                    <p className="text-[10px] text-slate-550 dark:text-zinc-400 mt-1 leading-relaxed">
+                                        {notice.description}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
 
-                {/* Desktop Right Column - Actions */}
                 <div className="col-span-12 lg:col-span-3 space-y-6 hidden lg:block">
-                    <div className="bg-white rounded-[2rem] p-7 shadow-sm border border-slate-100">
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-[2rem] p-7 shadow-[0_12px_40px_rgba(0,0,0,0.02)] border border-white/60 dark:border-zinc-800/50 transition-all duration-300">
                         <div className="flex items-center gap-3 mb-8">
                             <div
                                 className="p-2 rounded-lg"
@@ -1940,6 +2077,53 @@ export default function StaffPortal() {
                             ))}
                         </div>
                     </div>
+
+                    {/* Desktop: COMMUNITY & NOTICE BOARD */}
+                    <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-[2rem] p-7 shadow-[0_12px_40px_rgba(0,0,0,0.02)] border border-white/60 dark:border-zinc-800/50 transition-all duration-300">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 rounded-lg bg-orange-50 dark:bg-orange-950/20">
+                                <Megaphone className="w-4 h-4 text-orange-500 animate-pulse" />
+                            </div>
+                            <span className="text-xs font-black tracking-widest uppercase text-slate-400">
+                                Community Board
+                            </span>
+                        </div>
+                        
+                        <div className="space-y-4">
+                            {[
+                                {
+                                    icon: "🎯",
+                                    title: "General Staff Meeting",
+                                    time: "Today at 4:00 PM",
+                                    description: "Reviewing weekly summits & new tactical objectives."
+                                },
+                                {
+                                    icon: "💡",
+                                    title: "Submit Monthly Sparks",
+                                    time: "Due Friday",
+                                    description: "Pitch your ideas to the CEO Command OS innovation lab."
+                                }
+                            ].map((notice, idx) => (
+                                <div 
+                                    key={idx}
+                                    className="p-4 bg-slate-50/50 dark:bg-zinc-950/30 rounded-2xl border border-slate-100/50 dark:border-zinc-800/30 hover:border-orange-500/20 hover:bg-slate-50 dark:hover:bg-zinc-950/50 transition-all"
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-sm">{notice.icon}</span>
+                                        <span className="text-xs font-bold text-slate-900 dark:text-zinc-100">
+                                            {notice.title}
+                                        </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-bold mt-1 uppercase tracking-wider">
+                                        {notice.time}
+                                    </p>
+                                    <p className="text-[10px] text-slate-550 dark:text-zinc-400 mt-1 leading-relaxed">
+                                        {notice.description}
+                                    </p>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             </main>
 
@@ -1989,7 +2173,7 @@ export default function StaffPortal() {
                             </div>
                             <div className="space-y-1">
                                 <label className="text-[10px] font-black uppercase text-slate-400 ml-1">
-                                    The "Why"
+                                    The &quot;Why&quot;
                                 </label>
                                 <textarea
                                     name="idea_description"
@@ -2118,8 +2302,6 @@ export default function StaffPortal() {
 
 
 
-            {/* Shared Mobile Navigation */}
-            <MobileNavigation currentPage="home" />
         </div>
     );
 }

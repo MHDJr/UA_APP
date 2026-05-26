@@ -173,49 +173,6 @@ const fetchFinancialHistory = async (userId: string): Promise<FinancialEntry[]> 
     }
 };
 
-// Bottom Navigation Component
-const BottomNav = ({ activeTab }: { activeTab: string }) => {
-    const router = useRouter();
-    
-    const navItems = [
-        { id: 'home', icon: Home, label: 'Home', href: '/staff' },
-        { id: 'history', icon: Clock, label: 'History', href: '#' },
-        { id: 'accounts', icon: Wallet, label: 'Accounts', href: '/accounts' },
-        { id: 'profile', icon: User, label: 'Profile', href: '#' },
-    ];
-
-    return (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/80 backdrop-blur-xl border-t border-gray-200 px-4 py-3">
-            <div className="max-w-[450px] mx-auto flex items-center justify-around">
-                {navItems.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = item.id === activeTab;
-                    return (
-                        <button
-                            key={item.id}
-                            onClick={() => router.push(item.href)}
-                            className={`flex flex-col items-center gap-1 transition-all duration-200 ${
-                                isActive ? 'scale-105' : 'opacity-60 hover:opacity-100'
-                            }`}
-                        >
-                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
-                                isActive 
-                                    ? 'bg-[#ff4d00] shadow-lg shadow-[#ff4d00]/30' 
-                                    : 'bg-gray-100'
-                            }`}>
-                                <Icon className={`w-5 h-5 ${isActive ? 'text-white' : 'text-gray-600'}`} />
-                            </div>
-                            <span className={`text-[10px] font-semibold ${isActive ? 'text-[#ff4d00]' : 'text-gray-500'}`}>
-                                {item.label}
-                            </span>
-                        </button>
-                    );
-                })}
-            </div>
-        </div>
-    );
-};
-
 export default function AccountsPage() {
     const router = useRouter();
     const { profile } = useAuth();
@@ -936,11 +893,6 @@ export default function AccountsPage() {
                         )}
                     </button>
                 </div>
-            </div>
-
-            {/* Bottom Navigation - Hidden on Desktop */}
-            <div className="md:hidden">
-                <BottomNav activeTab="accounts" />
             </div>
         </div>
     );

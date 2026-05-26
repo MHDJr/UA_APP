@@ -13,6 +13,8 @@ import { Lightbulb, Users, Send, X } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
+import { useStaff } from "@/hooks/use-dashboard-data";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface Profile {
   id: string;
@@ -29,6 +31,7 @@ interface NewIdeaDialogProps {
 
 export function NewIdeaDialog({ isOpen, onClose, onIdeaCreated }: NewIdeaDialogProps) {
   const { profile } = useAuth();
+  const queryClient = useQueryClient();
   
   const [ideaData, setIdeaData] = useState({
     title: "",
@@ -38,35 +41,14 @@ export function NewIdeaDialog({ isOpen, onClose, onIdeaCreated }: NewIdeaDialogP
     selectedStaff: [] as string[]
   });
   
-  const [staff, setStaff] = useState<Profile[]>([]);
+  // Use TanStack Query hook for staff
+  const { data: staffData = [], isLoading: staffLoading } = useStaff();
+  
+  // Transform staff profile data to local Profile interface if necessary
+  // (Assuming useStaff already provides what we need, but filtering for 'staff' role specifically if needed)
+  const staff = staffData.filter((s: any) => s.role === 'staff');
+
   const [loading, setLoading] = useState(false);
-  const [staffLoading, setStaffLoading] = useState(false);
-
-  // Fetch staff when dialog opens
-  useEffect(() => {
-    if (isOpen && ideaData.shareWithStaff) {
-      fetchStaff();
-    }
-  }, [isOpen, ideaData.shareWithStaff]);
-
-  const fetchStaff = async () => {
-    setStaffLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("id, full_name, role, status")
-        .eq("role", "staff")
-        .order("full_name");
-
-      if (error) throw error;
-      setStaff(data || []);
-    } catch (error) {
-      console.error("Error fetching staff:", error);
-      toast.error("Failed to load staff list");
-    } finally {
-      setStaffLoading(false);
-    }
-  };
 
   const handleStaffToggle = (staffId: string, checked: boolean) => {
     if (checked) {
@@ -115,6 +97,9 @@ export function NewIdeaDialog({ isOpen, onClose, onIdeaCreated }: NewIdeaDialogP
       if (error) throw error;
 
       toast.success("Idea created successfully!");
+      
+      // Invalidate ideas query
+      queryClient.invalidateQueries({ queryKey: ["ideas"] });
       
       // Reset form
       setIdeaData({

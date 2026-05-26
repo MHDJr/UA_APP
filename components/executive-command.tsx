@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import React, { useState, useEffect, useMemo, Fragment, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, Profile, Task, Request, Broadcast, Knock, ActivityFeed, Attendance, SignupRequest, Meeting, ExecutiveReport, AgentStatus, Lead, LeadStatus, DemoRequest, TutorAvailability, TutorNotification, Programme, Idea, SalesSignals } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
@@ -28,12 +28,14 @@ import {
     ArrowRight,
     Trash2,
     RefreshCw,
+    Loader2,
     ShieldAlert,
     LogOut,
     Wifi,
     Hourglass,
     Play,
     CheckCircle,
+    CheckCircle2,
     MessageCircle,
     Rocket,
     ClipboardList,
@@ -50,6 +52,7 @@ import {
     Package,
     Video,
     Bookmark,
+    Crown,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
@@ -92,7 +95,19 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
+import { cn } from "@/lib/utils";
 import { format, parseISO, isPast, isToday, isTomorrow } from "date-fns";
+import { useTabResiliency } from "./tab-resiliency-engine";
+import { useIdeas } from "@/hooks/use-ideas";
+import { useQueryClient } from "@tanstack/react-query";
+import { 
+    useTasks, 
+    useStaff, 
+    useLeads, 
+    useRequests, 
+    useMeetings, 
+    useCeoDirectives 
+} from "@/hooks/use-dashboard-data";
 
 // ============================================
 // TYPES & CONSTANTS
@@ -104,182 +119,372 @@ type SystemStatus = "STABLE" | "WARNING" | "CRITICAL";
 // UI COMPONENTS (MINIMAL & AUTHORITY FOCUSED)
 // ============================================
 
-const SectionHeader = ({
+const SectionHeader = React.memo(({
     title,
     color = "bg-theme-bg-white-20",
+    className = "mb-4"
 }: {
     title: string;
     color?: string;
+    className?: string;
 }) => (
-    <div className="flex items-center gap-2 mb-4">
-        <div className={`w-1 h-4 ${color} rounded-full`} />
-        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-theme-text-50">
+    <div className={cn("flex items-center gap-3", className)}>
+        <div className={cn("w-1.5 h-6 rounded-full shadow-sm", color)} />
+        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100">
             {title}
         </h3>
     </div>
-);
+));
+SectionHeader.displayName = "SectionHeader";
 
-const CommandCard = ({
+const CommandCard = React.memo(({
     children,
     className = "",
 }: {
     children: React.ReactNode;
     className?: string;
-}) => (
-    <div
-        className={`bg-theme-card border border-theme-border-10 rounded-2xl p-5 shadow-2xl relative overflow-hidden transition-all duration-300 ${className}`}
-    >
-        {children}
-    </div>
-);
+}) => {
+    return (
+        <div
+            className={cn(
+                "rounded-3xl p-6 relative overflow-hidden transition-all duration-300",
+                "bg-white/80 backdrop-blur-xl border border-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.03)]",
+                "dark:bg-zinc-900/60 dark:border-zinc-800/60 dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",
+                className
+            )}
+        >
+            {children}
+        </div>
+    );
+});
+CommandCard.displayName = "CommandCard";
 
-// ============================================
+const ExecutivePerformanceEngine = React.memo(({ tasks, completedTasks }: { tasks: Task[], completedTasks: Task[] }) => {
+    const { userRole } = useAuth();
+    
+    // 1. Operational Velocity Calculation
+    const activeTasksCount = tasks.length;
+    const completedTodayCount = completedTasks.filter(t => isToday(parseISO(t.updated_at))).length;
+    const totalToday = activeTasksCount + completedTodayCount;
+    const velocity = totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 84;
+
+    // 2. Departmental Load Distribution
+    const departments = ["Administration", "Marketing", "Sales", "Accounts"];
+    const loadDist = departments.map(dept => {
+        const count = tasks.filter(t => {
+            const deptName = (t as any).assigned_to_user?.department?.toLowerCase() || "";
+            return deptName === dept.toLowerCase();
+        }).length;
+        return { name: dept, count };
+    });
+    const maxLoad = Math.max(...loadDist.map(d => d.count), 1);
+
+    return (
+        <CommandCard className="mt-2">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-3">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100 opacity-80">
+                        Performance Engine
+                    </h3>
+                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500">
+                            Optimized
+                        </span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-1 cursor-pointer group">
+                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 transition-colors">Today</span>
+                    <ChevronDown className="w-3 h-3 text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 transition-colors" />
+                </div>
+            </div>
+
+            {/* Operational Velocity Metric */}
+            <div className="mb-8 p-5 rounded-[2rem] bg-slate-50/50 dark:bg-zinc-800/30 border border-slate-100 dark:border-zinc-800/50 shadow-inner">
+                <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-[0.15em]">Operational Velocity</span>
+                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">{velocity}%</span>
+                </div>
+                <div className="h-2.5 w-full bg-white dark:bg-zinc-900 rounded-full overflow-hidden flex p-0.5 border border-slate-100 dark:border-zinc-800 shadow-sm">
+                    <motion.div 
+                        initial={{ width: 0 }}
+                        animate={{ width: `${velocity}%` }}
+                        transition={{ duration: 1, ease: "easeOut" }}
+                        className="h-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-400 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                    />
+                </div>
+                <div className="flex justify-between mt-3 px-1">
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                        <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-tight">{completedTodayCount} Completed</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <div className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-zinc-700" />
+                        <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-tight">{activeTasksCount} Pending</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* Departmental Load Distribution */}
+            <div className="mb-2">
+                <div className="flex items-center gap-2 mb-5">
+                    <Activity className="w-3.5 h-3.5 text-indigo-500/60 dark:text-indigo-400/60" />
+                    <h4 className="text-[10px] font-black text-slate-900 dark:text-zinc-100 opacity-80 uppercase tracking-[0.2em]">Load Distribution</h4>
+                </div>
+                <div className="grid grid-cols-1 gap-3.5">
+                    {loadDist.map(dept => (
+                        <div key={dept.name} className="flex items-center justify-between group">
+                            <div className="flex items-center gap-3 flex-1">
+                                <span className={cn(
+                                    "w-1.5 h-4 rounded-full transition-all duration-500 shadow-sm",
+                                    dept.name === "Administration" ? "bg-slate-400 dark:bg-zinc-500" :
+                                    dept.name === "Marketing" ? "bg-purple-500 dark:bg-purple-600" :
+                                    dept.name === "Sales" ? "bg-orange-500 dark:bg-orange-600" : "bg-blue-500 dark:bg-blue-600"
+                                )} />
+                                <span className="text-[11px] font-black text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{dept.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3 w-32">
+                                <div className="flex-1 h-1.5 bg-slate-50 dark:bg-zinc-800/50 rounded-full overflow-hidden shadow-inner border border-slate-100/50 dark:border-zinc-800/30">
+                                    <motion.div 
+                                        initial={{ width: 0 }}
+                                        animate={{ width: `${(dept.count / maxLoad) * 100}%` }}
+                                        className={cn(
+                                            "h-full rounded-full opacity-80 shadow-sm",
+                                            dept.name === "Administration" ? "bg-slate-400 dark:bg-zinc-500" :
+                                            dept.name === "Marketing" ? "bg-purple-500 dark:bg-purple-600" :
+                                            dept.name === "Sales" ? "bg-orange-500 dark:bg-orange-600" : "bg-blue-500 dark:bg-blue-600"
+                                        )}
+                                    />
+                                </div>
+                                <span className="text-[11px] font-black text-slate-900 dark:text-zinc-100 w-5 text-right tabular-nums">{dept.count}</span>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </CommandCard>
+    );
+});
+ExecutivePerformanceEngine.displayName = "ExecutivePerformanceEngine";
+
 // MAIN COMPONENT: EXECUTIVE COMMAND
 // ============================================
 
 export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const router = useRouter();
-    const { profile, signOut } = useAuth();
+    const { profile, signOut, userRole } = useAuth();
     const { theme } = useTheme();
+    const queryClient = useQueryClient();
 
-    // Data State
-    const [staff, setStaff] = useState<Profile[]>([]);
-    const [tasks, setTasks] = useState<Task[]>([]);
-    const [requests, setRequests] = useState<Request[]>([]);
+    // ============================================
+    // 1. STATE DECLARATIONS (TOP-LEVEL)
+    // ============================================
+    
+    // TanStack Query Hooks (Primary Data Source)
+    const { activeTasks: tasks = [], completedTasks = [], isFetching: isTasksFetching } = useTasks();
+    const { data: staff = [], isFetching: isStaffFetching } = useStaff();
+    const { data: requests = [], isFetching: isRequestsFetching } = useRequests();
+    const { data: meetings = [], isFetching: isMeetingsFetching } = useMeetings();
+    const { data: ceoDirectives = [], isFetching: isCeoDirectivesFetching } = useCeoDirectives();
+    const { leads, demoRequests, isLoading: isLoadingLeads } = useLeads();
+    const { 
+        ideas, 
+        isFetching: isIdeasFetching, 
+        toggleIdea: toggleIdeaMutation,
+        disposeIdea: disposeIdeaMutation 
+    } = useIdeas();
 
-    const [leads, setLeads] = useState<Lead[]>([]);
-    const [demoRequests, setDemoRequests] = useState<DemoRequest[]>([]);
-    const [ideas, setIdeas] = useState<Idea[]>([]);
-
-    // UI State
-    const [isRefreshing, setIsRefreshing] = useState(false);
-    const [taskTab, setTaskTab] = useState<
-        "active" | "blocked" | "overdue" | "daily" | "completed"
-    >("active");
-    const [departmentFilter, setDepartmentFilter] = useState<
-        "ceo" | "administration" | "marketing" | "sales" | "accounts"
-    >("ceo");
-    const [showStaffOverview, setShowStaffOverview] = useState(false);
+    // UI & Filter States
+    const [taskTab, setTaskTab] = useState<"active" | "blocked" | "overdue" | "daily" | "completed">("active");
+    const [departmentFilter, setDepartmentFilter] = useState<"ceo" | "administration" | "marketing" | "sales" | "accounts">("ceo");
+    const [meetingFilter, setMeetingFilter] = useState<"upcoming" | "today" | "week">("upcoming");
+    const [currentTime, setCurrentTime] = useState(Date.now());
+    const [isRefreshing, setIsRefreshing] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
-    const itemsPerPage = 4;
-    const [isChatModalOpen, setIsChatModalOpen] = useState(false);
-    const [selectedStaffForChat, setSelectedStaffForChat] =
-        useState<Profile | null>(null);
-    const [chatMessage, setChatMessage] = useState("");
+    const [isManageMode, setIsManageMode] = useState(false);
+    const [showStaffOverview, setShowStaffOverview] = useState(false);
     const [expandedStaffId, setExpandedStaffId] = useState<string | null>(null);
     const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
-    const [isActionMenuOpen, setIsActionMenuOpen] = useState(false);
     const [isAssignTaskOpen, setIsAssignTaskOpen] = useState(false);
-    const [isManageMode, setIsManageMode] = useState(false);
     const [isRemoveStaffModalOpen, setIsRemoveStaffModalOpen] = useState(false);
     const [staffToRemove, setStaffToRemove] = useState<Profile | null>(null);
     const [confirmName, setConfirmName] = useState("");
     const [isIdeasOpen, setIsIdeasOpen] = useState(false);
     const [isNewIdeaDialogOpen, setIsNewIdeaDialogOpen] = useState(false);
-    const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(new Set());
-    const [completedIdeas, setCompletedIdeas] = useState<Set<string>>(new Set());
-    const [newIdea, setNewIdea] = useState({
-        title: "",
-        description: "",
-        priority: "medium",
-    });
-    const [selectedStaffForIdea, setSelectedStaffForIdea] = useState<string[]>(
-        [],
-    );
-    const [hoveredRequest, setHoveredRequest] = useState<any | null>(null);
-    const [completedTasks, setCompletedTasks] = useState<Task[]>([]);
-    const [meetings, setMeetings] = useState<any[]>([]);
-    const [meetingFilter, setMeetingFilter] = useState<"upcoming" | "today" | "week">("upcoming");
-
-    // Meeting states
+    const [isChatModalOpen, setIsChatModalOpen] = useState(false);
+    const [selectedStaffForChat, setSelectedStaffForChat] = useState<Profile | null>(null);
+    const [chatMessage, setChatMessage] = useState("");
     const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
     const [meetingStep, setMeetingStep] = useState(1);
+    
+    // Tracking Sets
+    const [completedIdeas, setCompletedIdeas] = useState<Set<string>>(new Set());
+    const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(new Set());
+    const [clearedNotifications, setClearedNotifications] = useState<Set<string>>(new Set());
+
+    // Form States
+    const [newIdea, setNewIdea] = useState({ title: "", description: "", priority: "medium" });
+    const [selectedStaffForIdea, setSelectedStaffForIdea] = useState<string[]>([]);
+    const [hoveredRequest, setHoveredRequest] = useState<any | null>(null);
     const [newMeeting, setNewMeeting] = useState({
-        title: "",
-        agenda: "",
-        date: "",
-        time: "",
-        participants: [] as string[],
+        title: "", agenda: "", date: "", time: "", participants: [] as string[],
         type: "strategic" as "strategic" | "review" | "emergency" | "1-on-1",
         priority: "medium" as "low" | "medium" | "high" | "critical",
         outcome: "decision" as "decision" | "discussion" | "approval",
-        duration: "60",
-        location: "Virtual HQ",
-        agendaItems: [] as {
-            id: string;
-            topic: string;
-            owner: string;
-            time: string;
-        }[],
-        preMeetingTasks: [] as {
-            id: string;
-            title: string;
-            assignedTo: string;
-            deadline: string;
-        }[],
-        notifications: {
-            dashboard: true,
-            email: false,
-            push: true,
-            sms: false,
-        },
-        reminder: "10",
-        notes: "",
+        duration: "60", location: "Virtual HQ",
+        agendaItems: [] as { id: string; topic: string; owner: string; time: string; }[],
+        preMeetingTasks: [] as { id: string; title: string; assigned_to: string; deadline: string; }[],
+        notifications: { dashboard: true, email: false, push: true, sms: false },
+        reminder: "10", notes: "",
     });
+
+    // Refs
+    const channelsRef = useRef<any[]>([]);
+    const isVisibleRef = useRef(true);
+    const lastValidProfileIdRef = useRef<string | null>(profile?.id || null);
+
+    // ============================================
+    // 2. DERIVED STATE & MEMOS
+    // ============================================
+
+    // Periodic refresh for time-based filtering
+    useEffect(() => {
+        const interval = setInterval(() => setCurrentTime(Date.now()), 60000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Update completedIdeas set when ideas change
+    useEffect(() => {
+        const completedIds = ideas
+            .filter((idea: any) => idea.completed)
+            .map((idea: any) => idea.id);
+        setCompletedIdeas(new Set(completedIds));
+    }, [ideas]);
+
+    // Update profile ref
+    useEffect(() => {
+        if (profile?.id) lastValidProfileIdRef.current = profile.id;
+    }, [profile?.id]);
+
+    // Filter visible ideas (hide completed ideas after 1 hour)
+    const visibleIdeas = useMemo(() => {
+        const oneHourAgo = new Date(currentTime - 60 * 60 * 1000);
+        return ideas.filter(idea => {
+            if (!idea.completed) return true;
+            const completedAt = idea.completed_at ? new Date(idea.completed_at) : new Date(idea.updated_at);
+            return completedAt > oneHourAgo;
+        });
+    }, [ideas, currentTime]);
+
+    // Optimize displayed tasks
+    const displayedTasks = useMemo(() => {
+        if (taskTab === "completed") return completedTasks;
+        
+        return tasks.filter((t) => {
+            if (deletingTaskIds.has(t.id)) return false;
+            
+            const isOverdue = t.due_date && new Date(t.due_date) < new Date();
+            const isDaily = t.is_daily_task === true || t.repeat_daily === true;
+
+            // Department filtering
+            if (departmentFilter !== "ceo") {
+                const assignee = staff.find(s => s.id === t.assigned_to);
+                if (!assignee) return false;
+                
+                const dept = assignee.department?.toLowerCase() || "";
+                switch (departmentFilter) {
+                    case "sales": return dept === "sales";
+                    case "marketing": return dept === "marketing";
+                    case "accounts": return dept === "accounts";
+                    case "administration": return dept === "administration" || dept === "admin" || dept === "hr";
+                    default: return false;
+                }
+            }
+
+            // CEO/My Tasks filter
+            if (departmentFilter === "ceo") {
+                if (userRole === 'MANAGER') {
+                    const currentMe = profile?.id || lastValidProfileIdRef.current;
+                    const isAssignedByCeo = (t as any).creator?.role === 'ceo';
+                    const isAssignedToMe = t.assigned_to === currentMe;
+                    if (!isAssignedByCeo || !isAssignedToMe) return false;
+                }
+
+                if (taskTab === "daily") return isDaily;
+                if (taskTab === "overdue") return isOverdue;
+                if (taskTab === "blocked") return t.priority === "urgent";
+                return !isOverdue && t.priority !== "urgent";
+            }
+
+            if (taskTab === "daily") return isDaily;
+            if (taskTab === "overdue") return isOverdue;
+            if (taskTab === "blocked") return t.priority === "urgent";
+            return !isOverdue && t.priority !== "urgent";
+        });
+    }, [taskTab, tasks, completedTasks, deletingTaskIds, departmentFilter, staff, userRole, profile?.id]);
+
+    // ============================================
+    // 3. ACTIONS & LOGIC
+    // ============================================
+
+    const fetchData = useCallback(async (force = false, silent = false) => {
+        if (!silent) setIsRefreshing(true);
+        try {
+            // High-speed parallel invalidation
+            await queryClient.invalidateQueries({
+                predicate: (query) => 
+                    query.queryKey[0] === 'tasks' || 
+                    query.queryKey[0] === 'staff' ||
+                    query.queryKey[0] === 'requests' ||
+                    query.queryKey[0] === 'ideas' ||
+                    query.queryKey[0] === 'meetings' ||
+                    query.queryKey[0] === 'ceo_directives'
+            });
+        } catch (e) {
+            console.error("Telemetry sync failed:", e);
+        } finally {
+            setIsRefreshing(false);
+        }
+    }, [queryClient]);
+
+    const setupRealtime = useCallback(() => {
+        channelsRef.current.forEach(ch => supabase.removeChannel(ch));
+        
+        const taskChannel = supabase.channel("tasks-updates")
+            .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => queryClient.invalidateQueries({ queryKey: ["tasks"] }))
+            .subscribe();
+
+        const requestChannel = supabase.channel("requests-updates")
+            .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, () => queryClient.invalidateQueries({ queryKey: ["requests"] }))
+            .subscribe();
+
+        const ideaChannel = supabase.channel("ideas-updates")
+            .on("postgres_changes", { event: "*", schema: "public", table: "ideas" }, () => queryClient.invalidateQueries({ queryKey: ["ideas"] }))
+            .subscribe();
+
+        channelsRef.current = [taskChannel, requestChannel, ideaChannel];
+    }, [queryClient]);
+
+    useEffect(() => {
+        setupRealtime();
+        return () => channelsRef.current.forEach(ch => supabase.removeChannel(ch));
+    }, [setupRealtime]);
+
+    useTabResiliency(
+        () => fetchData(true, true),
+        isRefreshing,
+        setIsRefreshing,
+        () => setupRealtime()
+    );
 
     // Toggle completion status
     const toggleIdeaCompletion = async (ideaId: string) => {
         // Find the current idea to get its completion status
         const currentIdea = ideas.find(idea => idea.id === ideaId);
-        const isCurrentlyCompleted = completedIdeas.has(ideaId);
+        if (!currentIdea) return;
         
-        // Update local state immediately for responsive UI
-        setCompletedIdeas(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(ideaId)) {
-                newSet.delete(ideaId);
-            } else {
-                newSet.add(ideaId);
-            }
-            return newSet;
-        });
-
-        try {
-            // Update database
-            const { error } = await supabase
-                .from("ideas")
-                .update({ 
-                    completed: !isCurrentlyCompleted,
-                    updated_at: new Date().toISOString()
-                })
-                .eq("id", ideaId);
-
-            if (error) {
-                console.error("Error updating completion status:", error);
-                // Revert local state if database update fails
-                setCompletedIdeas(prev => {
-                    const newSet = new Set(prev);
-                    if (newSet.has(ideaId)) {
-                        newSet.delete(ideaId);
-                    } else {
-                        newSet.add(ideaId);
-                    }
-                    return newSet;
-                });
-            }
-        } catch (error) {
-            console.error("Error toggling completion:", error);
-            // Revert local state if there's an error
-            setCompletedIdeas(prev => {
-                const newSet = new Set(prev);
-                if (newSet.has(ideaId)) {
-                    newSet.delete(ideaId);
-                } else {
-                    newSet.add(ideaId);
-                }
-                return newSet;
-            });
-        }
+        toggleIdeaMutation({ ideaId, isCompleted: !!currentIdea.completed });
     };
 
     // Clear all completed directives
@@ -307,8 +512,8 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             // Clear local state
             setCompletedIdeas(new Set());
             
-            // Refresh ideas data
-            await fetchData();
+            // Refresh ideas data via useIdeas refetch if needed or just wait for invalidation
+            // (Note: clearCompletedDirectives still uses manual Supabase call, we should ideally use a mutation)
             
             toast.success(`Cleared ${completedIds.length} completed directive${completedIds.length > 1 ? 's' : ''}`);
         } catch (error) {
@@ -318,7 +523,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     };
 
     // Form States
-
     const [repeatDaily, setRepeatDaily] = useState(false);
 
     const [newTask, setNewTask] = useState({
@@ -330,13 +534,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         due_time: "",
     });
 
+    const [isDelegationModalOpen, setIsDelegationModalOpen] = useState(false);
+    const [selectedIdeaForDelegation, setSelectedIdeaForDelegation] = useState<Idea | null>(null);
+    const [isDelegating, setIsDelegating] = useState(false);
+
     // Enhanced Task Form State
     const [taskDescription, setTaskDescription] = useState("");
     const [attachmentUrl, setAttachmentUrl] = useState("");
     const [assigneeSearch, setAssigneeSearch] = useState("");
     const [isDraft, setIsDraft] = useState(false);
     const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
-    const [clearedNotifications, setClearedNotifications] = useState<Set<string>>(new Set());
 
     // LIVE OPERATIONS DATA
     const activities = useMemo(() => {
@@ -611,168 +818,47 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         }
     };
 
-    // Fetch Data
-    const fetchData = async () => {
-        if (!profile) return;
-        setIsRefreshing(true);
+    useEffect(() => {
+        if (profile?.id) lastValidProfileIdRef.current = profile.id;
+    }, [profile?.id]);
 
-        try {
-            const [
-                staffRes,
-                tasksRes,
-                requestsRes,
-                leadsRes,
-                demosRes,
-                ideasRes,
-                completedTasksRes,
-                meetingsRes,
-            ] = await Promise.all([
-                // Get all staff including recent ones (last 7 days)
-                supabase.from("profiles").select("*").neq("role", "ceo").order("created_at", { ascending: false }),
-                
-                // Get all active tasks
-                supabase.from("tasks").select("*").not("status", "in", '("completed","deleted")').order("updated_at", { ascending: false }),
-                
-                // Get all pending requests
-                supabase
-                    .from("requests")
-                    .select("*, submitted_by:profiles!submitted_by(*)")
-                    .eq("status", "pending")
-                    .order("created_at", { ascending: false }),
-                
-                // Get all leads from last 3 days and all converted leads
-                supabase
-                    .from("leads")
-                    .select("*")
-                    .or(
-                        `created_at.gte.${new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()},status.eq.converted,updated_at.gte.${new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString()}`,
-                    )
-                    .order("updated_at", { ascending: false }),
-                
-                // Get all accepted demo requests
-                supabase
-                    .from("demo_requests")
-                    .select("*, leads:leads(*)")
-                    .eq("status", "accepted")
-                    .order("created_at", { ascending: false }),
-                
-                // Get all non-archived ideas
-                supabase
-                    .from("ideas")
-                    .select("*")
-                    .eq("archived", false)
-                    .order("created_at", { ascending: false }),
-                
-                // Get recent completed tasks not reviewed
-                supabase
-                    .from("tasks")
-                    .select(
-                        "*, assigned_to_user:profiles!assigned_to(full_name, department)",
-                    )
-                    .eq("status", "completed")
-                    .is("reviewed_at", null)
-                    .order("updated_at", { ascending: false })
-                    .limit(50), // Increased limit
-                
-                // Get upcoming meetings (next 7 days)
-                supabase
-                    .from("meetings")
-                    .select("*")
-                    .gte("scheduled_at", new Date().toISOString())
-                    .lte("scheduled_at", new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString())
-                    .order("scheduled_at", { ascending: true }),
-            ]);
-
-            if (staffRes.data)
-                setStaff(
-                    staffRes.data.filter((s) => s.full_name !== "[DELETED]"),
-                );
-            if (tasksRes.data) setTasks(tasksRes.data);
-            if (requestsRes.data) setRequests(requestsRes.data);
-            if (leadsRes.data) setLeads(leadsRes.data);
-            if (demosRes.data) setDemoRequests(demosRes.data);
-            if (ideasRes.data) {
-                setIdeas(ideasRes.data);
-                // Initialize completed ideas state from database
-                const completedIds = ideasRes.data
-                    .filter(idea => idea.completed)
-                    .map(idea => idea.id);
-                setCompletedIdeas(new Set(completedIds));
-            }
-            if (completedTasksRes.data) {
-                console.log('Completed tasks fetched:', completedTasksRes.data);
-                console.log('Completed tasks with ceo_reviewed status:', completedTasksRes.data.map(t => ({ id: t.id, title: t.title, ceo_reviewed: t.ceo_reviewed })));
-                setCompletedTasks(completedTasksRes.data);
-            }
-            if (meetingsRes.data) setMeetings(meetingsRes.data);
-        } catch (e) {
-            console.error("Telemetry failed:", e);
-            toast.error("Telemetry failed");
-        } finally {
-            setIsRefreshing(false);
+    // Fetch data when view becomes active
+    useEffect(() => {
+        const isVisible = currentView === "command-center" || !currentView;
+        isVisibleRef.current = isVisible;
+        if (isVisible) {
+            console.log('Executive view activated - syncing data');
+            fetchData(true, true);
         }
-    };
+    }, [currentView]);
 
+    // Visibility and Initial Load
     useEffect(() => {
         let isMounted = true;
-        let channel: any;
-        let autoRefreshInterval: NodeJS.Timeout;
 
-        const handleVisibilityChange = () => {
-            if (!document.hidden && isMounted) {
-                fetchData();
+        const handleFocusResync = () => {
+            if (!document.hidden && isMounted && isVisibleRef.current) {
+                console.log('Tab focused - triggering silent resync');
+                fetchData(true, true);
+                setupRealtime();
             }
         };
 
-        const startRealtime = () => {
-            if (!isMounted) return;
-            
-            channel = supabase
-                .channel("exec-command")
-                .on(
-                    "postgres_changes",
-                    {
-                        event: "*",
-                        schema: "public",
-                        table: "tasks",
-                    },
-                    (payload: any) => {
-                        // Immediately refresh for real-time updates
-                        if (!document.hidden && isMounted) {
-                            console.log('Real-time update:', payload);
-                            fetchData();
-                        }
-                    },
-                )
-                .subscribe();
-            
-            // Reduce refresh interval for more responsive signal feed
-            autoRefreshInterval = setInterval(
-                () => !document.hidden && isMounted && fetchData(),
-                15000, // Reduced from 30 to 15 seconds
-            );
-        };
-
-        // Ensure database column exists first
-        ensureCeoReviewedColumn().then(() => {
-            if (isMounted) {
-                fetchData();
-                startRealtime();
-            }
-        });
+        // Initial load
+        if (profile?.id) {
+            fetchData(false, false);
+            setupRealtime();
+        }
         
-        document.addEventListener("visibilitychange", handleVisibilityChange);
+        window.addEventListener("focus", handleFocusResync);
+        document.addEventListener("visibilitychange", handleFocusResync);
 
         return () => {
             isMounted = false;
-            document.removeEventListener(
-                "visibilitychange",
-                handleVisibilityChange,
-            );
-            if (channel) supabase.removeChannel(channel);
-            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            window.removeEventListener("focus", handleFocusResync);
+            document.removeEventListener("visibilitychange", handleFocusResync);
         };
-    }, [profile]);
+    }, [profile?.id, fetchData, setupRealtime]);
 
     // Listen for FAB actions from mobile FAB component
     useEffect(() => {
@@ -787,6 +873,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     break;
                 case "new-directive":
                     setIsAssignTaskOpen(true);
+                    break;
+                case "schedule-meeting":
+                    setIsScheduleMeetingOpen(true);
                     break;
             }
         };
@@ -850,6 +939,17 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             l.created_at.startsWith(todayStr),
         ).length;
 
+        // Specialized Metrics for Manager
+        const activeBlockers = tasks.filter(t => t.priority === "urgent" && t.status !== "completed").length;
+        
+        // Operational Velocity Calculation
+        const completedTodayCount = completedTasks.filter(t => {
+            const updatedDate = new Date(t.updated_at || t.created_at).toISOString().split("T")[0];
+            return updatedDate === todayStr;
+        }).length;
+        const totalToday = tasks.length + completedTodayCount;
+        const operationalVelocity = totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 0;
+
         return {
             systemStatus,
             decisionsPending: recentRequests.length,
@@ -863,8 +963,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             paymentsReceivedToday,
             leavesRequestedToday,
             newLeadsToday,
+            activeBlockers,
+            operationalVelocity,
         };
-    }, [staff, requests, tasks, leads]);
+    }, [staff, requests, tasks, leads, completedTasks]);
 
     const disposeIdea = async (id: string) => {
         console.log("Dispose idea called with ID:", id);
@@ -878,24 +980,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             
         console.log("User confirmed deletion, proceeding...");
             
-        try {
-            const { data, error } = await supabase.from("ideas").delete().eq("id", id).select();
-            
-            console.log("Delete response:", { data, error });
-            
-            if (error) {
-                console.error("Error deleting idea:", error);
-                toast.error(`Failed to dispose: ${error.message}`);
-                return;
-            }
-            
-            console.log("Idea deleted successfully:", data);
-            toast.success("Directive Disposed");
-            fetchData();
-        } catch (err) {
-            console.error("Exception during idea deletion:", err);
-            toast.error("Failed to dispose directive");
-        }
+        disposeIdeaMutation(id);
     };
 
     // Actions
@@ -1008,6 +1093,36 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             type: "alert",
         });
         toast.success("ALERT DISPATCHED");
+    };
+
+    const handleDelegation = async (staffMember: Profile) => {
+        if (!selectedIdeaForDelegation) return;
+
+        setIsDelegating(true);
+        try {
+            const { error } = await supabase
+                .from("ideas")
+                .update({ 
+                    status: 'delegated',
+                    assigned_to: staffMember.id,
+                    assigned_to_name: staffMember.full_name,
+                    delegated_by_manager: profile?.full_name || 'Manager',
+                    updated_at: new Date().toISOString()
+                } as any)
+                .eq("id", selectedIdeaForDelegation.id);
+
+            if (error) throw error;
+
+            toast.success(`Task delegated to ${staffMember.full_name}`);
+            setIsDelegationModalOpen(false);
+            setSelectedIdeaForDelegation(null);
+            fetchData();
+        } catch (error) {
+            console.error("Delegation error:", error);
+            toast.error("Delegation failed");
+        } finally {
+            setIsDelegating(false);
+        }
     };
 
     const deleteStaff = async () => {
@@ -1617,31 +1732,55 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     }
 
     return (
-        <div className="min-h-screen bg-ua-mesh-gradient text-theme-text font-sans selection:bg-theme-bg-white-10 p-6 flex flex-col gap-6">
-            {/* HEADER WITH LOGO AND CEO IDENTITY */}
-            <header className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-6">
-                    {/* Usthad Academy Logo */}
+        <div className={cn(
+            "min-h-screen relative overflow-hidden font-sans selection:bg-indigo-100 p-6 flex flex-col gap-6 transition-colors duration-500",
+            userRole === 'CEO' ? "bg-slate-50 dark:bg-[#050505]" : "bg-[#F8F9FA] dark:bg-zinc-950"
+        )}>
+            {/* Cinematic Mesh Gradient Background Layer */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
+                <div className={cn(
+                    "absolute top-[-10%] left-[-10%] rounded-full blur-[120px] animate-pulse transition-all duration-1000",
+                    userRole === 'CEO' 
+                        ? "w-[60%] h-[60%] bg-indigo-600/10 dark:bg-indigo-900/20" 
+                        : "w-[50%] h-[50%] bg-indigo-500/5 dark:bg-indigo-500/10"
+                )} />
+                <div className={cn(
+                    "absolute bottom-[10%] right-[-5%] rounded-full blur-[100px] transition-all duration-1000",
+                    userRole === 'CEO'
+                        ? "w-[50%] h-[50%] bg-amber-600/5 dark:bg-amber-900/10"
+                        : "w-[45%] h-[45%] bg-amber-500/3 dark:bg-amber-500/5"
+                )} />
+                {userRole === 'CEO' && (
+                    <div className="absolute top-[40%] left-[20%] w-[40%] h-[40%] rounded-full bg-purple-600/5 dark:bg-purple-900/10 blur-[120px]" />
+                )}
+            </div>
+
+            {/* FLOATING GLASSMORPHIC HEADER */}
+            <header className={cn(
+                "flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 p-4 md:px-8 md:py-5",
+                "bg-white/80 dark:bg-zinc-900/60 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 dark:border-zinc-800/60 shadow-[0_12px_40px_rgba(0,0,0,0.03)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",                "transition-all duration-500 ease-out"
+            )}>
+                <div className="flex items-center justify-between md:justify-start gap-6">
+                    {/* Usthad Academy Logo - Hidden on mobile */}
                     <div
-                        className={`flex items-center gap-4 ${theme === "dark" ? "grayscale opacity-80" : ""}`}
+                        className={cn(
+                            "hidden md:flex items-center gap-4 transition-all duration-500",
+                            theme === "dark" ? "opacity-90" : ""
+                        )}
                     >
-                        <div className="h-[52px] w-[52px]">
+                        <div className={cn(
+                            "h-[48px] w-[48px] p-2 rounded-2xl shadow-sm border transition-all duration-500",
+                            userRole === 'CEO' 
+                                ? "bg-white dark:bg-zinc-800 border-amber-200/50 dark:border-amber-900/30 ring-4 ring-amber-500/5" 
+                                : "bg-white dark:bg-zinc-800 border-indigo-50/50 dark:border-zinc-700/30"
+                        )}>
                             <img
-                                src={
-                                    theme === "light"
-                                        ? "/images/usthadacademylogo2.svg"
-                                        : "/images/usthadacademylogo.svg"
-                                }
+                                src="/images/usthadacademylogo2.svg"
                                 alt="UA"
                                 className="h-full w-full object-contain"
-                                onError={(e) => {
-                                    (
-                                        e.target as HTMLImageElement
-                                    ).style.display = "none";
-                                }}
                             />
                         </div>
-                        <div className="h-[60px] w-[220px]">
+                        <div className="h-[50px] w-[200px]">
                             <img
                                 src={
                                     theme === "light"
@@ -1653,233 +1792,327 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             />
                         </div>
                     </div>
-                </div>
-                <div className="flex items-center gap-4">
-                    <h1 className="text-lg font-black uppercase tracking-[0.2em] text-theme-text-80 mr-4">
-                        CEO DASHBOARD
-                    </h1>
+
+                    {/* Mobile Dashboard Title */}
+                    <div className="md:hidden">
+                        <h1 className="text-xl font-black text-slate-900 dark:text-zinc-100 uppercase tracking-tighter">
+                            {userRole === 'CEO' ? 'CEO HUB' : 'MANAGER HUB'}
+                        </h1>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Academy Management</p>
+                    </div>
 
                     {/* System Health Indicator */}
                     <div
-                        className={`flex items-center gap-2 px-3 py-1 rounded-full border ${stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "bg-green-500/10 border-green-500/20" : "bg-orange-500/10 border-orange-500/20"}`}
+                        className={cn(
+                            "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-500",
+                            stats.systemStatus === "STABLE" && stats.overdueCount === 0 
+                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400" 
+                                : "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
+                        )}
                     >
                         <div
-                            className={`w-2 h-2 rounded-full ${stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "bg-green-500 animate-pulse" : "bg-[#FA4616] animate-pulse"}`}
+                            className={cn(
+                                "w-2 h-2 rounded-full animate-pulse",
+                                stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "bg-emerald-500" : "bg-red-500"
+                            )}
                         />
-                        <span
-                            className={`text-[9px] font-bold uppercase tracking-widest ${stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "text-green-600 dark:text-green-400" : "text-[#FA4616]"}`}
-                        >
-                            {stats.systemStatus === "STABLE" &&
-                            stats.overdueCount === 0
-                                ? "SYSTEM STABLE"
-                                : "ATTENTION REQUIRED"}
+                        <span className="text-[9px] font-black uppercase tracking-widest">
+                            {stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "SYSTEM STABLE" : "ATTENTION REQUIRED"}
                         </span>
                     </div>
+                </div>
+
+                <div className="flex items-center gap-2 md:gap-4 self-end md:self-auto">
+                    {userRole === 'CEO' ? (
+                        <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/30 shadow-sm animate-pulse">
+                            <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
+                                Strategic Command
+                            </span>
+                        </div>
+                    ) : (
+                        <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-slate-100 dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 shadow-sm">
+                            <Zap className="w-3.5 h-3.5 text-slate-600 dark:text-zinc-400" />
+                            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 dark:text-zinc-400">
+                                Operations Hub
+                            </span>
+                        </div>
+                    )}
+
+                    <div className="hidden md:block">
+                        <h1 className="text-sm font-black uppercase tracking-[0.3em] text-slate-900 dark:text-zinc-100 opacity-80">
+                            {userRole === 'CEO' ? 'CEO DASHBOARD' : 'MANAGER DASHBOARD'}
+                        </h1>
+                    </div>
+
                     <ThemeToggle />
+                    
                     <Button
                         variant="ghost"
                         size="sm"
-                        onClick={fetchData}
+                        onClick={() => fetchData()}
                         disabled={isRefreshing}
-                        className="flex items-center gap-2 px-3 py-2 bg-theme-nav-bg border border-theme-border-10 hover:border-theme-border-20 hover:bg-theme-bg-white-5 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-theme-text-40 hover:text-theme-text"
+                        className="flex items-center gap-2 px-4 py-2 bg-white/50 dark:bg-zinc-800/50 border border-white/40 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                     >
                         <RefreshCw
-                            className={`w-3 h-3 ${isRefreshing ? "animate-spin" : ""}`}
+                            className={cn("w-3 h-3", isRefreshing && "animate-spin")}
                         />
-                        Refresh
+                        <span className="hidden sm:inline">Refresh</span>
                     </Button>
+
                     <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => signOut()}
-                        className="flex items-center gap-2 px-3 py-2 bg-theme-nav-bg border border-theme-border-10 hover:border-theme-border-20 hover:bg-theme-bg-white-5 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-theme-text-40 hover:text-theme-text"
+                        className="hidden sm:flex items-center gap-2 px-4 py-2 bg-white/50 dark:bg-zinc-800/50 border border-white/40 dark:border-zinc-700/50 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500 hover:text-red-600 dark:hover:text-red-400"
                     >
-                        <LogOut className="w-3 h-3 text-red-500/80" />
+                        <LogOut className="w-3 h-3" />
                         Logout
                     </Button>
                 </div>
             </header>
-            {/* 1?????? EXECUTIVE STATUS BAR */}
-            <div className="grid grid-cols-1 md:grid-cols-5 lg:grid-cols-7 gap-4 mb-6">
-                {/* Glassmorphic Pending Approvals Card */}
-                <div className="ua-entry-animate ua-entry-delay-1 glass-card-ua rounded-2xl p-5 flex flex-col gap-1 col-span-2 ua-hover-lift">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest leading-none">
-                            Pending Approvals
-                        </span>
-                        <ClipboardList className="w-3.5 h-3.5 text-theme-text-20" />
+
+            {/* 1. STREAMLINED PRIORITY METRIC GRID */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+                {/* Card 1: STAFFS */}
+                <div className={cn(
+                    "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                    "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                    "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                    userRole === 'CEO' && "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]"
+                )}>
+                    {userRole === 'CEO' && (
+                        <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
+                    )}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-[#31267D]/10 dark:bg-indigo-500/20 rounded-xl text-[#31267D] dark:text-indigo-300 group-hover:scale-110 transition-transform">
+                            <Users className="w-4 h-4" />
+                        </div>
+                        <div className="flex -space-x-2">
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shadow-sm">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
+                                </div>
+                            ))}
+                        </div>
                     </div>
-                    <span className="ua-count-animate text-2xl font-black text-theme-text">
-                        {stats.decisionsPending}
-                    </span>
-                </div>
-                {/* Glassmorphic Staff Card */}
-                <div className="ua-entry-animate ua-entry-delay-2 glass-card-ua rounded-2xl p-5 flex flex-col gap-1 ua-hover-lift">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest leading-none">
-                            Staff
-                        </span>
-                        <Activity className="w-3.5 h-3.5 text-emerald-500/80" />
-                    </div>
-                    <span className="ua-count-animate text-2xl font-black text-theme-text">
-                        {stats.staffOnline}
-                        <span className="text-xs text-theme-text-20 ml-1">
-                            /{stats.staffTotal}
-                        </span>
-                    </span>
-                </div>
-                <div className="ua-entry-animate ua-entry-delay-3 bg-theme-card border border-white/[0.1] shadow-[0_0_20px_rgba(255,255,255,0.05)] rounded-2xl p-5 flex flex-col gap-1 shadow-2xl ua-hover-lift">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest leading-none">
-                            Decisions
-                        </span>
-                        <CheckSquare className="w-3.5 h-3.5 text-theme-text-20" />
-                    </div>
-                    <span className="text-2xl font-black text-theme-text">
-                        {stats.decisionsPending}
-                    </span>
-                </div>
-                <div className="bg-theme-card border border-white/[0.1] shadow-[0_0_20px_rgba(255,255,255,0.05)] rounded-2xl p-5 flex flex-col gap-1 shadow-2xl">
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest leading-none">
-                            Tasks
-                        </span>
-                        <ListTodo className="w-3.5 h-3.5 text-theme-text-20" />
-                    </div>
-                    <span className="text-2xl font-black text-theme-text">
-                        {stats.tasksInProgress}
-                    </span>
-                </div>
-                <div
-                    className={`bg-theme-card border rounded-2xl p-5 flex flex-col gap-1 shadow-2xl ${stats.overdueCount > 0 ? "border-red-500/40 shadow-red-500/5 transition-colors" : "border-theme-border-5"}`}
-                >
-                    <div className="flex items-center justify-between mb-1">
-                        <span className="text-[9px] font-bold text-theme-text-40 uppercase tracking-widest leading-none">
-                            Overdue
-                        </span>
-                        <AlertTriangle
-                            className={`w-3.5 h-3.5 ${stats.overdueCount > 0 ? "text-red-500" : "text-theme-text-20"}`}
-                        />
-                    </div>
-                    <span
-                        className={`text-xl font-black ${stats.overdueCount > 0 ? "text-red-500" : "text-theme-text-20"}`}
-                    >
-                        {stats.overdueCount}
-                    </span>
-                </div>
-            </div>{" "}
-            {/* end - status bar grid */}
-            {/* 1.5?????? COMMAND PULSE ALERT STRIP */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-3 flex items-center gap-3 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all duration-300 ua-hover-lift">
-                    <div className="p-2 bg-red-500/10 rounded-lg text-red-500">
-                        <Zap className="w-4 h-4" />
-                    </div>
-                    <div className="flex flex-col">
-                        <span className="text-lg font-black text-theme-text">
-                            {
-                                tasks.filter(
-                                    (t) =>
-                                        t.priority === "urgent" ||
-                                        t.priority === "high",
-                                ).length
-                            }
-                        </span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-theme-text-40">
-                            Urgent Tasks
-                        </span>
+                    <div>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Academy Staffs</p>
+                        <div className="flex items-baseline gap-1">
+                            <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
+                                {stats.staffOnline}
+                            </h2>
+                            <span className="text-slate-300 dark:text-zinc-700 font-bold">/</span>
+                            <h2 className="text-xl font-black text-slate-400 dark:text-zinc-500 tracking-tighter">
+                                {stats.staffTotal}
+                            </h2>
+                        </div>
                     </div>
                 </div>
 
-                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-3 flex items-center gap-3 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all duration-300 ua-hover-lift">
-                    <div className="p-2 bg-orange-500/10 rounded-lg text-[#FA4616]">
-                        <AlertCircle className="w-4 h-4" />
+                {/* Card 2: TASKS */}
+                <div className={cn(
+                    "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                    "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                    "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                    userRole === 'CEO' && "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]"
+                )}>
+                    {userRole === 'CEO' && (
+                        <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
+                    )}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className="p-2 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-xl text-[#31267D] dark:text-indigo-300 group-hover:scale-110 transition-transform">
+                            <ListTodo className="w-4 h-4" />
+                        </div>
+                        <TrendingUp className="w-3.5 h-3.5 text-indigo-300 dark:text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-lg font-black text-theme-text">
+                    <div>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Active Operations</p>
+                        <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
+                            {stats.tasksInProgress}
+                        </h2>
+                    </div>
+                </div>
+
+                {/* Card 3: OVERDUE */}
+                <div className={cn(
+                    "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                    "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                    "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                    userRole === 'CEO' && "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]"
+                )}>
+                    {userRole === 'CEO' && (
+                        <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
+                    )}
+                    <div className="flex items-center justify-between mb-4">
+                        <div className={cn(
+                            "p-2 rounded-xl transition-all shadow-sm",
+                            stats.overdueCount > 0 
+                                ? "bg-red-500/10 dark:bg-red-500/20 text-red-500 dark:text-red-400 animate-pulse" 
+                                : "bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500"
+                        )}>
+                            <AlertTriangle className="w-4 h-4" />
+                        </div>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Critical Delay</p>
+                        <h2 className={cn(
+                            "text-2xl font-black tracking-tighter",
+                            stats.overdueCount > 0 ? "text-red-600 dark:text-red-400" : "text-slate-900 dark:text-zinc-100"
+                        )}>
                             {stats.overdueCount}
-                        </span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-theme-text-40">
-                            Overdue Tasks
-                        </span>
+                        </h2>
                     </div>
                 </div>
 
-                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-3 flex items-center gap-3 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all duration-300 ua-hover-lift">
-                    <div className="p-2 bg-blue-500/10 rounded-lg text-blue-500">
-                        <Calendar className="w-4 h-4" />
+                {/* Card 4: Role-based (Income / Capacity) */}
+                {userRole === 'CEO' ? (
+                    <div className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden shadow-lg shadow-emerald-500/5",
+                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md hover:border-emerald-500/30 dark:hover:border-emerald-500/30"
+                    )}>
+                        {userRole === 'CEO' && (
+                            <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
+                        )}
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-emerald-500/10 transition-colors" />
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="p-2 bg-emerald-500/10 dark:bg-emerald-500/20 rounded-xl text-emerald-600 dark:text-emerald-400 shadow-sm">
+                                <DollarSign className="w-4 h-4" />
+                            </div>
+                            <div className="flex items-end gap-1 h-5">
+                                <div className="w-1 bg-emerald-500/20 dark:bg-emerald-500/10 h-[30%] rounded-full" />
+                                <div className="w-1 bg-emerald-500/40 dark:bg-emerald-500/30 h-[60%] rounded-full" />
+                                <div className="w-1 bg-emerald-500/60 dark:bg-emerald-500/50 h-[45%] rounded-full animate-bounce" />
+                                <div className="w-1 bg-emerald-500 dark:bg-emerald-400 h-[100%] rounded-full" />
+                            </div>
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">Tactical Revenue</p>
+                            <h2 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
+                                ${(stats.paymentsReceivedToday * 250).toLocaleString()}
+                            </h2>
+                        </div>
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-lg font-black text-theme-text">
-                            {
-                                meetings.filter((m) => {
-                                    const today = new Date()
-                                        .toISOString()
-                                        .split("T")[0];
-                                    return m.scheduled_at.startsWith(today);
-                                }).length
-                            }
-                        </span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-theme-text-40">
-                            Meetings Today
-                        </span>
+                ) : (
+                    <div className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group",
+                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700"
+                    )}>
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="p-2 bg-blue-500/10 dark:bg-blue-500/20 rounded-xl text-blue-600 dark:text-blue-400 shadow-sm">
+                                <Activity className="w-4 h-4" />
+                            </div>
+                            <div className="w-8 h-8 rounded-full border-2 border-indigo-500/10 flex items-center justify-center">
+                                <div className="w-1 h-1 rounded-full bg-indigo-500 animate-ping" />
+                            </div>
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Operational Velocity</p>
+                            <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
+                                {stats.operationalVelocity}%
+                            </h2>
+                        </div>
                     </div>
-                </div>
+                )}
 
-                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-3 flex items-center gap-3 shadow-sm hover:-translate-y-0.5 hover:shadow-md transition-all duration-300 ua-hover-lift">
-                    <div className="p-2 bg-purple-500/10 rounded-lg text-[#2F1E73] dark:text-purple-400">
-                        <ClipboardList className="w-4 h-4" />
+                {/* Card 5: Role-based (Sales / Blockers) */}
+                {userRole === 'CEO' ? (
+                    <div className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md hover:border-blue-500/30 dark:hover:border-blue-500/30"
+                    )}>
+                        {userRole === 'CEO' && (
+                            <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
+                        )}
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-blue-500/10 transition-colors" />
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="p-2 bg-blue-500/10 dark:bg-blue-500/20 rounded-xl text-blue-600 dark:text-blue-400 shadow-sm">
+                                <Users className="w-4 h-4" />
+                            </div>
+                            <Rocket className="w-4 h-4 text-blue-400 dark:text-blue-500 animate-pulse" />
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">Market Conversion</p>
+                            <div className="flex items-baseline gap-1">
+                                <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
+                                    {stats.newLeadsToday}
+                                </h2>
+                                <span className="text-slate-300 dark:text-zinc-700 font-black">/</span>
+                                <h2 className="text-xl font-black text-blue-600 dark:text-blue-400 tracking-tighter">
+                                    {stats.paymentsReceivedToday}
+                                </h2>
+                            </div>
+                        </div>
                     </div>
-                    <div className="flex flex-col">
-                        <span className="text-lg font-black text-theme-text">
-                            {stats.decisionsPending}
-                        </span>
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-theme-text-40">
-                            Pending Approvals
-                        </span>
+                ) : (
+                    <div className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group",
+                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700"
+                    )}>
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="p-2 bg-red-500/10 dark:bg-red-500/20 rounded-xl text-red-600 dark:text-red-400 shadow-sm">
+                                <ShieldAlert className="w-4 h-4" />
+                            </div>
+                            {stats.activeBlockers > 0 && (
+                                <div className="flex h-2 w-2 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                </div>
+                            )}
+                        </div>
+                        <div>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Active Blockers</p>
+                            <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
+                                {stats.activeBlockers}
+                            </h2>
+                        </div>
                     </div>
-                </div>
+                )}
             </div>
-            <main className="grid grid-cols-12 gap-6 flex-1">
-                {/* 2?????? LEFT COLUMN - EXECUTIVE AUTHORITY */}
-                <aside className="col-span-12 lg:col-span-3 flex flex-col gap-4">
-                    {/* ???? LIVE OPERATIONS SIGNAL PANEL - Hidden on mobile */}
-                    <div className="hidden md:flex bg-theme-card border border-theme-border-10 rounded-2xl overflow-hidden shadow-2xl flex-col w-full max-w-[300px] mx-auto lg:mx-0">
-                        {/* Today Summary Header - Hidden on mobile */}
-                        <div className="hidden md:block p-4 bg-theme-bg-white-5 border-b border-theme-border-5">
-                            <h4 className="text-[9px] font-black uppercase tracking-[0.2em] text-theme-text-40 mb-3">
+            <main className="grid grid-cols-1 md:grid-cols-12 gap-4 md:gap-6 flex-1">
+                {/* 2. LEFT COLUMN - EXECUTIVE AUTHORITY */}
+                <aside className="col-span-1 md:col-span-12 lg:col-span-3 flex flex-col gap-4">
+                    {/* LIVE OPERATIONS SIGNAL PANEL - Hidden on mobile */}
+                    <div className="hidden md:flex bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 rounded-[2rem] overflow-hidden shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)] flex-col w-full max-w-[300px] mx-auto lg:mx-0">
+                        {/* Today Summary Header */}
+                        <div className="hidden md:block p-5 bg-white/30 dark:bg-zinc-800/30 border-b border-white/40 dark:border-zinc-800/50">
+                            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 dark:text-zinc-500 mb-4">
                                 Today Summary
                             </h4>
-                            <div className="grid grid-cols-2 gap-2">
-                                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-2.5 flex flex-col gap-0.5">
-                                    <span className="text-[14px] font-black text-blue-500">
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="bg-white/60 dark:bg-zinc-900/60 border border-white/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col gap-1 shadow-sm">
+                                    <span className="text-base font-black text-indigo-500 dark:text-indigo-400">
                                         {stats.tasksAssignedToday}
                                     </span>
-                                    <span className="text-[8px] font-bold text-theme-text-40 uppercase tracking-tighter">
+                                    <span className="text-[9px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-tighter">
                                         Tasks Assigned
                                     </span>
                                 </div>
-                                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-2.5 flex flex-col gap-0.5">
-                                    <span className="text-[14px] font-black text-emerald-500">
+                                <div className="bg-white/60 dark:bg-zinc-900/60 border border-white/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col gap-1 shadow-sm">
+                                    <span className="text-base font-black text-emerald-500 dark:text-emerald-400">
                                         {stats.paymentsReceivedToday}
                                     </span>
-                                    <span className="text-[8px] font-bold text-theme-text-40 uppercase tracking-tighter">
+                                    <span className="text-[9px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-tighter">
                                         Payments Received
                                     </span>
                                 </div>
-                                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-2.5 flex flex-col gap-0.5">
-                                    <span className="text-[14px] font-black text-orange-500">
+                                <div className="bg-white/60 dark:bg-zinc-900/60 border border-white/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col gap-1 shadow-sm">
+                                    <span className="text-base font-black text-orange-500 dark:text-orange-400">
                                         {stats.leavesRequestedToday}
                                     </span>
-                                    <span className="text-[8px] font-bold text-theme-text-40 uppercase tracking-tighter">
+                                    <span className="text-[9px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-tighter">
                                         Leaves Requested
                                     </span>
                                 </div>
-                                <div className="bg-theme-card border border-theme-border-5 rounded-xl p-2.5 flex flex-col gap-0.5">
-                                    <span className="text-[14px] font-black text-purple-500">
+                                <div className="bg-white/60 dark:bg-zinc-900/60 border border-white/50 dark:border-zinc-800/50 rounded-2xl p-3 flex flex-col gap-1 shadow-sm">
+                                    <span className="text-base font-black text-purple-500 dark:text-purple-400">
                                         {stats.newLeadsToday}
                                     </span>
-                                    <span className="text-[8px] font-bold text-theme-text-40 uppercase tracking-tighter">
+                                    <span className="text-[9px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-tighter">
                                         New Leads
                                     </span>
                                 </div>
@@ -1889,38 +2122,43 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         <div className="p-4 flex flex-col gap-4 flex-1">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-theme-text-80">
+                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100 opacity-80">
                                         Signal Feed
                                     </h3>
                                     <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={clearSignalFeed}
-                                        className="p-1 rounded hover:bg-theme-border-10 transition-colors"
-                                        title="Clear Signal Feed"
-                                        disabled={activities.length === 0}
-                                    >
-                                        <Trash2
-                                            className={`w-3 h-3 ${activities.length === 0 ? "text-theme-text-10" : "text-theme-text-20 hover:text-theme-text-40"} transition-colors`}
-                                        />
-                                    </button>
+                                    {userRole === 'CEO' && (
+                                        <button
+                                            onClick={clearSignalFeed}
+                                            className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
+                                            title="Clear Signal Feed"
+                                            disabled={activities.length === 0}
+                                        >
+                                            <Trash2
+                                                className={cn(
+                                                    "w-3.5 h-3.5",
+                                                    activities.length === 0 ? "text-slate-300 dark:text-zinc-700" : "text-slate-400 dark:text-zinc-500 hover:text-red-500 transition-colors"
+                                                )}
+                                            />
+                                        </button>
+                                    )}
                                     <RefreshCw
-                                        className={`w-3 h-3 text-theme-text-20 ${isRefreshing ? "animate-spin" : ""}`}
+                                        className={cn("w-3.5 h-3.5 text-slate-400 dark:text-zinc-500", isRefreshing && "animate-spin")}
                                     />
                                 </div>
                             </div>
 
-                            <ScrollArea className="h-[360px] pr-3">
+                            <ScrollArea className="h-[400px] pr-3">
                                 <div className="relative pl-4">
                                     {/* Vertical Timeline Line */}
-                                    <div className="absolute left-[7px] top-1 bottom-1 w-[1px] bg-theme-border-10" />
+                                    <div className="absolute left-[7px] top-1 bottom-1 w-[1px] bg-slate-100 dark:bg-zinc-800" />
 
                                     <AnimatePresence mode="popLayout">
                                         {activities.length === 0 ? (
                                             <div className="h-40 flex flex-col items-center justify-center text-center p-4">
-                                                <Wifi className="w-6 h-6 text-theme-text-10 mb-2 opacity-30" />
-                                                <span className="text-[9px] font-black uppercase tracking-[0.2em] text-theme-text-20">
+                                                <Wifi className="w-6 h-6 text-slate-200 dark:text-zinc-800 mb-2 opacity-50" />
+                                                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 dark:text-zinc-700">
                                                     Awaiting Signals...
                                                 </span>
                                             </div>
@@ -1930,70 +2168,36 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                     (act, index) => (
                                                         <motion.div
                                                             key={act.id}
-                                                            initial={{
-                                                                opacity: 0,
-                                                                x: -5,
-                                                            }}
-                                                            animate={{
-                                                                opacity: 1,
-                                                                x: 0,
-                                                            }}
-                                                            transition={{
-                                                                delay:
-                                                                    index *
-                                                                    0.05,
-                                                            }}
-                                                            className="relative group pr-1"
+                                                            initial={{ opacity: 0, x: -5 }}
+                                                            animate={{ opacity: 1, x: 0 }}
+                                                            transition={{ delay: index * 0.05 }}
+                                                            className="relative group pr-1 transition-all duration-300 hover:bg-slate-50/50 dark:hover:bg-zinc-800/30 p-2 rounded-xl"
                                                         >
                                                             {/* Timeline Dot */}
                                                             <div
-                                                                className="absolute -left-[12.5px] top-1 h-2.5 w-2.5 rounded-full border-2 border-theme-card z-10 transition-transform group-hover:scale-125"
-                                                                style={{
-                                                                    backgroundColor:
-                                                                        act.color,
-                                                                }}
+                                                                className="absolute -left-[12.5px] top-3 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-zinc-900 z-10 transition-transform group-hover:scale-125 shadow-sm ring-4 ring-offset-0 ring-indigo-500/10 dark:ring-indigo-500/20"
+                                                                style={{ backgroundColor: act.color }}
                                                             />
 
                                                             <div className="flex flex-col gap-1.5">
                                                                 <div className="flex items-center justify-between gap-2">
                                                                     <div className="flex items-center gap-2 overflow-hidden">
                                                                         <act.icon
-                                                                            className="w-3 h-3 shrink-0"
-                                                                            style={{
-                                                                                color: act.color,
-                                                                            }}
+                                                                            className="w-3 h-3 shrink-0 opacity-80"
+                                                                            style={{ color: act.color }}
                                                                         />
-                                                                        <span className="text-[10px] font-black uppercase tracking-tight text-theme-text truncate">
-                                                                            {
-                                                                                act.title
-                                                                            }
+                                                                        <span className="text-[10px] font-black uppercase tracking-tight text-slate-900 dark:text-zinc-100 truncate">
+                                                                            {act.title}
                                                                         </span>
                                                                     </div>
-                                                                    <span className="text-[8px] font-bold text-theme-text-20 tabular-nums shrink-0 uppercase tracking-tighter">
-                                                                        {format(
-                                                                            parseISO(
-                                                                                act.time ||
-                                                                                    new Date().toISOString(),
-                                                                            ),
-                                                                            "HH:mm",
-                                                                        )}
+                                                                    <span className="text-[8px] font-bold text-slate-400 dark:text-zinc-500 tabular-nums shrink-0 uppercase tracking-tighter">
+                                                                        {format(parseISO(act.time || new Date().toISOString()), "HH:mm")}
                                                                     </span>
                                                                 </div>
-                                                                <p className="text-[10px] text-theme-text-40 leading-[1.3] line-clamp-2 pl-5">
-                                                                    {
-                                                                        act.description
-                                                                    }
+                                                                <p className="text-[10px] text-slate-400 dark:text-zinc-500 leading-relaxed line-clamp-2 pl-5">
+                                                                    {act.description}
                                                                 </p>
                                                             </div>
-
-                                                            {/* Subtle Glow on Hover */}
-                                                            <div
-                                                                className="absolute -inset-2 rounded-lg opacity-0 group-hover:opacity-5 transition-opacity -z-10"
-                                                                style={{
-                                                                    backgroundColor:
-                                                                        act.color,
-                                                                }}
-                                                            />
                                                         </motion.div>
                                                     ),
                                                 )}
@@ -2007,14 +2211,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 </aside>
 
                 {/* 3?????? CENTER COLUMN - ACTIVE OPERATIONS */}
-                <section className="col-span-12 lg:col-span-6 flex flex-col gap-4">
+                <section className="col-span-1 md:col-span-12 lg:col-span-6 flex flex-col gap-4">
                     <SectionHeader
                         title="Active Operations"
                         color="bg-amber-500"
                     />
 
                     {departmentFilter === "ceo" && (
-                        <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-full md:w-fit overflow-x-auto scrollbar-hide">
+                        <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1.5 bg-white/40 dark:bg-zinc-800/40 rounded-2xl border border-white/50 dark:border-zinc-700/50 w-full md:w-fit overflow-x-auto scrollbar-hide shadow-inner">
                             <button
                                 onClick={() => setTaskTab("active")}
                                 className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
@@ -2047,13 +2251,22 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </button>
                             <button
                                 onClick={() => setTaskTab("completed")}
-                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
+                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 flex items-center gap-2 ${
                                     taskTab === "completed"
                                         ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
                                         : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
                                 }`}
                             >
                                 Completed
+                                {completedTasks.length > 0 && (
+                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] inline-flex items-center justify-center font-black transition-all ${
+                                        taskTab === "completed" 
+                                            ? "bg-white/20 text-white" 
+                                            : "bg-blue-600/90 text-white shadow-sm"
+                                    }`}>
+                                        {completedTasks.length}
+                                    </span>
+                                )}
                             </button>
                             <button
                                 onClick={() => setTaskTab("daily")}
@@ -2069,33 +2282,33 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     )}
 
                     {/* Department Filters */}
-                    <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1 bg-theme-bg-white-5 rounded-2xl border border-theme-border-10 w-full md:w-fit overflow-x-auto scrollbar-hide">
+                    <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1.5 bg-white/40 dark:bg-zinc-800/40 rounded-2xl border border-white/50 dark:border-zinc-700/50 w-full md:w-fit overflow-x-auto scrollbar-hide shadow-inner">
                         <button
                             onClick={() => setDepartmentFilter("ceo")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "ceo"
                                     ? "bg-red-500 text-white shadow-lg shadow-red-500/20"
-                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                    : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
-                            CEO
+                            {userRole === 'CEO' ? 'All' : 'My Tasks'}
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("administration")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "administration"
                                     ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
-                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                    : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
-                            Administration
+                            Admin
                         </button>
                         <button
                             onClick={() => setDepartmentFilter("marketing")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "marketing"
                                     ? "bg-pink-500 text-white shadow-lg shadow-pink-500/20"
-                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                    : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
                             Marketing
@@ -2104,8 +2317,8 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             onClick={() => setDepartmentFilter("sales")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "sales"
-                                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
-                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                    ? "bg-orange-500 text-white shadow-lg shadow-orange-500/20"
+                                    : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
                             Sales
@@ -2114,8 +2327,8 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             onClick={() => setDepartmentFilter("accounts")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "accounts"
-                                    ? "bg-green-500 text-white shadow-lg shadow-green-500/20"
-                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                                    ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
+                                    : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
                             Accounts
@@ -2136,138 +2349,106 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     <div className="flex-1 overflow-hidden">
                         <div className="h-full max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                             <div className="flex flex-col gap-3">
-                        {/* Compute displayed tasks */}
-                        {(() => {
-                            let displayedTasks;
-                            
-                            if (taskTab === "completed") {
-                                displayedTasks = completedTasks;
-                            } else {
-                                displayedTasks = tasks.filter((t) => {
-                                    // Exclude tasks that are currently being deleted
-                                    if (deletingTaskIds.has(t.id)) {
-                                        return false;
+                            {displayedTasks.length === 0 ? (
+                                (() => {
+                                    if (isRefreshing && staff.length === 0) {
+                                        return <SkeletonCommandCenter />;
                                     }
-                                    
+                                    return (
+                                        <div className="h-48 border border-dashed border-indigo-500/20 dark:border-zinc-800 text-center text-slate-400 dark:text-zinc-500 text-[11px] uppercase font-black tracking-widest rounded-[2rem] bg-white/40 dark:bg-zinc-900/20 flex flex-col items-center justify-center gap-3 transition-all shadow-inner">
+                                            <div className="p-3 bg-white/50 dark:bg-zinc-800/50 rounded-full shadow-sm">
+                                                <CheckCircle className="w-6 h-6 text-indigo-500/60 dark:text-indigo-400/60" />
+                                            </div>
+                                            <span>
+                                                {taskTab === "completed" ? "Archive cleared" : 
+                                                 departmentFilter === "ceo" ? "No active operations identified" :
+                                                 departmentFilter === "sales" ? "Sales sector quiet" :
+                                                 departmentFilter === "marketing" ? "Marketing sector quiet" :
+                                                 departmentFilter === "accounts" ? "Accounts sector quiet" :
+                                                 departmentFilter === "administration" ? "Admin sector quiet" :
+                                                 "Awaiting task deployment..."}
+                                            </span>
+                                        </div>
+                                    );
+                                })()
+                            ) : (
+                                displayedTasks.map((t) => {
+                                    const assignee = staff.find(
+                                        (s) => s.id === t.assigned_to,
+                                    );
                                     const isOverdue =
                                         t.due_date &&
                                         new Date(t.due_date) < new Date();
-                                    const isDaily =
-                                        t.is_daily_task === true ||
-                                        t.repeat_daily === true;
 
-                                    // Department filtering - check creator's role
-                                    if (departmentFilter !== "ceo") {
-                                        const creator = staff.find(s => s.id === t.created_by);
-                                        if (!creator) return false;
-                                        
-                                        const creatorRole = creator.role?.toLowerCase();
-                                        switch (departmentFilter) {
-                                            case "sales":
-                                                return creatorRole === "sales manager" || creatorRole === "sales staff";
-                                            case "marketing":
-                                                return creatorRole === "marketing manager" || creatorRole === "marketing staff";
-                                            case "accounts":
-                                                return creatorRole === "accounts manager" || creatorRole === "accounts staff";
-                                            case "administration":
-                                                return creatorRole === "admin" || creatorRole === "administration" || creatorRole === "hr";
-                                            default:
-                                                return false;
-                                        }
-                                    }
-
-                                    // CEO filter - apply task status filters
-                                    if (departmentFilter === "ceo") {
-                                        if (taskTab === "daily") return isDaily;
-                                        if (taskTab === "overdue") return isOverdue;
-                                        if (taskTab === "blocked")
-                                            return t.priority === "urgent"; // Treat urgent as blocked/high focus
-                                        return !isOverdue && t.priority !== "urgent"; // Active default
-                                    }
-
-                                    if (taskTab === "daily") return isDaily;
-                                    if (taskTab === "overdue") return isOverdue;
-                                    if (taskTab === "blocked")
-                                        return t.priority === "urgent"; // Treat urgent as blocked/high focus
-                                    return !isOverdue && t.priority !== "urgent"; // Active default
-                                });
-                            }
-
-                            if (displayedTasks.length === 0) {
-                                return (
-                                    <div className="h-40 border border-dashed border-theme-brand/20 text-center text-theme-text-40 text-[10px] uppercase tracking-widest rounded-3xl bg-theme-bg-white-5 flex flex-col items-center justify-center gap-2 transition-all animate-executive-fade-in shadow-inner">
-                                        <CheckCircle className="w-6 h-6 text-theme-brand opacity-80" />
-                                        <span>
-                                            {taskTab === "completed" ? "No completed tasks" : 
-                                             departmentFilter === "ceo" ? "No active operations at the moment" :
-                                             departmentFilter === "sales" ? "No sales department tasks" :
-                                             departmentFilter === "marketing" ? "No marketing department tasks" :
-                                             departmentFilter === "accounts" ? "No accounts department tasks" :
-                                             departmentFilter === "administration" ? "No administration department tasks" :
-                                             "No active operations at the moment"}
-                                        </span>
-                                    </div>
-                                );
-                            }
-
-                            return displayedTasks.map((t) => {
-                                const assignee = staff.find(
-                                    (s) => s.id === t.assigned_to,
-                                );
-                                const isOverdue =
-                                    t.due_date &&
-                                    new Date(t.due_date) < new Date();
-
-                                return (
-                                    <div
-                                        key={t.id}
-                                        className={`group flex flex-col gap-2 p-4 rounded-2xl transition-all duration-300 shadow-xl border border-l-4 hover:-translate-y-[3px] hover:shadow-[0_10px_30px_rgba(0,0,0,0.08)] ${
-                                            t.priority === "urgent"
-                                                ? "border-l-[#FA4616]"
-                                                : t.status === "completed"
-                                                  ? "border-l-[#2ecc71]"
-                                                  : "border-l-[#2F1E73]"
-                                        } ${
-                                            isOverdue
-                                                ? "bg-red-500/5 hover:bg-red-500/10 border-r-red-500/20 border-y-red-500/20"
-                                                : taskTab === "blocked"
-                                                  ? "bg-amber-500/5 hover:bg-amber-500/10 border-r-amber-500/20 border-y-amber-500/20"
-                                                  : "bg-theme-card hover:bg-theme-hover-brand-bg border-r-theme-border-10 border-y-theme-border-10 hover:border-r-theme-brand/30 hover:border-y-theme-brand/30"
-                                        }`}
-                                    >
+                                    return (
+                                        <div
+                                            key={t.id}
+                                            className={cn(
+                                                "group flex flex-col gap-2 p-5 rounded-3xl transition-all duration-500 shadow-sm border border-white/60 dark:border-zinc-800/50 border-l-4 relative overflow-hidden",
+                                                "bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md hover:-translate-y-0.5",
+                                                t.priority === "urgent"
+                                                    ? "border-l-red-500 dark:border-l-red-600"
+                                                    : t.status === "completed"
+                                                      ? "border-l-emerald-500 dark:border-l-emerald-600"
+                                                      : "border-l-indigo-500 dark:border-l-indigo-600",
+                                                isOverdue
+                                                    ? "border-r-red-500/10 border-y-red-500/10"
+                                                    : "border-white/40 dark:border-zinc-800/50"
+                                            )}
+                                        >
                                         <div className="flex justify-between items-start gap-4">
-                                            <div className="flex-1 flex flex-col gap-1">
-                                                <h4 className="text-sm font-black text-theme-text leading-tight uppercase">
-                                                    {t.title}
-                                                </h4>
-                                                <p className="text-[10px] text-theme-text-40 line-clamp-2">
+                                            <div className="flex-1 flex flex-col gap-1.5">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <h4 className="text-sm font-black text-slate-900 dark:text-zinc-100 leading-tight uppercase">
+                                                        {t.title}
+                                                    </h4>
+                                                    {(t as any).creator && (
+                                                        <Badge variant="outline" className={cn(
+                                                            "text-[9px] px-2.5 py-0 h-5 border-none font-black uppercase tracking-widest flex items-center gap-1.5",
+                                                            (t as any).creator.role === 'ceo' 
+                                                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" 
+                                                                : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
+                                                        )}>
+                                                            {(t as any).creator.role === 'ceo' ? (
+                                                                <>
+                                                                    <Crown className="w-2.5 h-2.5" />
+                                                                    Assigned by CEO
+                                                                </>
+                                                            ) : (
+                                                                <>
+                                                                    <Zap className="w-2.5 h-2.5" />
+                                                                    Assigned by Manager
+                                                                </>
+                                                            )}
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 dark:text-zinc-400 font-medium tracking-wide line-clamp-2 leading-relaxed">
                                                     {t.description ||
-                                                        "No description provided."}
+                                                        "No operational description provided."}
                                                 </p>
                                             </div>
                                             <Badge
-                                                className={`text-[8px] uppercase font-black px-2 py-1 flex items-center gap-1 ${
+                                                className={cn(
+                                                    "text-[8px] uppercase font-black px-2.5 py-1 flex items-center gap-1.5 border-none shadow-none",
                                                     isOverdue
-                                                        ? "bg-red-500 text-theme-text"
-                                                        : t.status ===
-                                                            "in_progress"
-                                                          ? "bg-emerald-500 text-theme-text"
-                                                          : t.priority ===
-                                                              "urgent"
-                                                            ? "bg-amber-500 text-theme-text"
-                                                            : "bg-theme-bg-white-10 text-theme-text-60"
-                                                }`}
+                                                        ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                                        : t.status === "in_progress"
+                                                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
+                                                          : t.priority === "urgent"
+                                                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
+                                                            : "bg-amber-500/10 text-amber-600/80 dark:text-amber-400/80"
+                                                )}
                                             >
                                                 {isOverdue ||
                                                 t.priority === "urgent" ? (
-                                                    <AlertTriangle className="w-2 h-2" />
+                                                    <AlertTriangle className="w-2.5 h-2.5" />
                                                 ) : null}
                                                 {isOverdue
                                                     ? "OVERDUE"
                                                     : t.priority === "urgent"
-                                                      ? "BLOCKED/URGENT"
-                                                      : t.status ===
-                                                          "in_progress"
+                                                      ? "BLOCKED"
+                                                      : t.status === "in_progress"
                                                         ? "ACTIVE"
                                                         : "PENDING"}
                                             </Badge>
@@ -2290,8 +2471,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                         ) || "?"}
                                                     </div>
                                                     <span className="text-[10px] font-bold text-theme-text-60 group-hover/staff:text-theme-text transition-colors uppercase">
-                                                        {assignee?.full_name ||
-                                                            "Unassigned"}
+                                                        {assignee?.full_name || "Unassigned"}
+                                                        {assignee?.department && (
+                                                            <span className="ml-1 opacity-50 font-medium">
+                                                                ({assignee.department})
+                                                            </span>
+                                                        )}
                                                     </span>
                                                 </button>
                                                 {t.due_date && (
@@ -2315,30 +2500,26 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                 {taskTab === "completed" ? (
                                                     <button
                                                         onClick={() => markTaskAsReviewed(t.id)}
-                                                        className="h-6 px-2 text-[8px] font-black uppercase bg-blue-500/20 text-blue-400 hover:bg-blue-500 hover:text-white rounded transition-all border-none"
+                                                        className="h-8 px-4 text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl transition-all border-none shadow-sm"
                                                     >
                                                         Mark Reviewed
                                                     </button>
                                                 ) : (
                                                     <button
-                                                        onClick={() => {
-                                                            console.log("Remove button clicked for task:", t.id, t);
-                                                            deleteTask(t.id);
-                                                        }}
+                                                        onClick={() => deleteTask(t.id)}
                                                         disabled={deletingTaskIds.has(t.id)}
-                                                        className={`h-6 px-2 text-[8px] font-black uppercase rounded transition-all border-none ${
+                                                        className={cn(
+                                                            "p-2.5 rounded-xl transition-all duration-300 border-none flex items-center justify-center group/btn",
                                                             deletingTaskIds.has(t.id)
-                                                                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                                                                : 'bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white'
-                                                        }`}
+                                                                ? 'bg-slate-100 dark:bg-zinc-800 text-slate-400'
+                                                                : 'text-slate-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30'
+                                                        )}
+                                                        title="Terminate Operation"
                                                     >
                                                         {deletingTaskIds.has(t.id) ? (
-                                                            <div className="flex items-center gap-1">
-                                                                <div className="w-3 h-3 border border-current border-t-transparent rounded-full animate-spin"></div>
-                                                                Deleting...
-                                                            </div>
+                                                            <Loader2 className="w-4 h-4 animate-spin" />
                                                         ) : (
-                                                            'Remove'
+                                                            <Trash2 className="w-4 h-4 transition-transform group-hover/btn:scale-110" />
                                                         )}
                                                     </button>
                                                 )}
@@ -2346,410 +2527,131 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                         </div>
                                     </div>
                                 );
-                            });
-                        })()}
+                            })
+                        )}
                             </div>
                         </div>
                     </div>
                 </section>
 
-                
-                {/* 4?????? RIGHT COLUMN - INTELLIGENCE & DIRECTIVES (REFINE) */}
-                <aside className="col-span-12 lg:col-span-3 flex flex-col gap-6">
-                    {/* Ideas & Directives Section */}
-                    <div className="flex flex-col gap-4">
+                {/* 4. RIGHT COLUMN - INTELLIGENCE & DIRECTIVES */}
+                <aside className="col-span-1 md:col-span-12 lg:col-span-3 flex flex-col gap-6">
+                    {/* CEO Directives & Command Log Section */}
+                    <CommandCard className="flex flex-col gap-6">
                         <div className="flex items-center justify-between">
-                            <SectionHeader
-                                title="CEO Command Log"
-                                color="bg-amber-500"
-                            />
-                            <div className="flex items-center gap-2">
-                                {completedIdeas.size > 0 && (
-                                    <Button
-                                        variant="ghost"
-                                        size="sm"
-                                        onClick={clearCompletedDirectives}
-                                        className="text-xs font-medium text-red-500 hover:text-red-600 hover:bg-red-50/10"
-                                        title={`Clear ${completedIdeas.size} completed directive${completedIdeas.size > 1 ? 's' : ''}`}
-                                    >
-                                        <Trash2 className="w-3 h-3 mr-1" />
-                                        Clear ({completedIdeas.size})
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-xs font-medium text-amber-500 hover:text-amber-600"
-                                >
-                                    <Bookmark className="w-3 h-3 mr-1" />
-                                    View All
-                                </Button>
+                            <div className="flex items-center gap-3">
+                                <SectionHeader
+                                    title={userRole === 'CEO' ? "CEO Directives" : "Manager Directives"}
+                                    color="bg-orange-500"
+                                    className="mb-0"
+                                />
+                                <div className="flex items-center justify-center w-6 h-6 rounded-full bg-orange-500 text-[10px] font-black text-white shadow-lg shadow-orange-500/20">
+                                    {ceoDirectives.length + visibleIdeas.length}
+                                </div>
                             </div>
                         </div>
                         
-                        {/* Thought Capture Glassmorphic Input */}
-                        <ThoughtCapture 
-                            onCapture={() => fetchData()} 
-                            compact={true}
-                        />
-                        {ideas.length === 0 ? (
-                            <div className="p-6 border border-dashed border-theme-border-5 text-center text-theme-text-20 text-[9px] uppercase tracking-widest rounded-2xl bg-black/20">
-                                No active reminders or directives found
-                            </div>
-                        ) : (
-                            <div className="flex flex-col gap-3 ua-shimmer-effect">
-                                {ideas.map((idea) => {
-                                    const isCompleted = completedIdeas.has(idea.id);
-                                    const acknowledgedCount =
-                                        (idea as any).acknowledged_by?.length ||
-                                        0;
-                                    const unacknowledged =
-                                        (idea.shared_with?.length || 0) -
-                                        acknowledgedCount;
-                                    
-                                    // Priority colors
-                                    const priorityColors = {
-                                        low: "bg-blue-500/10 text-blue-500 border-blue-500/20",
-                                        medium: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-                                        high: "bg-orange-500/10 text-orange-500 border-orange-500/20",
-                                        urgent: "bg-red-500/10 text-red-500 border-red-500/20"
-                                    };
-                                    
-                                    return (
-                                        <div
-                                            key={idea.id}
-                                            className={`relative rounded-2xl transition-all duration-300 ${
-                                                isCompleted 
-                                                    ? "p-2 py-1.5 hover:shadow-sm" 
-                                                    : "p-4 flex flex-col gap-3 hover:-translate-y-1 hover:shadow-xl"
-                                            } ${
-                                                isCompleted 
-                                                    ? "border-l-2 border-l-green-500/40" 
-                                                    : idea.priority === 'high' 
-                                                        ? "border-l-4 border-l-orange-500" 
-                                                        : unacknowledged > 0 
-                                                            ? "border-l-4 border-l-orange-500/80" 
-                                                            : "border-l-4 border-l-orange-500/60"
-                                            }`}
-                                            style={{
-                                                background: isCompleted ? "#F0F0F0" : "rgba(49, 38, 125, 0.9)",
-                                                backdropFilter: isCompleted ? "none" : "blur(40px) saturate(180%)",
-                                                WebkitBackdropFilter: isCompleted ? "none" : "blur(40px) saturate(180%)",
-                                                border: isCompleted ? "1px solid rgba(34,197,94,0.2)" : "1px solid rgba(241, 77, 36, 0.3)",
-                                                boxShadow: isCompleted 
-                                                    ? "0 2px 8px rgba(0,0,0,0.05)" 
-                                                    : "0 8px 32px rgba(0,0,0,0.2), 0 1px 0px rgba(241, 77, 36, 0.3) inset",
-                                            }}
-                                        >
-                                            {isCompleted ? (
-                                            /* Collapsed Completed State */
-                                            <div className="flex items-center gap-2">
-                                                {/* Green Check Icon */}
-                                                <button
-                                                    onClick={() => toggleIdeaCompletion(idea.id)}
-                                                    className="w-4 h-4 rounded-full bg-green-500 flex items-center justify-center transition-all duration-200 flex-shrink-0 hover:bg-green-600 hover:shadow-sm"
-                                                >
-                                                    <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                    </svg>
-                                                </button>
-                                                
-                                                {/* Collapsed Content */}
-                                                <div className="flex-1 flex items-center justify-between">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-xs font-medium text-gray-700">
-                                                            {idea.title || "Directive"}
-                                                        </span>
-                                                        <span className="text-[10px] text-gray-500">
-                                                            – Completed {(() => {
-                                                                const now = new Date();
-                                                                const created = new Date(idea.created_at);
-                                                                const diffInMinutes = Math.floor((now.getTime() - created.getTime()) / (1000 * 60));
-                                                                
-                                                                if (diffInMinutes < 1) return "just now";
-                                                                if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-                                                                const diffInHours = Math.floor(diffInMinutes / 60);
-                                                                if (diffInHours < 24) return `${diffInHours}h ago`;
-                                                                const diffInDays = Math.floor(diffInHours / 24);
-                                                                return `${diffInDays}d ago`;
-                                                            })()}
-                                                        </span>
-                                                    </div>
-                                                </div>
+                        {ceoDirectives.length > 0 && (
+                            <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                                {ceoDirectives.slice(0, 5).map((directive) => (
+                                    <div
+                                        key={directive.id}
+                                        className="p-4 rounded-2xl border border-white/60 dark:border-zinc-800/50 bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md transition-all group relative overflow-hidden"
+                                    >
+                                        <div className="flex items-start gap-3 mb-3">
+                                            <div className="w-8 h-8 bg-orange-500 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-orange-500/20 group-hover:scale-110 transition-transform">
+                                                <Crown className="w-4 h-4 text-white" />
                                             </div>
-                                        ) : (
-                                            /* Full Active State */
-                                            <div className="flex items-start gap-3">
-                                                {/* Circular Tick Box */}
-                                                <button
-                                                    onClick={() => toggleIdeaCompletion(idea.id)}
-                                                    className="w-5 h-5 rounded-full border-2 border-white/40 flex items-center justify-center transition-all duration-200 flex-shrink-0 mt-0.5 hover:shadow-lg hover:shadow-white/30 hover:border-white/60"
-                                                    style={{
-                                                        background: "transparent",
-                                                        borderColor: "rgba(255,255,255,0.4)",
-                                                    }}
-                                                >
-                                                </button>
-                                                
-                                                {/* Content Container */}
-                                                <div className="flex-1">
-                                                    {/* Header with Title and Metadata Pills */}
-                                                    <div className="flex justify-between items-start mb-2">
-                                                        <div className="flex items-center gap-2">
-                                                            {idea.title && (
-                                                                <h4 className="text-sm font-semibold leading-tight line-clamp-1 transition-all duration-300 text-white">
-                                                                    {idea.title}
-                                                                </h4>
-                                                            )}
-                                                        </div>
-                                                        <div className="flex items-center gap-2">
-                                                            {/* Metadata Pills */}
-                                                            <div className="flex items-center gap-1">
-                                                                <Badge className="bg-white/10 text-white/70 text-[7px] px-2 py-0.5 rounded-full uppercase border-none font-medium tracking-wider backdrop-blur-sm">
-                                                                    {idea.priority || 'medium'}
-                                                                </Badge>
-                                                                <Badge className="bg-white/10 text-white/70 text-[7px] px-2 py-0.5 rounded-full uppercase border-none font-medium tracking-wider backdrop-blur-sm">
-                                                                    Directive
-                                                                </Badge>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                    
-                                                    {/* Content */}
-                                                    <p className="text-xs font-normal leading-relaxed line-clamp-3 transition-all duration-300 text-white/90">
-                                                        {idea.content}
-                                                    </p>
-                                                    
-                                                    {/* Timestamp */}
-                                                    <div className="mt-2 flex justify-end">
-                                                        <span className="text-[7px] text-white/40 font-medium">
-                                                            {(() => {
-                                                                const now = new Date();
-                                                                const created = new Date(idea.created_at);
-                                                                const diffInMinutes = Math.floor((now.getTime() - created.getTime()) / (1000 * 60));
-                                                                
-                                                                if (diffInMinutes < 1) return "just now";
-                                                                if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-                                                                const diffInHours = Math.floor(diffInMinutes / 60);
-                                                                if (diffInHours < 24) return `${diffInHours}h ago`;
-                                                                const diffInDays = Math.floor(diffInHours / 24);
-                                                                return `${diffInDays}d ago`;
-                                                            })()}
-                                                        </span>
-                                                    </div>
-                                                </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-black text-slate-900 dark:text-zinc-100 line-clamp-1">{directive.title}</p>
+                                                <p className="text-[10px] text-slate-400 dark:text-zinc-500 line-clamp-2 mt-1 leading-relaxed font-medium">{directive.message}</p>
                                             </div>
-                                        )}
-                                                
-                                                {/* Staff Sharing Status - Only for Active Directives */}
-                                                {!isCompleted && (idea.shared_with?.length || 0) > 0 && (
-                                                    <div className="mt-3 space-y-2">
-                                                        <div className="flex items-center justify-between text-[8px] font-bold uppercase tracking-widest">
-                                                            <span className={`${unacknowledged > 0 ? "text-amber-500" : "text-white/40"}`}>
-                                                                {unacknowledged > 0 ? "Pending" : "All Seen"} ({acknowledgedCount}/{idea.shared_with?.length || 0})
-                                                            </span>
-                                                            {unacknowledged > 0 && (
-                                                                <span className="text-amber-500 animate-pulse">
-                                                                    ● {unacknowledged} new
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                        
-                                                        {/* Staff Avatars */}
-                                                        <div className="flex items-center gap-1">
-                                                            {(idea.shared_with || []).slice(0, 4).map((staffId: string, index: number) => {
-                                                                const staffMember = staff.find(s => s.id === staffId);
-                                                                const hasSeen = (idea as any).acknowledged_by?.includes(staffId);
-                                                                return (
-                                                                    <div key={staffId} className="relative">
-                                                                        <Avatar className="w-6 h-6 border-2 border-white/20">
-                                                                            <AvatarFallback className="text-[8px] font-bold bg-white/10 text-white/60">
-                                                                            {staffMember?.full_name?.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) || '??'}
-                                                                        </AvatarFallback>
-                                                                    </Avatar>
-                                                                    <div className={`absolute -bottom-1 -right-1 w-3 h-3 rounded-full border-2 border-theme-card ${
-                                                                        hasSeen ? "bg-emerald-500" : "bg-gray-400"
-                                                                    }`} />
-                                                                </div>
-                                                            );
-                                                        })}
-                                                        {(idea.shared_with?.length || 0) > 4 && (
-                                                            <div className="w-6 h-6 rounded-full bg-white/10 border-2 border-white/20 flex items-center justify-center">
-                                                                <span className="text-[8px] font-bold text-white/60">
-                                                                    +{(idea.shared_with?.length || 0) - 4}
-                                                                </span>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
-                                    );
-                                })}
+                                        
+                                        <div className="flex items-center justify-between mt-3">
+                                            <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest bg-orange-500/10 text-orange-600 border-none px-2 py-0.5">
+                                                {directive.priority || 'Normal'}
+                                            </Badge>
+                                            <p className="text-[8px] font-bold text-slate-300 dark:text-zinc-600 uppercase tracking-tighter">
+                                                {format(new Date(directive.created_at), 'MMM d, h:mm a')}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         )}
-                    </div>
 
-                    {/* Due Reminders Section */}
-                    {(() => {
-                        const dueReminders = ideas.filter(idea => {
-                            if (!idea.follow_up_date) return false;
-                            const date = parseISO(idea.follow_up_date);
-                            return isPast(date) || isToday(date) || isTomorrow(date);
-                        }).slice(0, 3);
-                        
-                        if (dueReminders.length === 0) return null;
-                        
-                        return (
-                            <div className="flex flex-col gap-3">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-1 h-4 bg-red-500 rounded-full" />
-                                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-red-400">
-                                        Due Reminders
-                                    </h3>
-                                    <span className="ml-auto text-[9px] text-red-400/60 font-bold">
-                                        {dueReminders.length} pending
-                                    </span>
-                                </div>
-                                <div className="flex flex-col gap-2">
-                                    {dueReminders.map(idea => {
-                                        const date = parseISO(idea.follow_up_date!);
-                                        const isOverdue = isPast(date) && !isToday(date);
-                                        const isDueToday = isToday(date);
-                                        
+                        <div className="flex flex-col gap-4 pt-6 border-t border-slate-100 dark:border-zinc-800/50">
+                            {/* Thought Capture Glassmorphic Input - ROLE BASED */}
+                            <ThoughtCapture 
+                                onCapture={() => fetchData()} 
+                                compact={true}
+                                placeholder={userRole === 'CEO' ? "Capture a Strategic CEO Directive..." : "Log a manager task update..."}
+                            />
+                            
+                            {visibleIdeas.length > 0 && (
+                                <div className="flex flex-col gap-3">
+                                    {visibleIdeas.slice().sort((a, b) => {
+                                        const aDone = completedIdeas.has(a.id);
+                                        const bDone = completedIdeas.has(b.id);
+                                        return aDone === bDone ? 0 : aDone ? 1 : -1;
+                                    }).map((idea) => {
+                                        const isCompleted = completedIdeas.has(idea.id);
                                         return (
-                                            <div 
+                                            <div
                                                 key={idea.id}
-                                                className={`
-                                                    p-3 rounded-xl border text-xs
-                                                    ${isOverdue 
-                                                        ? 'bg-red-500/10 border-red-500/30 text-red-300' 
-                                                        : isDueToday
-                                                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                                                            : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
-                                                    }
-                                                `}
+                                                className={cn(
+                                                    "group flex flex-col gap-3 p-4 rounded-2xl transition-all duration-500 border relative overflow-hidden",
+                                                    isCompleted
+                                                        ? "bg-slate-50 dark:bg-zinc-800/20 border-slate-100 dark:border-zinc-800 opacity-60 shadow-inner"
+                                                        : "bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md shadow-sm"
+                                                )}
                                             >
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <Clock className="w-3 h-3" />
-                                                    <span className="font-bold">
-                                                        {isOverdue ? 'Overdue' : isDueToday ? 'Due Today' : 'Due Tomorrow'}
-                                                    </span>
+                                                <div className={cn(
+                                                    "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
+                                                    isCompleted ? "bg-emerald-500/50" : (
+                                                        idea.priority === 'urgent' ? "bg-red-500" : 
+                                                        idea.priority === 'high' ? "bg-orange-500" : "bg-indigo-400"
+                                                    )
+                                                )} />
+
+                                                <div className="flex justify-between items-start gap-4 relative z-10 pl-1">
+                                                    <div className="flex-1 min-w-0">
+                                                        <h4 className={cn(
+                                                            "text-[11px] font-black uppercase tracking-widest truncate",
+                                                            isCompleted ? "text-slate-400 dark:text-zinc-500 line-through" : "text-slate-900 dark:text-zinc-100"
+                                                        )}>
+                                                            {idea.title || 'Untitled Directive'}
+                                                        </h4>
+                                                        <p className={cn(
+                                                            "text-[10px] font-medium leading-relaxed mt-1",
+                                                            isCompleted ? "text-slate-300 dark:text-zinc-600 line-through italic" : "text-slate-400 dark:text-zinc-500"
+                                                        )}>
+                                                            {idea.content}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => toggleIdeaCompletion(idea.id)}
+                                                        className={cn(
+                                                            "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300",
+                                                            isCompleted ? "bg-emerald-500 text-white" : "bg-slate-50 dark:bg-zinc-800 text-slate-300 hover:text-emerald-500"
+                                                        )}
+                                                    >
+                                                        <Check className="w-4 h-4" strokeWidth={3} />
+                                                    </button>
                                                 </div>
-                                                <p className="line-clamp-2 opacity-80">{idea.title || idea.content}</p>
                                             </div>
                                         );
                                     })}
                                 </div>
-                            </div>
-                        );
-                    })()}
-
-                    {/* Compact Staff Visibility List */}
-                    <div className="flex flex-col gap-3">
-                        <SectionHeader
-                            title="Staff Presence"
-                            color="bg-emerald-500"
-                        />
-                        <div className="flex flex-col gap-2 bg-theme-card border border-theme-border-5 rounded-2xl p-2 hide-scrollbar max-h-48 overflow-y-auto">
-                            {stats.sortedStaff.map((s) => {
-                                const staffTasks = tasks.filter(
-                                    (t) => t.assigned_to === s.id,
-                                );
-                                return (
-                                    <div
-                                        key={s.id}
-                                        className="flex items-center justify-between p-2 hover:bg-theme-bg-white-5 rounded-xl transition-colors cursor-pointer"
-                                        onClick={() =>
-                                            setShowStaffOverview(true)
-                                        }
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <div
-                                                className={`w-1.5 h-1.5 rounded-full ${s.status === "online" ? "bg-emerald-500" : s.status === "busy" ? "bg-amber-500" : "bg-theme-bg-white-20"}`}
-                                            />
-                                            <span className="text-[10px] font-bold text-theme-text uppercase">
-                                                {s.full_name}
-                                            </span>
-                                        </div>
-                                        <span className="text-[8px] text-theme-text-40 uppercase font-black">
-                                            {staffTasks.length} Tasks
-                                        </span>
-                                    </div>
-                                );
-                            })}
+                            )}
                         </div>
-                        <Button
-                            onClick={() => setShowStaffOverview(true)}
-                            className="w-full bg-theme-bg-white-5 hover:bg-theme-bg-white-10 text-theme-text-60 hover:text-theme-text text-[9px] font-black uppercase tracking-widest border border-theme-border-10 rounded-xl h-10"
-                        >
-                            Staff Overview
-                        </Button>
-                    </div>
+                    </CommandCard>
+
+                    <ExecutivePerformanceEngine tasks={tasks} completedTasks={completedTasks} />
                 </aside>
             </main>
-            {/* 6?????? FLOATING QUICK ACTION BUTTON */}
-            <div className="fixed bottom-8 right-8 z-50">
-                <div className="relative">
-                    {/* Expandable Menu */}
-                    <div
-                        className={`absolute bottom-full right-0 mb-4 flex flex-col gap-2 items-end transition-all duration-300 ${isActionMenuOpen ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 pointer-events-none"}`}
-                    >
-                        <button
-                            onClick={() => {
-                                setIsAssignTaskOpen(true);
-                                setIsActionMenuOpen(false);
-                            }}
-                            className="flex items-center gap-3 bg-theme-card text-theme-text border border-theme-border-10 px-4 py-3 rounded-2xl shadow-lg hover:bg-theme-bg-white-5 hover:border-theme-brand/30 transition-all hover:-translate-x-1"
-                        >
-                            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                                Assign Task
-                            </span>
-                            <div className="p-1.5 bg-[#2F1E73]/10 text-[#2F1E73] dark:text-purple-400 rounded-lg">
-                                <Target className="w-4 h-4" />
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => {
-                                setIsScheduleMeetingOpen(true);
-                                setIsActionMenuOpen(false);
-                            }}
-                            className="flex items-center gap-3 bg-theme-card text-theme-text border border-theme-border-10 px-4 py-3 rounded-2xl shadow-lg hover:bg-theme-bg-white-5 hover:border-theme-brand/30 transition-all hover:-translate-x-1"
-                        >
-                            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                                Schedule Meeting
-                            </span>
-                            <div className="p-1.5 bg-blue-500/10 text-blue-500 rounded-lg">
-                                <Clock className="w-4 h-4" />
-                            </div>
-                        </button>
-                        <button
-                            onClick={() => {
-                                setIsAddStaffOpen(true);
-                                setIsActionMenuOpen(false);
-                            }}
-                            className="flex items-center gap-3 bg-theme-card text-theme-text border border-theme-border-10 px-4 py-3 rounded-2xl shadow-lg hover:bg-theme-bg-white-5 hover:border-theme-brand/30 transition-all hover:-translate-x-1"
-                        >
-                            <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                                Add Staff
-                            </span>
-                            <div className="p-1.5 bg-[#FA4616]/10 text-[#FA4616] rounded-lg">
-                                <UserPlus className="w-4 h-4" />
-                            </div>
-                        </button>
-                    </div>
 
-                    {/* Main Button */}
-                    <button
-                        onClick={() => setIsActionMenuOpen(!isActionMenuOpen)}
-                        className="w-14 h-14 bg-[#FA4616] hover:bg-[#e03f14] text-white rounded-full flex items-center justify-center shadow-[0_8px_30px_rgba(250,70,22,0.4)] hover:shadow-[0_8px_30px_rgba(250,70,22,0.6)] transition-all hover:scale-110 cursor-pointer relative z-10"
-                    >
-                        <Plus
-                            className={`w-6 h-6 transition-transform duration-300 ${isActionMenuOpen ? "rotate-45" : ""}`}
-                        />
-                    </button>
-                </div>
-            </div>
             {/* MODALS */}
             <AddStaffDialog
                 open={isAddStaffOpen}
@@ -2763,14 +2665,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     fetchData();
                 }}
             />
-            {/* ?????? Instruction Dispatch Modal ??? Executive Command Premium ?????? */}
+            {/* Instruction Dispatch Modal */}
             <Dialog open={isAssignTaskOpen} onOpenChange={setIsAssignTaskOpen}>
-                <DialogContent className="bg-white dark:bg-[#1a1625] border border-gray-100 dark:border-white/10 text-[#1a1a2e] dark:text-white max-w-[560px] rounded-2xl shadow-[0_24px_80px_rgba(0,0,0,0.12)] overflow-hidden p-0 flex flex-col max-h-[85vh]">
-                    {/* Gradient accent bar */}
-                    <div className="absolute top-0 left-0 right-0 h-[3px] bg-gradient-to-r from-[#e86123] to-[#351e6a] z-50 rounded-t-2xl" />
-
-                    {/* Header */}
-                    <div className="px-6 pt-7 pb-4 flex items-start justify-between flex-shrink-0">
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-[560px] rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col max-h-[85vh]">
+                    <div className="px-6 pt-7 pb-4 flex items-start justify-between flex-shrink-0 border-b dark:border-zinc-800">
                         <div>
                             <DialogTitle className="text-lg font-black tracking-tight text-[#1a1a2e] dark:text-white flex items-center gap-2">
                                 <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#e86123]/10 to-[#351e6a]/10 flex items-center justify-center">
@@ -3088,7 +2986,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 open={isRemoveStaffModalOpen}
                 onOpenChange={setIsRemoveStaffModalOpen}
             >
-                <DialogContent className="bg-theme-card border-theme-border text-theme-text max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col">
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col">
                     {/* Top gradient accent bar - Red for destructive */}
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-red-500 to-red-900 z-50" />
 
@@ -3137,7 +3035,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </div>
                     </div>
 
-                    <div className="p-6 mt-4 border-t border-theme-border-10 bg-theme-card/80 backdrop-blur-md flex items-center justify-between">
+                    <div className="p-6 mt-4 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800">
                         <Button
                             type="button"
                             variant="ghost"
@@ -3159,7 +3057,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             </Dialog>
             {/* Ideas Modal */}
             <Dialog open={isIdeasOpen} onOpenChange={setIsIdeasOpen}>
-                <DialogContent className="bg-theme-card border-theme-border text-theme-text max-w-2xl rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col max-h-[90vh]">
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-2xl rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col max-h-[90vh]">
                     {/* Top gradient accent bar */}
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#e86123] to-[#351e6a] z-50" />
 
@@ -3244,7 +3142,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                         <SelectTrigger className="bg-theme-bg-white-5 border-theme-border-10 h-14 rounded-xl px-5 font-bold shadow-inner">
                                             <SelectValue placeholder="Select impact level" />
                                         </SelectTrigger>
-                                        <SelectContent className="bg-theme-card border-theme-border text-theme-text">
+                                        <SelectContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100">
                                             <SelectItem
                                                 value="low"
                                                 className="font-bold focus:bg-theme-bg-white-5"
@@ -3350,7 +3248,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     </ScrollArea>
 
                     {/* Fixed Footer Actions */}
-                    <div className="p-6 border-t border-theme-border-10 bg-theme-card/80 backdrop-blur-md flex items-center justify-between flex-shrink-0">
+                    <div className="p-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800 flex-shrink-0">
                         <Button
                             type="button"
                             variant="ghost"
@@ -3376,7 +3274,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 open={showStaffOverview}
                 onOpenChange={setShowStaffOverview}
             >
-                <DialogContent className="bg-theme-card border-theme-border text-theme-text max-w-4xl rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col max-h-[90vh]">
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-4xl rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col max-h-[90vh]">
                     {/* Top gradient accent bar */}
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#e86123] to-[#351e6a] z-50" />
 
@@ -3498,7 +3396,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             </Dialog>
             {/* Chat Message Modal */}
             <Dialog open={isChatModalOpen} onOpenChange={setIsChatModalOpen}>
-                <DialogContent className="bg-theme-card border-theme-border text-theme-text max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col">
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col">
                     {/* Top gradient accent bar */}
                     <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-[#e86123] to-[#351e6a] z-50" />
 
@@ -3543,7 +3441,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </div>
                     </div>
 
-                    <div className="p-6 mt-2 border-t border-theme-border-10 bg-theme-card/80 backdrop-blur-md flex items-center justify-between">
+                    <div className="p-6 mt-2 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md border-t border-slate-200 dark:border-zinc-800">
                         <Button
                             type="button"
                             variant="ghost"
@@ -4661,7 +4559,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                             executing protocol.
                                         </p>
 
-                                        <div className="bg-theme-card border border-theme-border-10 rounded-2xl p-5 shadow-lg space-y-6">
+                                        <div className="bg-white dark:bg-zinc-900 shadow-sm dark:shadow-2xl border border-slate-200 dark:border-zinc-800/50">
                                             {/* Header Info */}
                                             <div>
                                                 <div className="flex items-start justify-between">
@@ -4889,6 +4787,109 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </Button>
                         )}
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Delegation Modal */}
+            <Dialog open={isDelegationModalOpen} onOpenChange={setIsDelegationModalOpen}>
+                <DialogContent className="bg-white/95 backdrop-blur-2xl border-slate-200 text-slate-900 max-w-lg rounded-3xl shadow-2xl p-6 overflow-hidden">
+                    {/* Top gradient accent bar */}
+                    <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600" />
+                    
+                    <DialogHeader className="pt-2">
+                        <DialogTitle className="text-xl font-black uppercase tracking-[0.2em] text-indigo-950 flex items-center gap-2">
+                            <Users className="w-5 h-5 text-indigo-600" />
+                            Operative Allocation
+                        </DialogTitle>
+                    </DialogHeader>
+                    
+                    <div className="mt-6 space-y-6">
+                        <div className="p-4 rounded-2xl bg-slate-50/50 border border-slate-100 backdrop-blur-sm relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
+                                <Target className="w-12 h-12 text-indigo-900" />
+                            </div>
+                            <h4 className="text-[10px] font-black text-indigo-600/60 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                <FileText className="w-3 h-3" />
+                                Directive Content
+                            </h4>
+                            <p className="text-sm text-indigo-950 font-medium leading-relaxed">
+                                {selectedIdeaForDelegation?.content}
+                            </p>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div className="flex items-center justify-between px-1">
+                                <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                    Select Team Member
+                                </h4>
+                                <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-2 py-0.5 rounded-full">
+                                    {staff.length} Active Operatives
+                                </span>
+                            </div>
+                            
+                            <ScrollArea className="h-[320px] pr-4 -mr-4">
+                                <div className="space-y-2.5 pb-4">
+                                    {staff.map((member) => {
+                                        const activeTasksCount = tasks.filter(t => t.assigned_to === member.id && t.status !== 'completed').length;
+                                        return (
+                                            <button
+                                                key={member.id}
+                                                onClick={() => handleDelegation(member)}
+                                                disabled={isDelegating}
+                                                className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 bg-white hover:border-indigo-500/50 hover:shadow-md hover:shadow-indigo-500/5 transition-all duration-300 group relative overflow-hidden"
+                                            >
+                                                <div className="flex items-center gap-3.5 relative z-10">
+                                                    <div className="relative">
+                                                        <Avatar className="w-11 h-11 border-2 border-white shadow-sm ring-1 ring-slate-100">
+                                                            <AvatarImage src={member.avatar_url} />
+                                                            <AvatarFallback className="bg-gradient-to-br from-indigo-50 to-slate-100 text-indigo-700 font-bold text-sm">
+                                                                {member.full_name?.split(' ').map(n => n[0]).join('')}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm" />
+                                                    </div>
+                                                    <div className="text-left">
+                                                        <p className="text-sm font-black text-slate-900 group-hover:text-indigo-600 transition-colors">
+                                                            {member.full_name}
+                                                        </p>
+                                                        <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mt-0.5">
+                                                            {member.department || 'Operations'}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex flex-col items-end gap-1.5 relative z-10">
+                                                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
+                                                        activeTasksCount > 3 
+                                                            ? 'bg-amber-50 border-amber-100 text-amber-600' 
+                                                            : 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                                                    }`}>
+                                                        <span className="text-[9px] font-black uppercase tracking-tight">
+                                                            {activeTasksCount} Load
+                                                        </span>
+                                                    </div>
+                                                    <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">
+                                                        <ChevronRight className="w-4 h-4 transition-transform group-hover:translate-x-0.5" />
+                                                    </div>
+                                                </div>
+                                                {/* Background hover effect */}
+                                                <div className="absolute inset-0 bg-gradient-to-r from-indigo-50/0 via-indigo-50/0 to-indigo-50/30 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </ScrollArea>
+                        </div>
+                    </div>
+
+                    <DialogFooter className="mt-2 border-t border-slate-100 pt-4">
+                        <Button
+                            variant="ghost"
+                            onClick={() => setIsDelegationModalOpen(false)}
+                            className="text-[10px] font-black uppercase tracking-widest text-slate-400 hover:text-slate-600 hover:bg-slate-50 rounded-xl h-11"
+                        >
+                            Abort Allocation
+                        </Button>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

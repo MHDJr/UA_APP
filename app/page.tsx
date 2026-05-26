@@ -28,8 +28,8 @@ export default function Home() {
             if (profile.role === "ceo" && !isCurrentPathStaff) {
                 router.replace("/ceo");
             }
-            else if (profile.is_manager && !isCurrentPathStaff) {
-                router.replace("/manager");
+            else if ((profile.is_manager || profile.role === "manager") && !isCurrentPathStaff) {
+                router.replace("/ceo");
             }
             else if (profile.role === "sales" || profile.is_tutor || profile.role === "accounts" || profile.role === "staff") {
                 router.replace("/staff");

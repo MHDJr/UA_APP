@@ -167,9 +167,17 @@
 @layer base {
     * {
         @apply border-border;
+        -webkit-tap-highlight-color: transparent;
     }
-    body {
+    html, body {
         @apply bg-background text-foreground font-sans antialiased;
+        -webkit-user-select: none;
+        user-select: none;
+        overscroll-behavior-y: contain;
+    }
+    
+    a, button, [role="button"], input, select, textarea {
+        pointer-events: auto;
     }
 
     /* Ensure dark mode background works properly */
