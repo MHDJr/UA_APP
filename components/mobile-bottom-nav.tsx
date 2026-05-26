@@ -50,10 +50,23 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
 
     const getNavItems = (): NavItem[] => {
         const homeHref = userRole === 'CEO' ? '/ceo' : userRole === 'MANAGER' ? '/manager' : '/staff';
-        return [
-            { id: "home", label: "HOME", icon: Home, href: homeHref },
-            { id: "accounts", label: "ACCOUNTS", icon: Wallet, href: "/accounts" },
+        const homeId = userRole === 'CEO' ? 'command-center' : 'home';
+        
+        const items: NavItem[] = [
+            { id: homeId, label: "HOME", icon: Home, href: homeHref }
         ];
+
+        // Add Sales button for Sales department/role
+        if (profile?.department === "Sales" || profile?.role === "sales" || profile?.is_sales_staff) {
+            items.push({ id: "sales", label: "SALES", icon: TrendingUp, href: "/sales" });
+        }
+        
+        // Add Accounts button for Accounts/Finance department/role
+        if (profile?.department === "Finance" || profile?.department === "Accounts" || profile?.role === "accounts") {
+            items.push({ id: "accounts", label: "ACCOUNTS", icon: Wallet, href: "/accounts" });
+        }
+
+        return items;
     };
 
     const navItems = getNavItems();
@@ -221,8 +234,7 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
             </AnimatePresence>
 
             {/* Bottom Navigation Bar */}
-            <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/85 backdrop-blur-md border-t border-slate-200 pb-[env(safe-area-inset-bottom)]">
-                <div className="flex items-center justify-around px-2 py-2">
+            <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden bg-white/80 dark:bg-zinc-900/80 backdrop-blur-lg border-t border-white/40 dark:border-zinc-800/50 p-3 h-16 flex items-center justify-around pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
                         {navItems.map((item) => {
                             const isActive = activeView === item.id || (item.href && pathname === item.href);
                             const Icon = item.icon;
@@ -233,7 +245,7 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
                                     key={item.id}
                                     onClick={() => handleNavClick(item)}
                                     className={cn(
-                                        "flex flex-col items-center justify-center gap-1 flex-1 py-2 transition-all duration-300 active:scale-95",
+                                        "flex flex-col items-center justify-center gap-1 flex-1 py-2 min-h-[44px] min-w-[44px] transition-all duration-300 ease-executive translate-gpu active:scale-95",
                                         isActive
                                             ? "text-[#312E81] scale-105"
                                             : "text-gray-400 hover:text-gray-600"
@@ -269,7 +281,6 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
                                 </button>
                             );
                         })}
-                    </div>
             </nav>
 
             {/* Spacer for bottom nav */}

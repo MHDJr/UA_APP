@@ -398,12 +398,14 @@ export default function AccountsPage() {
                 </div>
             </div>
 
-            {/* Desktop Layout */}
-            <div className="hidden md:block w-full md:grid md:grid-cols-12 md:gap-6 max-w-7xl mx-auto px-6 py-6">
-                {/* Daily Entry Card - Takes up col-span-8 */}
-                <div className="md:col-span-8">
-                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-6">
-                        {/* Card Header */}
+            {/* Unified Responsive Layout */}
+            <div className="w-full grid grid-cols-1 lg:grid-cols-12 gap-8 max-w-7xl mx-auto px-4 md:px-6 py-6">
+                
+                {/* LEFT GRID SECTION (Daily Entry & Quick History) */}
+                <div className="lg:col-span-7 flex flex-col gap-8">
+                    
+                    {/* Daily Entry Card */}
+                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5 md:p-6">
                         <div className="flex items-center gap-3 mb-6">
                             <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#ff4d00] to-[#ff8c00] flex items-center justify-center shadow-lg shadow-orange-200">
                                 <Wallet className="w-6 h-6 text-white" />
@@ -414,85 +416,130 @@ export default function AccountsPage() {
                             </div>
                         </div>
 
-                        {/* Input Fields - 2-column grid on desktop */}
+                        {/* Input Fields */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* UloomX Total Income */}
                             <div className="relative">
                                 <input
                                     type="number"
-                                    id="uloomx-desktop"
+                                    id="uloomx"
                                     value={uloomxIncome}
                                     onChange={(e) => setUloomxIncome(e.target.value)}
                                     placeholder=" "
-                                    className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-[#ff4d00] focus:ring-4 focus:ring-[#ff4d00]/10 transition-all"
+                                    className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-[#ff4d00] focus:ring-4 focus:ring-[#ff4d00]/10 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                                 <label 
-                                    htmlFor="uloomx-desktop"
+                                    htmlFor="uloomx"
                                     className="absolute left-4 top-2 text-xs font-medium text-[#64748b] transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:text-gray-400 peer-focus:top-2 peer-focus:text-xs peer-focus:text-[#ff4d00]"
                                 >
                                     UloomX Income
                                 </label>
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-lg pointer-events-none">₹</span>
                             </div>
 
                             {/* Usthad Academy Income */}
                             <div className="relative">
                                 <input
                                     type="number"
-                                    id="usthad-desktop"
+                                    id="usthad"
                                     value={usthadIncome}
                                     onChange={(e) => setUsthadIncome(e.target.value)}
                                     placeholder=" "
-                                    className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-[#ff4d00] focus:ring-4 focus:ring-[#ff4d00]/10 transition-all"
+                                    className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-[#ff4d00] focus:ring-4 focus:ring-[#ff4d00]/10 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                                 <label 
-                                    htmlFor="usthad-desktop"
+                                    htmlFor="usthad"
                                     className="absolute left-4 top-2 text-xs font-medium text-[#64748b] transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:text-gray-400 peer-focus:top-2 peer-focus:text-xs peer-focus:text-[#ff4d00]"
                                 >
                                     Usthad Academy Income
                                 </label>
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-lg pointer-events-none">₹</span>
                             </div>
 
                             {/* Total Combined Expenses - Spans full width */}
                             <div className="relative md:col-span-2">
                                 <input
                                     type="number"
-                                    id="expenses-desktop"
+                                    id="expenses"
                                     value={expenses}
                                     onChange={(e) => setExpenses(e.target.value)}
                                     placeholder=" "
-                                    className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-red-400 focus:ring-4 focus:ring-red-100 transition-all"
+                                    className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-red-400 focus:ring-4 focus:ring-red-100 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                 />
                                 <label 
-                                    htmlFor="expenses-desktop"
+                                    htmlFor="expenses"
                                     className="absolute left-4 top-2 text-xs font-medium text-[#64748b] transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:text-gray-400 peer-focus:top-2 peer-focus:text-xs peer-focus:text-red-500"
                                 >
                                     Total Expenses
                                 </label>
-                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
+                                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 font-mono text-lg pointer-events-none">₹</span>
                             </div>
                         </div>
 
-                        {/* Revenue Display - Sticky Bar */}
-                        <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg shadow-green-200">
-                            <div className="flex items-center justify-between">
+                        {/* Revenue Display - Upgraded Gradient */}
+                        <div className="mt-6 p-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 shadow-[0_4px_20px_rgba(16,185,129,0.15)] relative overflow-hidden">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                            <div className="flex items-center justify-between relative z-10">
                                 <div className="flex items-center gap-2">
-                                    <TrendingUp className="w-5 h-5 text-white/80" />
-                                    <span className="text-sm font-medium text-white/90">Revenue</span>
+                                    <TrendingUp className="w-5 h-5 text-white/90" />
+                                    <span className="text-sm font-bold text-white/95 tracking-wide uppercase">Revenue</span>
                                 </div>
-                                <span className={`text-2xl font-black text-white`}>
+                                <span className="text-3xl font-black text-white tracking-tight">
                                     {formatCurrency(revenue)}
                                 </span>
                             </div>
                         </div>
                     </div>
+
+                    {/* Quick History Card */}
+                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5 md:p-6">
+                        <div className="flex items-center justify-between mb-5">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center border border-slate-100">
+                                    <History className="w-5 h-5 text-slate-600" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-[#1e293b]">Quick History</h2>
+                                    <p className="text-xs text-[#64748b]">Last 3 entries</p>
+                                </div>
+                            </div>
+                            <button className="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors flex items-center gap-1">
+                                <FileText className="w-3.5 h-3.5" />
+                                Ledger
+                            </button>
+                        </div>
+
+                        {/* History List */}
+                        <div className="space-y-3">
+                            {loading ? (
+                                <div className="text-center py-4 text-sm text-[#64748b]">Loading history...</div>
+                            ) : financialHistory.length === 0 ? (
+                                <div className="text-center py-4 text-sm text-[#64748b]">No entries yet</div>
+                            ) : (
+                                financialHistory.map((entry) => (
+                                    <div key={entry.id} className="p-3 rounded-xl bg-slate-50/50 border border-slate-100/60 hover:bg-slate-50 transition-colors">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-sm font-semibold text-[#1e293b]">{entry.date}</span>
+                                            <span className="text-sm font-bold text-emerald-600">
+                                                {formatCurrency(entry.revenue)}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between text-xs font-medium text-[#64748b]">
+                                            <span className="text-slate-500">Income: {formatCurrency(entry.uloomxIncome + entry.usthadIncome)}</span>
+                                            <span className="text-red-400">Exp: {formatCurrency(entry.expenses)}</span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
                 </div>
 
-                {/* Sidebar - Monthly Progress, Verification and Quick History - Takes up col-span-4 */}
-                <div className="md:col-span-4 space-y-6">
+                {/* RIGHT GRID SECTION (Overview & Actions) */}
+                <div className="lg:col-span-5 flex flex-col gap-6">
+                    
                     {/* Monthly Progress Card */}
-                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
+                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5 md:p-6">
                         <div className="flex items-center gap-3 mb-5">
                             <div className="w-10 h-10 rounded-xl bg-[#ff4d00]/10 flex items-center justify-center">
                                 <Target className="w-5 h-5 text-[#ff4d00]" />
@@ -511,7 +558,6 @@ export default function AccountsPage() {
                                 department="accounts"
                                 size="md"
                                 onTargetUpdated={() => {
-                                    // Refresh monthly target data
                                     if (profile) {
                                         fetchMonthlyTarget(profile.id).then(setMonthlyTarget);
                                     }
@@ -521,10 +567,10 @@ export default function AccountsPage() {
                     </div>
 
                     {/* Transmission Verification Card */}
-                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
+                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5 md:p-6">
                         <div className="flex items-center gap-3 mb-5">
-                            <div className="w-10 h-10 rounded-xl bg-[#ff4d00]/10 flex items-center justify-center">
-                                <ShieldCheck className="w-5 h-5 text-[#ff4d00]" />
+                            <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center">
+                                <ShieldCheck className="w-5 h-5 text-slate-700" />
                             </div>
                             <div>
                                 <h2 className="text-base font-bold text-[#1e293b]">Verification</h2>
@@ -533,54 +579,40 @@ export default function AccountsPage() {
                         </div>
 
                         {/* Live Split */}
-                        <div className="mb-4">
-                            <div className="flex justify-between text-xs text-[#64748b] mb-2">
+                        <div className="mb-5">
+                            <div className="flex justify-between text-xs font-semibold text-slate-500 mb-2 uppercase tracking-wide">
                                 <span>UloomX</span>
                                 <span>Usthad</span>
                             </div>
-                            <div className="h-6 bg-gray-100 rounded-full overflow-hidden flex">
+                            <div className="h-4 bg-slate-100 rounded-full overflow-hidden flex shadow-inner">
                                 {incomeSplit.uloomxPercentage > 0 && (
                                     <div 
                                         className="bg-[#ff4d00] flex items-center justify-center transition-all duration-300"
                                         style={{ width: `${incomeSplit.uloomxPercentage}%` }}
-                                    >
-                                        {incomeSplit.uloomxPercentage > 15 && (
-                                            <span className="text-[10px] text-white font-bold">
-                                                {Math.round(incomeSplit.uloomxPercentage)}%
-                                            </span>
-                                        )}
-                                    </div>
+                                    />
                                 )}
                                 {incomeSplit.usthadPercentage > 0 && (
                                     <div 
-                                        className="bg-[#64748b] flex items-center justify-center transition-all duration-300"
+                                        className="bg-[#2C2171] flex items-center justify-center transition-all duration-300"
                                         style={{ width: `${incomeSplit.usthadPercentage}%` }}
-                                    >
-                                        {incomeSplit.usthadPercentage > 15 && (
-                                            <span className="text-[10px] text-white font-bold">
-                                                {Math.round(incomeSplit.usthadPercentage)}%
-                                            </span>
-                                        )}
-                                    </div>
+                                    />
                                 )}
                             </div>
                         </div>
 
                         {/* Smart Alert */}
-                        <div className={`p-3 rounded-xl border ${
+                        <div className={`p-3.5 rounded-xl border ${
                             validationChecks.hasHighExpenseRatio 
-                                ? 'bg-red-50 border-red-200' 
-                                : 'bg-green-50 border-green-200'
+                                ? 'bg-red-50 border-red-200 text-red-700' 
+                                : 'bg-emerald-50 border-emerald-200 text-emerald-700'
                         }`}>
                             <div className="flex items-center gap-2">
                                 {validationChecks.hasHighExpenseRatio ? (
-                                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                                    <AlertTriangle className="w-4 h-4" />
                                 ) : (
-                                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                                    <CheckCircle2 className="w-4 h-4" />
                                 )}
-                                <span className={`text-xs font-semibold ${
-                                    validationChecks.hasHighExpenseRatio ? 'text-red-700' : 'text-green-700'
-                                }`}>
+                                <span className="text-xs font-bold uppercase tracking-wide">
                                     {validationChecks.hasHighExpenseRatio 
                                         ? `High Expense: ${validationChecks.expenseRatio.toFixed(0)}%` 
                                         : 'Ready for Review'}
@@ -589,309 +621,30 @@ export default function AccountsPage() {
                         </div>
                     </div>
 
-                    {/* Quick History Card */}
-                    <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
-                        <div className="flex items-center gap-3 mb-4">
-                            <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
-                                <History className="w-5 h-5 text-gray-600" />
-                            </div>
-                            <div>
-                                <h2 className="text-base font-bold text-[#1e293b]">Quick History</h2>
-                                <p className="text-xs text-[#64748b]">Last 3 entries</p>
-                            </div>
-                        </div>
-
-                        {/* Mobile-friendly History List */}
-                        <div className="space-y-3">
-                            {loading ? (
-                                <div className="text-center py-4 text-sm text-[#64748b]">Loading history...</div>
-                            ) : financialHistory.length === 0 ? (
-                                <div className="text-center py-4 text-sm text-[#64748b]">No entries yet</div>
-                            ) : (
-                                financialHistory.map((entry) => (
-                                    <div key={entry.id} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-sm font-semibold text-[#1e293b]">{entry.date}</span>
-                                            <span className="text-sm font-bold text-green-600">
-                                                {formatCurrency(entry.revenue)}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center justify-between text-xs text-[#64748b]">
-                                            <span>Income: {formatCurrency(entry.uloomxIncome + entry.usthadIncome)}</span>
-                                            <span className="text-red-500">Exp: {formatCurrency(entry.expenses)}</span>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-
-                        {/* View Full Ledger */}
-                        <button className="w-full mt-4 py-3 rounded-xl border-2 border-dashed border-gray-300 text-sm font-medium text-[#64748b] hover:border-[#ff4d00] hover:text-[#ff4d00] transition-colors flex items-center justify-center gap-2">
-                            <FileText className="w-4 h-4" />
-                            View Full Ledger
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Mobile Layout */}
-            <div className="md:hidden">
-                <div className="max-w-[450px] mx-auto">
-                    {/* Main Content */}
-                    <div className="px-4 py-6 space-y-4">
-                        {/* Data Entry Card */}
-                        <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
-                            {/* Card Header */}
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#ff4d00] to-[#ff8c00] flex items-center justify-center shadow-lg shadow-orange-200">
-                                    <Wallet className="w-6 h-6 text-white" />
-                                </div>
-                                <div>
-                                    <h2 className="text-lg font-bold text-[#1e293b]">Daily Entry</h2>
-                                    <p className="text-xs text-[#64748b]">Record financial data</p>
-                                </div>
-                            </div>
-
-                            {/* Input Fields - Stacked Vertically for Mobile */}
-                            <div className="space-y-4">
-                                {/* UloomX Total Income */}
-                                <div className="relative">
-                                    <input
-                                        type="number"
-                                        id="uloomx"
-                                        value={uloomxIncome}
-                                        onChange={(e) => setUloomxIncome(e.target.value)}
-                                        placeholder=" "
-                                        className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-[#ff4d00] focus:ring-4 focus:ring-[#ff4d00]/10 transition-all"
-                                    />
-                                    <label 
-                                        htmlFor="uloomx"
-                                        className="absolute left-4 top-2 text-xs font-medium text-[#64748b] transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:text-gray-400 peer-focus:top-2 peer-focus:text-xs peer-focus:text-[#ff4d00]"
-                                    >
-                                        UloomX Income
-                                    </label>
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
-                                </div>
-
-                                {/* Usthad Academy Income */}
-                                <div className="relative">
-                                    <input
-                                        type="number"
-                                        id="usthad"
-                                        value={usthadIncome}
-                                        onChange={(e) => setUsthadIncome(e.target.value)}
-                                        placeholder=" "
-                                        className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-[#ff4d00] focus:ring-4 focus:ring-[#ff4d00]/10 transition-all"
-                                    />
-                                    <label 
-                                        htmlFor="usthad"
-                                        className="absolute left-4 top-2 text-xs font-medium text-[#64748b] transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:text-gray-400 peer-focus:top-2 peer-focus:text-xs peer-focus:text-[#ff4d00]"
-                                    >
-                                        Usthad Academy Income
-                                    </label>
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
-                                </div>
-
-                                {/* Total Combined Expenses */}
-                                <div className="relative">
-                                    <input
-                                        type="number"
-                                        id="expenses"
-                                        value={expenses}
-                                        onChange={(e) => setExpenses(e.target.value)}
-                                        placeholder=" "
-                                        className="peer w-full h-16 px-4 pt-6 pb-2 rounded-2xl border-2 border-gray-200 text-lg font-semibold text-[#1e293b] placeholder:text-transparent focus:outline-none focus:border-red-400 focus:ring-4 focus:ring-red-100 transition-all"
-                                    />
-                                    <label 
-                                        htmlFor="expenses"
-                                        className="absolute left-4 top-2 text-xs font-medium text-[#64748b] transition-all peer-placeholder-shown:text-base peer-placeholder-shown:top-5 peer-placeholder-shown:text-gray-400 peer-focus:top-2 peer-focus:text-xs peer-focus:text-red-500"
-                                    >
-                                        Total Expenses
-                                    </label>
-                                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 font-semibold">₹</span>
-                                </div>
-                            </div>
-
-                            {/* Revenue Display - Sticky Bar */}
-                            <div className="mt-6 p-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 shadow-lg shadow-green-200">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <TrendingUp className="w-5 h-5 text-white/80" />
-                                        <span className="text-sm font-medium text-white/90">Revenue</span>
-                                    </div>
-                                    <span className={`text-2xl font-black text-white`}>
-                                        {formatCurrency(revenue)}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Transmission Verification Card */}
-                        <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
-                            <div className="flex items-center gap-3 mb-5">
-                                <div className="w-10 h-10 rounded-xl bg-[#ff4d00]/10 flex items-center justify-center">
-                                    <ShieldCheck className="w-5 h-5 text-[#ff4d00]" />
-                                </div>
-                                <div>
-                                    <h2 className="text-base font-bold text-[#1e293b]">Verification</h2>
-                                    <p className="text-xs text-[#64748b]">Live validation</p>
-                                </div>
-                            </div>
-
-                            {/* Live Split */}
-                            <div className="mb-4">
-                                <div className="flex justify-between text-xs text-[#64748b] mb-2">
-                                    <span>UloomX</span>
-                                    <span>Usthad</span>
-                                </div>
-                                <div className="h-6 bg-gray-100 rounded-full overflow-hidden flex">
-                                    {incomeSplit.uloomxPercentage > 0 && (
-                                        <div 
-                                            className="bg-[#ff4d00] flex items-center justify-center transition-all duration-300"
-                                            style={{ width: `${incomeSplit.uloomxPercentage}%` }}
-                                        >
-                                            {incomeSplit.uloomxPercentage > 15 && (
-                                                <span className="text-[10px] text-white font-bold">
-                                                    {Math.round(incomeSplit.uloomxPercentage)}%
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                    {incomeSplit.usthadPercentage > 0 && (
-                                        <div 
-                                            className="bg-[#64748b] flex items-center justify-center transition-all duration-300"
-                                            style={{ width: `${incomeSplit.usthadPercentage}%` }}
-                                        >
-                                            {incomeSplit.usthadPercentage > 15 && (
-                                                <span className="text-[10px] text-white font-bold">
-                                                    {Math.round(incomeSplit.usthadPercentage)}%
-                                                </span>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Smart Alert */}
-                            <div className={`p-3 rounded-xl border ${
-                                validationChecks.hasHighExpenseRatio 
-                                    ? 'bg-red-50 border-red-200' 
-                                    : 'bg-green-50 border-green-200'
-                            }`}>
-                                <div className="flex items-center gap-2">
-                                    {validationChecks.hasHighExpenseRatio ? (
-                                        <AlertTriangle className="w-4 h-4 text-red-500" />
-                                    ) : (
-                                        <CheckCircle2 className="w-4 h-4 text-green-500" />
-                                    )}
-                                    <span className={`text-xs font-semibold ${
-                                        validationChecks.hasHighExpenseRatio ? 'text-red-700' : 'text-green-700'
-                                    }`}>
-                                        {validationChecks.hasHighExpenseRatio 
-                                            ? `High Expense: ${validationChecks.expenseRatio.toFixed(0)}%` 
-                                            : 'Ready for Review'}
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Quick History Card */}
-                        <div className="bg-white rounded-[24px] border border-gray-100 shadow-sm p-5">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
-                                    <History className="w-5 h-5 text-gray-600" />
-                                </div>
-                                <div>
-                                    <h2 className="text-base font-bold text-[#1e293b]">Quick History</h2>
-                                    <p className="text-xs text-[#64748b]">Last 3 entries</p>
-                                </div>
-                            </div>
-
-                            {/* Mobile-friendly History List */}
-                            <div className="space-y-3">
-                                {loading ? (
-                                    <div className="text-center py-4 text-sm text-[#64748b]">Loading history...</div>
-                                ) : financialHistory.length === 0 ? (
-                                    <div className="text-center py-4 text-sm text-[#64748b]">No entries yet</div>
-                                ) : (
-                                    financialHistory.map((entry) => (
-                                        <div key={entry.id} className="p-3 rounded-xl bg-gray-50 border border-gray-100">
-                                            <div className="flex items-center justify-between mb-2">
-                                                <span className="text-sm font-semibold text-[#1e293b]">{entry.date}</span>
-                                                <span className="text-sm font-bold text-green-600">
-                                                    {formatCurrency(entry.revenue)}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center justify-between text-xs text-[#64748b]">
-                                                <span>Income: {formatCurrency(entry.uloomxIncome + entry.usthadIncome)}</span>
-                                                <span className="text-red-500">Exp: {formatCurrency(entry.expenses)}</span>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-
-                            {/* View Full Ledger */}
-                            <button className="w-full mt-4 py-3 rounded-xl border-2 border-dashed border-gray-300 text-sm font-medium text-[#64748b] hover:border-[#ff4d00] hover:text-[#ff4d00] transition-colors flex items-center justify-center gap-2">
-                                <FileText className="w-4 h-4" />
-                                View Full Ledger
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Desktop Transmit Button */}
-            <div className="hidden md:block max-w-7xl mx-auto px-6 pb-6">
-                <button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting || (!uloomxIncome && !usthadIncome)}
-                    className="w-full h-14 rounded-2xl bg-[#ff4d00] text-white font-bold text-base flex items-center justify-center gap-2 hover:bg-[#e64400] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-[#ff4d00]/30"
-                >
-                    {isSubmitting ? (
-                        <>
-                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                            Transmitting...
-                        </>
-                    ) : showSuccess ? (
-                        <>
-                            <CheckCircle2 className="w-5 h-5" />
-                            Transmitted!
-                        </>
-                    ) : (
-                        <>
-                            <Send className="w-5 h-5" />
-                            Transmit Report
-                        </>
-                    )}
-                </button>
-            </div>
-
-            {/* Mobile Transmit Button - Above Bottom Nav */}
-            <div className="md:hidden fixed bottom-24 left-0 right-0 px-4 z-40">
-                <div className="max-w-[450px] mx-auto">
+                    {/* Transmit Action Button */}
                     <button
                         onClick={handleSubmit}
                         disabled={isSubmitting || (!uloomxIncome && !usthadIncome)}
-                        className="w-full h-14 rounded-2xl bg-[#ff4d00] text-white font-bold text-base flex items-center justify-center gap-2 hover:bg-[#e64400] active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-[#ff4d00]/30"
+                        className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl py-4 w-full flex items-center justify-center gap-2 transition-all shadow-lg active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed group mt-2"
                     >
                         {isSubmitting ? (
                             <>
                                 <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                Transmitting...
+                                <span className="text-sm font-bold uppercase tracking-widest">Transmitting</span>
                             </>
                         ) : showSuccess ? (
                             <>
-                                <CheckCircle2 className="w-5 h-5" />
-                                Transmitted!
+                                <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                                <span className="text-sm font-bold uppercase tracking-widest text-emerald-400">Transmitted</span>
                             </>
                         ) : (
                             <>
-                                <Send className="w-5 h-5" />
-                                Transmit Report
+                                <Send className="w-4 h-4 group-hover:translate-x-1 group-hover:-translate-y-1 transition-transform" />
+                                <span className="text-sm font-bold uppercase tracking-widest">Transmit Report</span>
                             </>
                         )}
                     </button>
+                    
                 </div>
             </div>
         </div>

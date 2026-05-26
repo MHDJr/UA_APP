@@ -1078,7 +1078,7 @@ export default function StaffPortal() {
                     </button>
 
                     {/* Sales Report Button - Only for Sales Staff without Manager Access */}
-                    {(profile?.role === "sales" || profile?.is_sales_staff) && !profile?.is_manager && (
+                    {(profile?.department === "Sales" || profile?.role === "sales" || profile?.is_sales_staff) && !profile?.is_manager && (
                         <a
                             href="/sales"
                             className="relative group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-[1.02]"
@@ -1095,7 +1095,7 @@ export default function StaffPortal() {
                     )}
 
                     {/* Accounts Button - Only for Accounts Staff without Manager Access */}
-                    {profile?.role === "accounts" && !profile?.is_manager && (
+                    {(profile?.department === "Finance" || profile?.department === "Accounts" || profile?.role === "accounts") && !profile?.is_manager && (
                         <a
                             href="/accounts"
                             className="relative group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-[1.02]"

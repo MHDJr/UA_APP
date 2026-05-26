@@ -1037,19 +1037,31 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
         console.log('Insert payload:', insertPayload);
 
-        const { error } = await supabase.from("tasks").insert(insertPayload);
+        // Optimistically clear the form to prevent UI freeze
+        setIsAssignTaskOpen(false);
+        toast.info(draft ? "Saving draft..." : "Assigning task...");
+        resetTaskForm();
 
-        if (error) {
+        try {
+            const executeInsert = async () => {
+                const { error } = await supabase.from("tasks").insert(insertPayload);
+                if (error) throw error;
+            };
+
+            await Promise.race([
+                executeInsert(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout: The server took too long to respond. The task is queued.")), 15000))
+            ]);
+
+            console.log('Task assigned successfully');
+            toast.success(draft ? "DRAFT SAVED" : "✓ Task assigned successfully");
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            fetchData();
+        } catch (error: any) {
             console.error("Assign task error:", error);
             toast.error("Failed to assign task: " + error.message);
-            return;
+            // Even if it failed, the UI is not locked and user can retry if they saved draft manually or we could add an offline queue
         }
-
-        console.log('Task assigned successfully');
-        setIsAssignTaskOpen(false);
-        toast.success(draft ? "DRAFT SAVED" : "✓ Task assigned successfully");
-        resetTaskForm();
-        fetchData();
     };
 
     // Save as Draft

@@ -60,6 +60,8 @@ function CEOPageContent() {
         const viewParam = searchParams?.get("view") as CEOView;
         if (viewParam && viewParam !== activeView) {
             setActiveView(viewParam);
+        } else if (!viewParam && activeView !== "command-center") {
+            setActiveView("command-center");
         }
     }, [searchParams, activeView]);
 
@@ -133,6 +135,7 @@ function CEOPageContent() {
                 <CEOSidebar
                     activeView={activeView}
                     onMinimizedChange={setIsSidebarMinimized}
+                    onViewChange={handleViewChange}
                 />
             </div>
 

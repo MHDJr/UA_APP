@@ -108,7 +108,7 @@ export function StatCards({
     className,
 }: StatCardsProps) {
     return (
-        <div className={cn("grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6", className)}>
+        <div className={cn("grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6", className)}>
             <StatCard
                 label="Active Staff"
                 value={activeStaff}

@@ -52,7 +52,7 @@ export default function RootLayout({
                 />
             </head>
             <body 
-                className="font-sans min-h-screen bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground"
+                className="font-sans min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground"
                 style={{
                     paddingTop: 'env(safe-area-inset-top, 20px)',
                     paddingBottom: 'env(safe-area-inset-bottom, 20px)'

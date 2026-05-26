@@ -10,12 +10,12 @@ export default function SalesPage() {
     const router = useRouter();
 
     useEffect(() => {
-        if (!loading && (!user || !profile || (profile.role !== "sales" && profile.role !== "ceo"))) {
+        if (!loading && (!user || !profile || (profile.role !== "ceo" && profile.role !== "sales" && profile.department !== "Sales" && !profile.is_sales_staff))) {
             router.push("/");
         }
     }, [user, profile, loading, router]);
 
-    if (loading || !profile || (profile.role !== "sales" && profile.role !== "ceo")) {
+    if (loading || !profile || (profile.role !== "ceo" && profile.role !== "sales" && profile.department !== "Sales" && !profile.is_sales_staff)) {
         return (
             <div className="min-h-screen flex items-center justify-center text-slate-400 uppercase font-black tracking-widest text-[10px]" style={{ backgroundColor: "#F4F7FE" }}>
                 <div className="flex flex-col items-center gap-4">

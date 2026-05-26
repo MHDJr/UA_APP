@@ -21,6 +21,8 @@ import {
     Smile,
     RefreshCw,
     BarChart3,
+    Activity,
+    CheckCircle2,
     Star,
     Home,
     MessageSquare,
@@ -140,7 +142,7 @@ export function SalesReportingPage() {
     const [vibe, setVibe] = useState("Focused");
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [isConversionModalOpen, setIsConversionModalOpen] = useState(false);
-    const [studentName, setStudentName] = useState("");
+    const [conversionCount, setConversionCount] = useState("1");
     const [isAddingConversion, setIsAddingConversion] = useState(false);
     const [mobileNavTab, setMobileNavTab] = useState("home");
     const [hasSubmittedToday, setHasSubmittedToday] = useState(false);
@@ -502,8 +504,9 @@ export function SalesReportingPage() {
             return;
         }
 
-        if (!studentName.trim()) {
-            toast.error("Please enter student name");
+        const count = parseInt(conversionCount) || 0;
+        if (count <= 0) {
+            toast.error("Please enter a valid number of conversions");
             return;
         }
 
@@ -515,11 +518,11 @@ export function SalesReportingPage() {
         setIsAddingConversion(true);
 
         try {
-            // Store conversion with student name
+            // Store conversion with a generic name since we're bulk adding
             const conversionData = {
                 staff_id: profile.id,
                 staff_name: profile.full_name || profile.email || "Sales Agent",
-                student_name: studentName.trim(),
+                student_name: `${count} Conversion(s) Added`,
                 conversion_date: new Date().toISOString().split("T")[0],
                 created_at: new Date().toISOString(),
             };
@@ -536,17 +539,17 @@ export function SalesReportingPage() {
 
             // Update conversions count in the form
             const currentConversions = parseInt(conversions) || 0;
-            setConversions((currentConversions + 1).toString());
+            setConversions((currentConversions + count).toString());
 
             // Only update daily report if it has been submitted today
             if (hasSubmittedToday && todayReportId) {
                 const { error: updateError } = await supabase
                     .from("daily_reports")
                     .update({
-                        conversions: currentConversions + 1,
-                        conversion_rate: Math.round(((currentConversions + 1) / parseInt(totalLeads || "1")) * 100),
+                        conversions: currentConversions + count,
+                        conversion_rate: Math.round(((currentConversions + count) / parseInt(totalLeads || "1")) * 100),
                         efficiency_score: Math.round(
-                            ((currentConversions + 1) / parseInt(totalLeads || "1")) * 50 +
+                            ((currentConversions + count) / parseInt(totalLeads || "1")) * 50 +
                             (parseInt(evaluations) / parseInt(totalLeads || "1")) * 30 +
                             (leadQuality[0] / 10) * 20
                         ),
@@ -559,12 +562,12 @@ export function SalesReportingPage() {
             }
 
             triggerConfetti();
-            toast.success(`Conversion added for ${studentName.trim()}!`, {
+            toast.success(`${count} conversion(s) added!`, {
                 description: "Conversion count updated successfully",
             });
 
             // Reset modal
-            setStudentName("");
+            setConversionCount("1");
             setIsConversionModalOpen(false);
         } catch (error) {
             console.error("Add conversion exception:", error);
@@ -578,7 +581,7 @@ export function SalesReportingPage() {
     const agentName = profile?.full_name?.split(" ")[0] || "AGENT";
 
     return (
-        <div className="min-h-screen max-w-[100vw] overflow-x-hidden" style={{ backgroundColor: BRAND.bg }}>
+        <div className="min-h-screen max-w-[100vw] overflow-x-hidden bg-slate-50/50" style={{ backgroundColor: BRAND.bg }}>
             {/* Mobile Header - Compact Status Bar */}
             <header className="md:hidden h-16 bg-white/90 backdrop-blur-xl border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-50">
                 <div className="flex items-center gap-3">
@@ -676,357 +679,49 @@ export function SalesReportingPage() {
             </header>
 
             {/* Main Content - Mobile: single column, Desktop: grid */}
-            <main className="p-4 md:p-8 max-w-[1700px] mx-auto grid grid-cols-12 gap-4 md:gap-8">
-                {/* Monthly Conversion Tracker - Full Width */}
-                {profile && (
-                    <div className="col-span-12 mb-6">
-                        <MonthlyConversionTracker 
-                            currentMonthConversions={parseInt(conversions) || 0}
-                            profile={profile}
-                            onTargetUpdated={() => {
-                                // Refresh monthly target data
-                                fetchSalesMonthlyTarget().then(setMonthlyTarget);
-                            }}
-                        />
-                    </div>
-                )}
-
-                {/* Mobile Greeting Banner - Compact Slim Card */}
-                <div className="col-span-12 md:hidden">
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-white rounded-[20px] p-4 border border-slate-100 shadow-sm"
-                    >
-                        <div className="flex items-center gap-3 mb-3">
-                            <div className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner flex-shrink-0" style={{ backgroundColor: BRAND.softOrange }}>
-                                <BarChart3 className="w-5 h-5" style={{ color: BRAND.orange }} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                                    {greeting.text}
-                                </p>
-                                <h2 className="text-lg font-black tracking-tighter uppercase truncate" style={{ color: BRAND.navy }}>
-                                    DAILY SALES
-                                </h2>
-                            </div>
+            <main className="p-4 sm:p-6 lg:p-8 max-w-[1700px] mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
+                
+                {/* LEFT COLUMN: Data Tracking & Core Inputs */}
+                <div className="col-span-1 lg:col-span-8 flex flex-col gap-6">
+                    
+                    {/* Monthly Conversion Tracker */}
+                    {profile && (
+                        <div className="w-full">
+                            <MonthlyConversionTracker 
+                                currentMonthConversions={parseInt(conversions) || 0}
+                                profile={profile}
+                                onTargetUpdated={() => {
+                                    // Refresh monthly target data
+                                    fetchSalesMonthlyTarget().then(setMonthlyTarget);
+                                }}
+                            />
                         </div>
-
-                        {/* Mobile KPI Micro-cards - Horizontal scroll */}
-                        <div className="flex gap-2 overflow-x-auto scrollbar-hide -mx-4 px-4 pb-1">
-                            <div className="flex-shrink-0 bg-slate-50 rounded-xl px-3 py-2 min-w-[90px] flex flex-col items-center">
-                                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider">
-                                    Conversion
-                                </p>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                    <TrendingUp className="w-3 h-3" style={{ color: conversionRate >= 50 ? "#10b981" : BRAND.orange }} />
-                                    <span className="text-sm font-black text-slate-800">
-                                        {conversionRate}%
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="flex-shrink-0 bg-slate-50 rounded-xl px-3 py-2 min-w-[90px] flex flex-col items-center">
-                                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider">
-                                    Efficiency
-                                </p>
-                                <div className="flex items-center gap-1 mt-0.5">
-                                    <Award className="w-3 h-3" style={{ color: BRAND.orange }} />
-                                    <span className="text-sm font-black text-slate-800">
-                                        {efficiencyScore}%
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="flex-shrink-0 bg-slate-50 rounded-xl px-3 py-2 min-w-[90px] flex flex-col items-center">
-                                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider">
-                                    Clock
-                                </p>
-                                <span className="text-sm font-black text-slate-800 tabular-nums">
-                                    {time.split(' ')[0]}
-                                </span>
-                            </div>
-                            <button
-                                onClick={() => setVibe(vibe === "Focused" ? "Unstoppable" : "Focused")}
-                                className="flex-shrink-0 bg-slate-50 rounded-xl px-3 py-2 min-w-[90px] flex flex-col items-center active:bg-slate-100 transition-colors"
-                            >
-                                <p className="text-[8px] font-black uppercase text-slate-400 tracking-wider">
-                                    Vibe
-                                </p>
-                                <p className="text-sm font-black flex items-center gap-1 uppercase" style={{ color: BRAND.orange }}>
-                                    <Smile className="w-3 h-3" /> {vibe}
-                                </p>
-                            </button>
-                        </div>
-                    </motion.div>
-                </div>
-
-                {/* Desktop Greeting Banner - Full Size */}
-                <div className="hidden md:block col-span-12">
-                    <motion.div
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm flex flex-row items-center justify-between gap-6 relative overflow-hidden"
-                    >
-                        <div className="flex items-center gap-6 relative z-10">
-                            <div className="w-20 h-20 rounded-[2rem] flex items-center justify-center shadow-inner" style={{ backgroundColor: BRAND.softOrange }}>
-                                <BarChart3 className="w-8 h-8" style={{ color: BRAND.orange }} />
-                            </div>
+                    )}
+                    
+                    {/* Daily Metrics Input Card */}
+                    <div className="bg-white/80 backdrop-blur-md border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] rounded-2xl p-6">
+                        <div className="flex items-end justify-between mb-8">
                             <div>
-                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
-                                    {greeting.text}
-                                </p>
-                                <h2 className="text-3xl font-black tracking-tighter uppercase leading-none" style={{ color: BRAND.navy }}>
-                                    DAILY SALES TRANSMISSION
+                                <h2 className="text-xl lg:text-2xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-3">
+                                    Daily Metrics
+                                    <Target className="w-5 h-5" style={{ color: BRAND.orange }} />
                                 </h2>
-                                <p className="text-slate-400 font-bold text-sm mt-2 flex items-center gap-2 italic">
-                                    &ldquo;Record your victories. Shape the metrics.&rdquo;{" "}
-                                    <Sparkles className="w-4 h-4 text-orange-400" />
-                                </p>
+                                <p className="text-xs text-slate-400 font-medium">Record today's performance data</p>
                             </div>
-                        </div>
-
-                        <div className="hidden xl:flex items-center gap-8 relative z-10 px-8 border-x border-slate-100">
-                            <div className="text-center">
-                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">
-                                    Conversion Rate
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    <TrendingUp className="w-4 h-4" style={{ color: conversionRate >= 50 ? "#10b981" : BRAND.orange }} />
-                                    <span className="text-xl font-black text-slate-800">
-                                        {conversionRate}%
-                                    </span>
-                                </div>
-                            </div>
-                            <div className="text-center">
-                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">
-                                    Efficiency
-                                </p>
-                                <div className="flex items-center gap-2">
-                                    <Award className="w-4 h-4" style={{ color: BRAND.orange }} />
-                                    <span className="text-xl font-black text-slate-800">
-                                        {efficiencyScore}%
-                                    </span>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center gap-4 bg-slate-50 p-3 rounded-3xl border border-slate-100 relative z-10">
-                            <div className="px-4 py-2 bg-white rounded-2xl shadow-sm min-w-[140px]">
-                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">
-                                    Shift Clock (12h)
-                                </p>
-                                <p className="text-lg font-black text-slate-800 tabular-nums">
-                                    {time}
-                                </p>
-                            </div>
-                            <div className="h-10 w-[1px] bg-slate-200"></div>
-                            <button
-                                onClick={() =>
-                                    setVibe(
-                                        vibe === "Focused"
-                                            ? "Unstoppable"
-                                            : "Focused",
-                                    )
-                                }
-                                className="flex flex-col items-center px-4 py-2 hover:bg-white rounded-2xl transition-all"
+                            <Badge
+                                variant="outline"
+                                className="text-[10px] font-black uppercase tracking-wider px-3 py-1"
+                                style={{ borderColor: BRAND.navy, color: BRAND.navy }}
                             >
-                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">
-                                    Current Vibe
-                                </p>
-                                <p className="text-xs font-black flex items-center gap-1 uppercase" style={{ color: BRAND.orange }}>
-                                    <Smile className="w-3 h-3" /> {vibe}
-                                </p>
-                            </button>
+                                <Clock className="w-3 h-3 mr-1" />
+                                {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                            </Badge>
                         </div>
 
-                        <div className="absolute top-0 right-0 w-64 h-full bg-gradient-to-l from-orange-50/50 to-transparent pointer-events-none"></div>
-                    </motion.div>
-                </div>
-
-                {/* Mobile: Full Width Single Column Layout */}
-                <div className="col-span-12 lg:col-span-8 space-y-4 md:space-y-6">
-                    {/* Mobile Section Title */}
-                    <div className="md:hidden flex items-end justify-between">
-                        <div>
-                            <h2 className="text-lg font-black text-slate-900 tracking-tighter uppercase flex items-center gap-2">
-                                Daily Metrics{" "}
-                                <Target className="w-4 h-4" style={{ color: BRAND.orange }} />
-                            </h2>
-                            <p className="text-[10px] text-slate-400 font-medium">
-                                Record today&apos;s performance
-                            </p>
-                        </div>
-                        <Badge
-                            variant="outline"
-                            className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5"
-                            style={{ borderColor: BRAND.navy, color: BRAND.navy }}
-                        >
-                            <Clock className="w-3 h-3 mr-1" />
-                            {new Date().toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-                        </Badge>
-                    </div>
-
-                    {/* Desktop Section Title */}
-                    <div className="hidden md:flex items-end justify-between px-2">
-                        <div>
-                            <h2 className="text-2xl font-black text-slate-900 tracking-tighter uppercase flex items-center gap-3">
-                                Daily Metrics{" "}
-                                <Target className="w-5 h-5" style={{ color: BRAND.orange }} />
-                            </h2>
-                            <p className="text-xs text-slate-400 font-medium">
-                                Record today&apos;s performance data
-                            </p>
-                        </div>
-                        <Badge
-                            variant="outline"
-                            className="text-[10px] font-black uppercase tracking-wider px-3 py-1"
-                            style={{ borderColor: BRAND.navy, color: BRAND.navy }}
-                        >
-                            <Clock className="w-3 h-3 mr-1" />
-                            {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
-                        </Badge>
-                    </div>
-
-                    {/* Mobile Metrics Input Card - Compact */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 }}
-                        className="md:hidden bg-white rounded-[20px] p-4 border border-slate-100 shadow-sm"
-                    >
-                        <div className="flex items-center gap-2 mb-4">
-                            <div className="w-1 h-4 rounded-full" style={{ backgroundColor: BRAND.navy }} />
-                            <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
-                                Performance Data
-                            </h3>
-                        </div>
-
-                        {/* Mobile: Vertically stacked inputs */}
-                        <div className="space-y-4">
-                            {/* Total Leads */}
-                            <div className="space-y-2">
-                                <Label className="text-xs font-medium text-slate-700 flex items-center gap-2">
-                                    <Users className="w-3 h-3" style={{ color: BRAND.navy }} />
-                                    Total Leads Today
-                                </Label>
-                                <Input
-                                    type="number"
-                                    placeholder="Enter number..."
-                                    value={totalLeads}
-                                    onChange={(e) => setTotalLeads(e.target.value)}
-                                    className="h-12 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-xl text-base font-bold text-slate-900 placeholder:text-slate-400"
-                                    style={{ color: "#1e293b" }}
-                                />
-                            </div>
-
-                            {/* Evaluations Taken */}
-                            <div className="space-y-2">
-                                <Label className="text-xs font-medium text-slate-700 flex items-center gap-2">
-                                    <FileText className="w-3 h-3" style={{ color: BRAND.navy }} />
-                                    Evaluations Taken
-                                </Label>
-                                <Input
-                                    type="number"
-                                    placeholder="Enter number..."
-                                    value={evaluations}
-                                    onChange={(e) => setEvaluations(e.target.value)}
-                                    className="h-12 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-xl text-base font-bold text-slate-900 placeholder:text-slate-400"
-                                    style={{ color: "#1e293b" }}
-                                />
-                            </div>
-
-                            {/* Lost Leads */}
-                            <div className="space-y-2">
-                                <Label className="text-xs font-medium text-slate-700 flex items-center gap-2">
-                                    <XCircle className="w-3 h-3" style={{ color: BRAND.navy }} />
-                                    Lost Leads
-                                </Label>
-                                <Input
-                                    type="number"
-                                    placeholder="Enter number..."
-                                    value={lostLeads}
-                                    onChange={(e) => setLostLeads(e.target.value)}
-                                    className="h-12 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-xl text-base font-bold text-slate-900 placeholder:text-slate-400"
-                                    style={{ color: "#1e293b" }}
-                                />
-                            </div>
-
-                            {/* Mobile: Full-width Add Conversion Button */}
-                            <div className="pt-2">
-                                <Label className="text-xs font-medium text-slate-700 flex items-center gap-2 mb-2">
-                                    <Target className="w-3 h-3" style={{ color: BRAND.navy }} />
-                                    Conversions: <span className="font-bold" style={{ color: BRAND.navy }}>{conversions || "0"}</span>
-                                </Label>
-                                {hasSubmittedToday ? (
-                                    <Button
-                                        disabled
-                                        className="w-full h-12 rounded-xl font-bold text-xs uppercase tracking-widest min-h-[48px] opacity-50 cursor-not-allowed"
-                                        style={{
-                                            backgroundColor: "#94a3b8",
-                                            color: "white",
-                                        }}
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Report Submitted
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        onClick={() => setIsConversionModalOpen(true)}
-                                        className="w-full h-12 rounded-xl font-bold text-xs uppercase tracking-widest transition-all duration-200 active:scale-[0.98] min-h-[48px]"
-                                        style={{
-                                            backgroundColor: BRAND.orange,
-                                            color: "white",
-                                        }}
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add Conversion
-                                    </Button>
-                                )}
-                            </div>
-                        </div>
-
-                        {/* Mobile: Single row of 4 equal-width stat blocks */}
-                        <div className="grid grid-cols-4 gap-2 mt-4 pt-4 border-t border-slate-100">
-                            <div className="text-center p-2 rounded-xl bg-slate-50">
-                                <Users className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND.navy }} />
-                                <p className="text-lg font-black text-slate-900">{totalLeads || "0"}</p>
-                                <p className="text-[8px] text-slate-400 font-bold uppercase">Total</p>
-                            </div>
-                            <div className="text-center p-2 rounded-xl bg-slate-50">
-                                <Target className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND.navy }} />
-                                <p className="text-lg font-black text-slate-900">{conversions || "0"}</p>
-                                <p className="text-[8px] text-slate-400 font-bold uppercase">Conv</p>
-                            </div>
-                            <div className="text-center p-2 rounded-xl bg-slate-50">
-                                <FileText className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND.navy }} />
-                                <p className="text-lg font-black text-slate-900">{evaluations || "0"}</p>
-                                <p className="text-[8px] text-slate-400 font-bold uppercase">Evals</p>
-                            </div>
-                            <div className="text-center p-2 rounded-xl bg-slate-50">
-                                <XCircle className="w-4 h-4 mx-auto mb-1" style={{ color: BRAND.orange }} />
-                                <p className="text-lg font-black text-slate-900">{lostLeads || "0"}</p>
-                                <p className="text-[8px] text-slate-400 font-bold uppercase">Lost</p>
-                            </div>
-                        </div>
-                    </motion.div>
-
-                    {/* Desktop Metrics Input Card */}
-                    <motion.div
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="hidden md:block bg-white rounded-[2.5rem] p-8 border border-slate-100 shadow-sm"
-                    >
-                        <div className="flex items-center gap-2 mb-8">
-                            <div className="w-1 h-5 rounded-full" style={{ backgroundColor: BRAND.navy }} />
-                            <h3 className="text-xs font-black uppercase tracking-[0.2em] text-slate-400">
-                                Performance Data
-                            </h3>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* Total Leads */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                <Label className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-widest">
                                     <Users className="w-4 h-4" style={{ color: BRAND.navy }} />
                                     Total Leads Today
                                 </Label>
@@ -1035,47 +730,28 @@ export function SalesReportingPage() {
                                     placeholder="Enter number..."
                                     value={totalLeads}
                                     onChange={(e) => setTotalLeads(e.target.value)}
-                                    className="h-14 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-2xl text-lg font-bold text-slate-900 placeholder:text-slate-400"
-                                    style={{ color: "#1e293b" }}
+                                    className="h-14 bg-slate-50/50 border border-slate-200/80 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/10 focus-within:border-indigo-500/60 transition-all text-lg font-bold text-slate-900 placeholder:text-slate-400"
                                 />
                             </div>
 
                             {/* Conversions */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                <Label className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-widest">
                                     <Target className="w-4 h-4" style={{ color: BRAND.navy }} />
-                                    Conversions: <span className="font-bold" style={{ color: BRAND.navy }}>{conversions || "0"}</span>
+                                    Conversions
                                 </Label>
-                                {hasSubmittedToday ? (
-                                    <Button
-                                        disabled
-                                        className="w-full h-14 rounded-2xl font-bold text-xs uppercase tracking-widest opacity-50 cursor-not-allowed"
-                                        style={{
-                                            backgroundColor: "#94a3b8",
-                                            color: "white",
-                                        }}
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Report Submitted
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        onClick={() => setIsConversionModalOpen(true)}
-                                        className="w-full h-14 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all duration-200 hover:shadow-xl hover:scale-[1.02]"
-                                        style={{
-                                            backgroundColor: BRAND.orange,
-                                            color: "white",
-                                        }}
-                                    >
-                                        <Plus className="w-4 h-4 mr-2" />
-                                        Add Conversion
-                                    </Button>
-                                )}
+                                <Input
+                                    type="number"
+                                    placeholder="Enter number..."
+                                    value={conversions}
+                                    onChange={(e) => setConversions(e.target.value)}
+                                    className="h-14 bg-slate-50/50 border border-slate-200/80 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/10 focus-within:border-indigo-500/60 transition-all text-lg font-bold text-slate-900 placeholder:text-slate-400"
+                                />
                             </div>
 
                             {/* Evaluations Taken */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                <Label className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-widest">
                                     <FileText className="w-4 h-4" style={{ color: BRAND.navy }} />
                                     Evaluations Taken
                                 </Label>
@@ -1084,14 +760,13 @@ export function SalesReportingPage() {
                                     placeholder="Enter number..."
                                     value={evaluations}
                                     onChange={(e) => setEvaluations(e.target.value)}
-                                    className="h-14 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-2xl text-lg font-bold text-slate-900 placeholder:text-slate-400"
-                                    style={{ color: "#1e293b" }}
+                                    className="h-14 bg-slate-50/50 border border-slate-200/80 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/10 focus-within:border-indigo-500/60 transition-all text-lg font-bold text-slate-900 placeholder:text-slate-400"
                                 />
                             </div>
 
                             {/* Lost Leads */}
                             <div className="space-y-3">
-                                <Label className="text-sm font-medium text-slate-700 flex items-center gap-2">
+                                <Label className="text-xs font-bold text-slate-700 flex items-center gap-2 uppercase tracking-widest">
                                     <XCircle className="w-4 h-4" style={{ color: BRAND.navy }} />
                                     Lost Leads
                                 </Label>
@@ -1100,158 +775,98 @@ export function SalesReportingPage() {
                                     placeholder="Enter number..."
                                     value={lostLeads}
                                     onChange={(e) => setLostLeads(e.target.value)}
-                                    className="h-14 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-2xl text-lg font-bold text-slate-900 placeholder:text-slate-400"
-                                    style={{ color: "#1e293b" }}
+                                    className="h-14 bg-slate-50/50 border border-slate-200/80 rounded-xl focus-within:ring-2 focus-within:ring-indigo-500/10 focus-within:border-indigo-500/60 transition-all text-lg font-bold text-slate-900 placeholder:text-slate-400"
                                 />
                             </div>
                         </div>
+                    </div>
+                    
+                </div>
 
-                        {/* Desktop Quick Stats Preview */}
-                        <div className="grid grid-cols-5 gap-4 mt-8 pt-6 border-t border-slate-100">
-                            <div className="text-center p-4 rounded-2xl bg-slate-50">
-                                <Users className="w-5 h-5 mx-auto mb-2" style={{ color: BRAND.navy }} />
-                                <p className="text-2xl font-black text-slate-900">{totalLeads || "0"}</p>
-                                <p className="text-xs text-slate-400 font-bold uppercase">Total</p>
-                            </div>
-                            <div className="text-center p-4 rounded-2xl bg-slate-50">
-                                <Target className="w-5 h-5 mx-auto mb-2" style={{ color: BRAND.navy }} />
-                                <p className="text-2xl font-black text-slate-900">{conversions || "0"}</p>
-                                <p className="text-xs text-slate-400 font-bold uppercase">Converted</p>
-                            </div>
-                            <div className="text-center p-4 rounded-2xl bg-slate-50">
-                                <FileText className="w-5 h-5 mx-auto mb-2" style={{ color: BRAND.navy }} />
-                                <p className="text-2xl font-black text-slate-900">{evaluations || "0"}</p>
-                                <p className="text-xs text-slate-400 font-bold uppercase">Evals</p>
-                            </div>
-                            <div className="text-center p-4 rounded-2xl bg-slate-50">
-                                <XCircle className="w-5 h-5 mx-auto mb-2" style={{ color: BRAND.orange }} />
-                                <p className="text-2xl font-black text-slate-900">{lostLeads || "0"}</p>
-                                <p className="text-xs text-slate-400 font-bold uppercase">Lost</p>
-                            </div>
-                            <div className="text-center p-4 rounded-2xl bg-slate-50">
-                                <div className="flex justify-center items-start">
-                                    <MonthlyProgressGauge
-                                        percentage={monthlyTarget?.achievement_percentage || 0}
-                                        current={monthlyTarget?.current_progress || 0}
-                                        target={monthlyTarget?.target_value || 0}
-                                        department="sales"
-                                        size="sm"
-                                        onTargetUpdated={() => {
-                                            // Refresh monthly target data
-                                            fetchSalesMonthlyTarget().then(setMonthlyTarget);
-                                        }}
-                                    />
-                                </div>
-                                <p className="text-xs text-slate-400 font-bold uppercase mt-2">Monthly</p>
-                            </div>
-                        </div>
-                    </motion.div>
-
-                    {/* Desktop: Lead Quality Score */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="hidden md:block rounded-[2.5rem] p-8 text-white shadow-lg relative overflow-hidden"
-                        style={{ backgroundColor: BRAND.navy }}
+                {/* RIGHT COLUMN: Utilities, Status & Final Actions */}
+                <div className="col-span-1 lg:col-span-4 flex flex-col gap-6">
+                    
+                    {/* Meta Utility Card */}
+                    <motion.div 
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="bg-white/80 backdrop-blur-md border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] rounded-2xl p-6"
                     >
-                        {/* Glow effect */}
-                        <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-20" style={{ backgroundColor: BRAND.orange, filter: "blur(40px)" }}></div>
-
-                        <div className="relative z-10">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="p-2 bg-white/10 rounded-xl">
-                                    <Star className="w-6 h-6" style={{ color: BRAND.orange }} />
+                        <h3 className="text-xs font-black tracking-widest uppercase text-slate-400 mb-6 flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-indigo-500" />
+                            Live Status
+                        </h3>
+                        
+                        <div className="grid grid-cols-2 gap-4 mb-4">
+                            <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100/50 flex flex-col items-center">
+                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-2">Conv. Rate</p>
+                                <div className="flex items-center gap-1.5">
+                                    <TrendingUp className="w-4 h-4" style={{ color: conversionRate >= 50 ? "#10b981" : BRAND.orange }} />
+                                    <span className="text-xl font-black text-slate-800">{conversionRate}%</span>
                                 </div>
-                                <span className="text-sm font-black tracking-widest uppercase text-white/50">
-                                    Quality Assessment
-                                </span>
                             </div>
-
-                            <div className="flex items-center gap-6">
-                                <div className="relative flex-shrink-0">
-                                    <div
-                                        className="w-20 h-20 rounded-full flex items-center justify-center text-2xl font-black border-4"
-                                        style={{
-                                            borderColor: leadQuality[0] >= 7 ? "#10b981" : leadQuality[0] >= 4 ? BRAND.orange : "#ef4444",
-                                            backgroundColor: "rgba(255,255,255,0.1)"
-                                        }}
-                                    >
-                                        {leadQuality[0]}
-                                    </div>
-                                    <div
-                                        className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold"
-                                        style={{ backgroundColor: BRAND.orange }}
-                                    >
-                                        /10
-                                    </div>
-                                </div>
-                                <div className="flex-1 space-y-3">
-                                    <div className="flex justify-between text-sm font-bold uppercase tracking-wider">
-                                        <span className="text-white/60">Poor</span>
-                                        <span className="text-white/60">Excellent</span>
-                                    </div>
-                                    <Slider
-                                        value={leadQuality}
-                                        onValueChange={setLeadQuality}
-                                        max={10}
-                                        min={1}
-                                        step={1}
-                                        className="w-full"
-                                    />
-                                    <div className="flex justify-between text-xs text-white/40">
-                                        <span>1</span>
-                                        <span>5</span>
-                                        <span>10</span>
-                                    </div>
+                            <div className="bg-slate-50/50 rounded-xl p-4 border border-slate-100/50 flex flex-col items-center">
+                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-2">Efficiency</p>
+                                <div className="flex items-center gap-1.5">
+                                    <Award className="w-4 h-4 text-indigo-500" />
+                                    <span className="text-xl font-black text-slate-800">{efficiencyScore}%</span>
                                 </div>
                             </div>
                         </div>
+
+                        <div className="flex gap-4">
+                            <div className="flex-1 bg-slate-50/50 rounded-xl p-3 border border-slate-100/50 flex flex-col justify-center items-center">
+                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Shift Clock</p>
+                                <p className="text-sm font-black text-slate-800 tabular-nums">{time.split(' ')[0]}</p>
+                            </div>
+                            <button onClick={() => setVibe(vibe === "Focused" ? "Unstoppable" : "Focused")} className="flex-1 bg-slate-50/50 rounded-xl p-3 border border-slate-100/50 flex flex-col justify-center items-center hover:bg-slate-100 transition-colors">
+                                <p className="text-[9px] font-black uppercase text-slate-400 tracking-widest mb-1">Vibe</p>
+                                <p className="text-xs font-black text-indigo-600 uppercase flex items-center gap-1">
+                                    <Smile className="w-3 h-3" /> {vibe}
+                                </p>
+                            </button>
+                        </div>
                     </motion.div>
 
-                    {/* Mobile: Lead Quality Score - Moved beneath data entry */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.2 }}
-                        className="md:hidden rounded-[20px] p-5 text-white shadow-lg relative overflow-hidden"
-                        style={{ backgroundColor: BRAND.navy }}
+                    {/* Quality Assessment Slider */}
+                    <motion.div 
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="bg-[#1e1b4b] rounded-2xl p-6 text-white shadow-[0_8px_30px_rgba(30,27,75,0.2)] relative overflow-hidden border border-indigo-500/20"
                     >
-                        {/* Glow effect */}
-                        <div className="absolute top-0 right-0 w-24 h-24 rounded-full opacity-20" style={{ backgroundColor: BRAND.orange, filter: "blur(30px)" }}></div>
-
+                        <div className="absolute top-0 right-0 w-32 h-32 rounded-full opacity-20 bg-indigo-500 filter blur-[40px]"></div>
+                        
                         <div className="relative z-10">
-                            <div className="flex items-center gap-2 mb-4">
+                            <div className="flex items-center gap-2 mb-6">
                                 <div className="p-1.5 bg-white/10 rounded-lg">
-                                    <Star className="w-4 h-4" style={{ color: BRAND.orange }} />
+                                    <Star className="w-4 h-4 text-indigo-300" />
                                 </div>
-                                <span className="text-[10px] font-black tracking-widest uppercase text-white/50">
+                                <span className="text-xs font-black tracking-widest uppercase text-white/70">
                                     Quality Assessment
                                 </span>
                             </div>
 
-                            <div className="flex items-center gap-4">
-                                <div className="relative flex-shrink-0">
-                                    <div
-                                        className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-black border-3"
-                                        style={{
-                                            borderColor: leadQuality[0] >= 7 ? "#10b981" : leadQuality[0] >= 4 ? BRAND.orange : "#ef4444",
-                                            backgroundColor: "rgba(255,255,255,0.1)"
-                                        }}
-                                    >
+                            <div className="flex flex-col gap-6">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-16 h-16 rounded-full flex items-center justify-center text-2xl font-black border-2 border-indigo-400/30 bg-white/5 relative shadow-[0_0_15px_rgba(99,102,241,0.2)]">
                                         {leadQuality[0]}
+                                        <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold bg-indigo-500 text-white shadow-lg">
+                                            /10
+                                        </div>
                                     </div>
-                                    <div
-                                        className="absolute -bottom-0.5 -right-0.5 w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold"
-                                        style={{ backgroundColor: BRAND.orange }}
-                                    >
-                                        /10
+                                    <div className="flex-1">
+                                        <p className="text-sm font-black text-indigo-100">
+                                            {leadQuality[0] >= 8 ? "Exceptional" : leadQuality[0] >= 6 ? "Good" : leadQuality[0] >= 4 ? "Average" : "Needs Work"}
+                                        </p>
+                                        <p className="text-[10px] text-white/50 uppercase tracking-widest mt-1">Lead Quality Score</p>
                                     </div>
                                 </div>
-                                <div className="flex-1 space-y-2">
+
+                                <div className="space-y-3">
                                     <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
-                                        <span className="text-white/60">Poor</span>
-                                        <span className="text-white/60">Excellent</span>
+                                        <span className="text-white/40">Poor</span>
+                                        <span className="text-white/40">Excellent</span>
                                     </div>
                                     <Slider
                                         value={leadQuality}
@@ -1259,115 +874,48 @@ export function SalesReportingPage() {
                                         max={10}
                                         min={1}
                                         step={1}
-                                        className="w-full [&_[role=slider]]:border-[#FA4615] [&_[role=slider]]:bg-white [&_.bg-primary]:bg-[#FA4615] [&_.bg-secondary]:bg-white/20"
+                                        className="w-full [&_[role=slider]]:border-indigo-400 [&_[role=slider]]:bg-white [&_.bg-primary]:bg-gradient-to-r [&_.bg-primary]:from-indigo-600 [&_.bg-primary]:to-indigo-300 [&_[role=slider]]:shadow-[0_0_15px_rgba(99,102,241,0.6)] [&_.bg-secondary]:bg-white/10"
                                     />
-                                    <p className="text-xs font-black text-center">
-                                        {leadQuality[0] >= 8 ? "Exceptional" :
-                                         leadQuality[0] >= 6 ? "Good" :
-                                         leadQuality[0] >= 4 ? "Average" : "Needs Work"}
-                                    </p>
                                 </div>
                             </div>
                         </div>
                     </motion.div>
 
-                    {/* Mobile: Transmit Report Button */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="md:hidden"
+                    {/* Ready to Transmit Card */}
+                    <motion.div 
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.2 }}
+                        className="bg-white/80 backdrop-blur-md border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] rounded-2xl p-6"
                     >
                         {hasSubmittedToday ? (
-                            <div className="bg-green-50 border border-green-200 rounded-xl p-4">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <div className="p-2 bg-green-500 rounded-lg">
-                                        <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-bold text-green-800">Report Submitted Today</p>
-                                        <p className="text-xs text-green-600">Come back tomorrow to submit a new report</p>
-                                    </div>
+                            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5 flex flex-col items-center text-center">
+                                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mb-3">
+                                    <CheckCircle2 className="w-6 h-6" />
                                 </div>
+                                <h3 className="text-sm font-black uppercase tracking-widest text-emerald-900 mb-1">Report Submitted</h3>
+                                <p className="text-xs font-medium text-emerald-600/80">Your daily report has been sent to the CEO dashboard.</p>
                             </div>
                         ) : (
-                            <>
+                            <div className="flex flex-col gap-4">
+                                <div>
+                                    <h3 className="text-sm font-black uppercase tracking-widest text-slate-900 mb-1">Ready to Transmit</h3>
+                                    <p className="text-xs font-medium text-slate-500">Finalize and send to CEO.</p>
+                                </div>
                                 <Button
                                     onClick={handleTransmitReport}
                                     disabled={isSubmitting}
-                                    className="w-full h-14 text-sm font-bold rounded-xl transition-all duration-200 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed min-h-[56px] shadow-lg"
-                                    style={{
-                                        backgroundColor: BRAND.navy,
-                                        color: "white",
-                                    }}
+                                    className="w-full h-14 text-xs font-black tracking-widest uppercase rounded-xl transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 shadow-lg shadow-indigo-900/20"
+                                    style={{ backgroundColor: BRAND.navy, color: "white" }}
                                 >
-                                    {isSubmitting ? (
-                                        <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-                                    ) : (
-                                        <Send className="w-5 h-5 mr-2" />
-                                    )}
+                                    {isSubmitting ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Send className="w-4 h-4 mr-2" />}
                                     {isSubmitting ? "TRANSMITTING..." : "TRANSMIT REPORT"}
                                 </Button>
-                                <p className="text-[9px] text-slate-400 font-medium text-center mt-2">
-                                    Data sent to CEO dashboard for review
-                                </p>
-                            </>
-                        )}
-                    </motion.div>
-
-                    {/* Desktop: Transmit Report Button */}
-                    <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.3 }}
-                        className="hidden md:block"
-                    >
-                        {hasSubmittedToday ? (
-                            <div className="bg-green-50 border border-green-200 rounded-2xl p-6 shadow-lg">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <h3 className="text-lg font-bold text-green-800 mb-1">Report Submitted Today</h3>
-                                        <p className="text-sm text-green-600">Your daily report has been successfully transmitted to the CEO dashboard</p>
-                                    </div>
-                                    <div className="p-3 bg-green-500 rounded-xl">
-                                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    </div>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="bg-white rounded-2xl p-6 shadow-lg border border-slate-100">
-                                <div className="flex items-center justify-between">
-                                    <div>
-                                        <h3 className="text-lg font-bold text-slate-900 mb-1">Ready to Transmit</h3>
-                                        <p className="text-sm text-slate-600">Send your daily report to the CEO dashboard for review</p>
-                                    </div>
-                                    <Button
-                                        onClick={handleTransmitReport}
-                                        disabled={isSubmitting}
-                                        className="h-16 px-8 text-sm font-bold rounded-xl transition-all duration-200 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
-                                        style={{
-                                            backgroundColor: BRAND.navy,
-                                            color: "white",
-                                        }}
-                                    >
-                                        {isSubmitting ? (
-                                            <RefreshCw className="w-5 h-5 mr-2 animate-spin" />
-                                        ) : (
-                                            <Send className="w-5 h-5 mr-2" />
-                                        )}
-                                        {isSubmitting ? "TRANSMITTING..." : "TRANSMIT DAILY REPORT"}
-                                    </Button>
-                                </div>
                             </div>
                         )}
                     </motion.div>
                 </div>
-
-                            </main>
+            </main>
 
             {/* Conversion Modal */}
             <Dialog open={isConversionModalOpen} onOpenChange={setIsConversionModalOpen}>
@@ -1380,15 +928,16 @@ export function SalesReportingPage() {
                     </DialogHeader>
                     <div className="space-y-4">
                         <div>
-                            <Label htmlFor="student-name" className="text-sm font-medium text-slate-700">
-                                Student Name
+                            <Label htmlFor="conversion-count" className="text-sm font-medium text-slate-700">
+                                Number of Conversions
                             </Label>
                             <Input
-                                id="student-name"
-                                type="text"
-                                placeholder="Enter student's full name..."
-                                value={studentName}
-                                onChange={(e) => setStudentName(e.target.value)}
+                                id="conversion-count"
+                                type="number"
+                                min="1"
+                                placeholder="Enter number..."
+                                value={conversionCount}
+                                onChange={(e) => setConversionCount(e.target.value)}
                                 className="mt-1 h-12 bg-slate-50 border-slate-200 focus:border-[#2F1E73] focus:ring-[#2F1E73]/20 rounded-xl"
                                 style={{ color: "#1e293b" }}
                             />
@@ -1398,7 +947,7 @@ export function SalesReportingPage() {
                                 variant="outline"
                                 onClick={() => {
                                     setIsConversionModalOpen(false);
-                                    setStudentName("");
+                                    setConversionCount("1");
                                 }}
                                 className="flex-1 h-12 rounded-xl font-medium"
                             >
@@ -1406,7 +955,7 @@ export function SalesReportingPage() {
                             </Button>
                             <Button
                                 onClick={handleAddConversion}
-                                disabled={isAddingConversion || !studentName.trim()}
+                                disabled={isAddingConversion || !conversionCount || parseInt(conversionCount) <= 0}
                                 className="flex-1 h-12 rounded-xl font-medium transition-all duration-200 hover:shadow-xl hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed"
                                 style={{
                                     backgroundColor: BRAND.orange,

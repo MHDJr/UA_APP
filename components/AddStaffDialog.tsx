@@ -104,43 +104,125 @@ export default function AddStaffDialog({
 
         setLoading(true);
         try {
-            // Check if profile already exists in profiles table
-            const { data: existingProfile, error: profileCheckError } = await supabase
-                .from("profiles")
-                .select("email, username")
-                .or(`email.eq.${email},username.eq.${username}`)
-                .maybeSingle();
-                
-            if (existingProfile && !profileCheckError) {
-                if (existingProfile.email === email) {
-                    throw new Error(`User with email ${email} already exists. Please use a different email.`);
+            const executeCreation = async () => {
+                // Check if profile already exists in profiles table
+                const { data: existingProfile, error: profileCheckError } = await supabase
+                    .from("profiles")
+                    .select("email, username")
+                    .or(`email.eq.${email},username.eq.${username}`)
+                    .maybeSingle();
+                    
+                if (existingProfile && !profileCheckError) {
+                    if (existingProfile.email === email) {
+                        throw new Error(`User with email ${email} already exists. Please use a different email.`);
+                    }
+                    if (existingProfile.username === username) {
+                        throw new Error(`Username ${username} is already taken. Please choose a different username.`);
+                    }
                 }
-                if (existingProfile.username === username) {
-                    throw new Error(`Username ${username} is already taken. Please choose a different username.`);
-                }
-            }
 
-            if (userRole === "MANAGER") {
-                // Create a request for the CEO
-                const { error: requestError } = await supabase.from("requests").insert({
-                    type: "add_staff",
-                    submitted_by: user?.id,
-                    title: `Staff Addition: ${fullName}`,
-                    description: `Request to add new staff member ${fullName} (@${username}) as ${designation} in ${formData.role} department.`,
-                    priority: "normal",
-                    status: "pending",
-                    metadata: {
-                        ...formData,
-                        department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
+                if (userRole === "MANAGER") {
+                    // Create a request for the CEO
+                    const { error: requestError } = await supabase.from("requests").insert({
+                        type: "add_staff",
+                        submitted_by: user?.id,
+                        title: `Staff Addition: ${fullName}`,
+                        description: `Request to add new staff member ${fullName} (@${username}) as ${designation} in ${formData.role} department.`,
+                        priority: "normal",
+                        status: "pending",
+                        metadata: {
+                            ...formData,
+                            department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
+                        }
+                    });
+
+                    if (requestError) throw requestError;
+
+                    // Invalidate requests query to show the new request in the list
+                    queryClient.invalidateQueries({ queryKey: ["requests"] });
+
+                    toast.success("Request sent to CEO for final deployment authorization.");
+                    onOpenChange(false);
+                    setFormData({
+                        fullName: "",
+                        email: "",
+                        username: "",
+                        designation: "",
+                        password: "",
+                        role: "staff",
+                        systemRole: "staff",
+                    });
+                    return;
+                }
+
+                console.log("Creating new user (Direct CEO Action):", { email, username, fullName });
+                
+                // Use a separate client for signup to prevent overwriting the current CEO session
+                const authClient = createClient(supabaseUrl, supabaseAnonKey, {
+                    auth: {
+                        persistSession: false,
+                        autoRefreshToken: false,
+                        detectSessionInUrl: false
                     }
                 });
+                
+                // Create the user in Supabase Auth
+                const { data: authData, error: authError } = await authClient.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            full_name: fullName,
+                            username: username,
+                        },
+                    },
+                });
 
-                if (requestError) throw requestError;
+                if (authError) {
+                    if (authError.message.includes("already registered")) {
+                        throw new Error(`User with email ${email} is already registered. Please use a different email or contact admin to reset the existing account.`);
+                    }
+                    throw new Error(authError.message);
+                }
 
-                // Invalidate requests query to show the new request in the list
-                queryClient.invalidateQueries({ queryKey: ["requests"] });
+                if (!authData.user) {
+                    throw new Error("Failed to create user account");
+                }
 
-                toast.success("Request sent to CEO for final deployment authorization.");
+                // Create the user's profile in the profiles table
+                console.log("Creating profile for user:", authData.user.id, formData);
+                const { data: profileData, error: profileError } = await authClient.from("profiles").insert({
+                    id: authData.user.id,
+                    email: email,
+                    full_name: fullName,
+                    username: username,
+                    designation: designation,
+                    role: formData.systemRole === "manager" ? "manager" : formData.systemRole,
+                    is_manager: formData.systemRole === "manager",
+                    department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
+                    status: "offline",
+                }).select();
+
+                console.log("Profile creation result:", { profileData, profileError });
+
+                if (profileError) {
+                    throw new Error(`Profile creation failed: ${profileError.message}`);
+                }
+
+                // Log the activity
+                await authClient.from("activity_feed").insert({
+                    action_type: "staff_created",
+                    description: `New staff member ${fullName} (${username}) was added by admin`,
+                    user_id: authData.user.id,
+                });
+
+                toast.success(
+                    `Personnel @${username} successfully provisioned.`,
+                );
+                
+                // Invalidate staff query
+                queryClient.invalidateQueries({ queryKey: ["staff"] });
+                
                 onOpenChange(false);
                 setFormData({
                     fullName: "",
@@ -151,88 +233,22 @@ export default function AddStaffDialog({
                     role: "staff",
                     systemRole: "staff",
                 });
-                return;
-            }
+                
+                // Trigger a refresh of the staff list in the parent component
+                setTimeout(() => {
+                    window.dispatchEvent(new CustomEvent('staff-created', { detail: { username, role: formData.role } }));
+                }, 100);
+            };
 
-            console.log("Creating new user (Direct CEO Action):", { email, username, fullName });
-            
-            // Create the user in Supabase Auth
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-                email,
-                password,
-                options: {
-                    data: {
-                        full_name: fullName,
-                        username: username,
-                    },
-                },
-            });
-
-            if (authError) {
-                if (authError.message.includes("already registered")) {
-                    throw new Error(`User with email ${email} is already registered. Please use a different email or contact admin to reset the existing account.`);
-                }
-                throw new Error(authError.message);
-            }
-
-            if (!authData.user) {
-                throw new Error("Failed to create user account");
-            }
-
-            // Create the user's profile in the profiles table
-            console.log("Creating profile for user:", authData.user.id, formData);
-            const { data: profileData, error: profileError } = await supabase.from("profiles").insert({
-                id: authData.user.id,
-                email: email,
-                full_name: fullName,
-                username: username,
-                designation: designation,
-                role: formData.systemRole === "manager" ? "manager" : formData.systemRole,
-                is_manager: formData.systemRole === "manager",
-                department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
-                status: "offline",
-            }).select();
-
-            console.log("Profile creation result:", { profileData, profileError });
-
-            if (profileError) {
-                // If profile creation fails, we can't delete the auth user with anon client
-                // Just log the error and let the admin handle cleanup if needed
-                throw new Error(`Profile creation failed: ${profileError.message}`);
-            }
-
-            // Log the activity
-            await supabase.from("activity_feed").insert({
-                action_type: "staff_created",
-                description: `New staff member ${fullName} (${username}) was added by admin`,
-                user_id: authData.user.id,
-            });
-
-            toast.success(
-                `Personnel @${username} successfully provisioned.`,
-            );
-            
-            // Invalidate staff query
-            queryClient.invalidateQueries({ queryKey: ["staff"] });
-            
-            onOpenChange(false);
-            setFormData({
-                fullName: "",
-                email: "",
-                username: "",
-                designation: "",
-                password: "",
-                role: "staff",
-                systemRole: "staff",
-            });
-            
-            // Trigger a refresh of the staff list in the parent component
-            setTimeout(() => {
-                window.dispatchEvent(new CustomEvent('staff-created', { detail: { username, role: formData.role } }));
-            }, 100);
+            await Promise.race([
+                executeCreation(),
+                new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout: Operation took too long. Please try again.")), 15000))
+            ]);
         } catch (error: any) {
             console.error("Staff creation error:", error);
             toast.error(error.message || "Failed to create staff account");
+            // Automatically reset submission state so user can retry instantly
+            setLoading(false);
         } finally {
             setLoading(false);
         }
@@ -275,7 +291,7 @@ export default function AddStaffDialog({
                     />
 
                     {/* ─────────── HEADER ─────────── */}
-                    <div className="px-8 pt-8 pb-6">
+                    <div className="p-4 sm:p-6 pt-6 sm:pt-8 pb-4 sm:pb-6">
                         {/* Logo row */}
                         <div className="flex items-center gap-2.5 mb-5">
                             <div
@@ -308,9 +324,9 @@ export default function AddStaffDialog({
                     </div>
 
                     {/* ─────────── FORM ─────────── */}
-                    <form onSubmit={handleSubmit} className="px-8 pb-8">
+                    <form onSubmit={handleSubmit} className="p-4 sm:p-6 pt-0 sm:pt-0">
                         {/* 2-column identity grid */}
-                        <div className="grid grid-cols-2 gap-x-6 gap-y-5 mb-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 mb-6 w-full">
                             <FieldBox
                                 id="fullName"
                                 label="Full Name"
@@ -555,7 +571,7 @@ export default function AddStaffDialog({
                             <DialogClose asChild>
                                 <button
                                     type="button"
-                                    className="h-11 px-6 rounded-xl text-[12px] font-bold uppercase tracking-widest transition-all duration-300"
+                                    className="h-11 min-h-[44px] min-w-[44px] px-6 rounded-xl text-[12px] font-bold uppercase tracking-widest transition-all duration-300 ease-executive translate-gpu"
                                     style={{ color: "#9CA3AF" }}
                                     onMouseEnter={(e) => {
                                         (
@@ -582,7 +598,7 @@ export default function AddStaffDialog({
                             <button
                                 type="submit"
                                 disabled={loading}
-                                className="relative h-11 px-7 rounded-xl text-[12px] font-black uppercase tracking-widest text-white flex items-center gap-2.5 overflow-hidden transition-all duration-300 disabled:opacity-60 disabled:cursor-not-allowed"
+                                className="relative h-11 min-h-[44px] min-w-[44px] px-7 rounded-xl text-[12px] font-black uppercase tracking-widest text-white flex items-center gap-2.5 overflow-hidden transition-all duration-300 ease-executive translate-gpu disabled:opacity-60 disabled:cursor-not-allowed"
                                 style={{
                                     background: `linear-gradient(135deg, ${ORANGE}, ${VIOLET})`,
                                     boxShadow: `0 4px 20px rgba(241,90,36,0.35), 0 2px 8px rgba(45,42,119,0.25)`,
