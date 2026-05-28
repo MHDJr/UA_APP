@@ -409,7 +409,7 @@ const FormStep: React.FC<{
                     )}
                 />
                 <p className="text-xs text-slate-500 ml-1">
-                    This will be visible to your manager and CEO
+                    This will be visible to your administrator and CEO
                 </p>
             </motion.div>
 

@@ -45,7 +45,9 @@ export type Task = {
     title: string;
     description?: string;
     priority: "low" | "medium" | "high" | "urgent";
-    status: "pending" | "in_progress" | "completed" | "paused" | "in_review";
+    status: "pending" | "in_progress" | "completed" | "paused" | "in_review" | "PENDING" | "IN_PROGRESS" | "UNDER_REVIEW" | "COMPLETED";
+    progress?: number;
+    updatedAt?: string;
     due_date?: string;
     created_by: string;
     created_at: string;

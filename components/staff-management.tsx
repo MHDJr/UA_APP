@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Search, Plus, Star, CheckCircle2, Clock, XCircle, Wifi, Building2, Pencil, Trash2, Loader2, X, Mail, Users } from "lucide-react";
+import { Search, Plus, Star, CheckCircle2, Clock, XCircle, Wifi, Building2, Pencil, Trash2, Loader2, X, Mail, Users, FileText } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
@@ -12,6 +12,7 @@ import AddStaffDialog from "./AddStaffDialog";
 import { PendingApprovals, PendingRequest } from "./PendingApprovals";
 import { StatCards } from "./StatCards";
 import { toast } from "sonner";
+import { deleteFile } from "@/lib/storage";
 import { useTabResiliency } from "./tab-resiliency-engine";
 import { useAuth } from "@/lib/auth-context";
 import { useStaff, useTasks, useRequests } from "@/hooks/use-dashboard-data";
@@ -79,6 +80,48 @@ export function StaffManagement() {
     const [searchQuery, setSearchQuery] = useState("");
     const [hoveredRow, setHoveredRow] = useState<string | null>(null);
     const [isAddStaffOpen, setIsAddStaffOpen] = useState(false);
+    const [exporting, setExporting] = useState<string | null>(null);
+
+    const downloadTaskReport = async (period: "weekly" | "monthly", targetStaffId?: string) => {
+        const idTag = targetStaffId || "general";
+        setExporting(idTag);
+        toast.loading(`Compiling task logs for ${period} performance report...`);
+        
+        try {
+            const url = new URL("/api/reports/tasks", window.location.origin);
+            url.searchParams.set("period", period);
+            if (targetStaffId) {
+                url.searchParams.set("staffId", targetStaffId);
+            }
+
+            const response = await fetch(url.toString());
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || "Server responded with an error status.");
+            }
+
+            const blob = await response.blob();
+            const objectUrl = window.URL.createObjectURL(blob);
+            
+            const a = document.createElement("a");
+            a.href = objectUrl;
+            a.download = `usthad_academy_performance_report_${period}_${new Date().toISOString().slice(0, 10)}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(objectUrl);
+            
+            toast.dismiss();
+            toast.success("Performance Audit Report downloaded successfully!");
+        } catch (err: any) {
+            console.error("Report export failed:", err);
+            toast.dismiss();
+            toast.error(err.message || "Failed to stream performance audit report.");
+        } finally {
+            setExporting(null);
+        }
+    };
     
     // TanStack Query Hooks
     const { data: staffProfiles = [], isLoading: isLoadingStaff } = useStaff();
@@ -197,6 +240,16 @@ export function StaffManagement() {
         if (!staffToDelete) return;
 
         try {
+            // 1. Delete avatar from storage if it exists
+            if (staffToDelete.avatar && staffToDelete.avatar.includes('/storage/v1/object/public/')) {
+                try {
+                    await deleteFile('avatars', staffToDelete.avatar);
+                } catch (e) {
+                    console.warn("Failed to delete staff avatar from storage during termination:", e);
+                }
+            }
+
+            // 2. Cascade delete from database
             const { error: cascadeError } = await supabase.rpc('delete_profile_cascade', {
                 profile_uuid: staffToDelete.id
             });
@@ -265,7 +318,7 @@ export function StaffManagement() {
                             <span className="text-[#31267D] font-bold">{stats.total}</span> ACTIVE PERSONNEL RECOGNIZED ACROSS ACADEMY DEPARTMENTS
                         </p>
                     </div>
-                    {userRole === 'CEO' && (
+                    {(userRole === 'CEO' || userRole === 'MANAGER') && (
                         <Button
                             onClick={() => setIsAddStaffOpen(true)}
                             className="w-full md:w-auto px-6 py-6 md:py-2.5 rounded-2xl text-white font-black uppercase tracking-widest text-[11px] items-center gap-2 shadow-xl shadow-orange-500/20 hover:shadow-orange-500/40 hover:scale-[1.02] active:scale-95 transition-all"
@@ -355,15 +408,32 @@ export function StaffManagement() {
                                     <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tight">Active Deployment Monitoring</p>
                                 </div>
                             </div>
-                            <div className="relative w-full lg:w-96">
-                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                                <Input
-                                    type="text"
-                                    placeholder="Search personnel..."
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    className="pl-11 pr-4 py-6 bg-white border-gray-200 rounded-2xl text-sm text-gray-900 focus:ring-4 focus:ring-[#31267D]/5 focus:border-[#31267D] transition-all shadow-sm placeholder:text-gray-400"
-                                />
+                            <div className="flex items-center gap-3 w-full lg:w-auto">
+                                <div className="relative flex-1 lg:w-96">
+                                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                    <Input
+                                        type="text"
+                                        placeholder="Search personnel..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="pl-11 pr-4 py-6 bg-white border-gray-200 rounded-2xl text-sm text-gray-900 focus:ring-4 focus:ring-[#31267D]/5 focus:border-[#31267D] transition-all shadow-sm placeholder:text-gray-400"
+                                    />
+                                </div>
+                                {profile?.role === "ceo" && (
+                                    <button 
+                                        onClick={() => downloadTaskReport("weekly")}
+                                        disabled={exporting === "general"}
+                                        className="border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 p-3.5 rounded-2xl text-zinc-600 dark:text-zinc-400 hover:text-blue-500 active:scale-95 transition-all shadow-sm shrink-0 flex items-center justify-center gap-2 text-xs font-black uppercase tracking-wider disabled:opacity-50"
+                                        title="Download Tasks Performance Report"
+                                    >
+                                        {exporting === "general" ? (
+                                            <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                                        ) : (
+                                            <FileText className="w-4 h-4 text-[#31267D]" />
+                                        )}
+                                        <span className="hidden sm:inline">Export Audit</span>
+                                    </button>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -416,6 +486,20 @@ export function StaffManagement() {
                                             <div className="flex gap-2">
                                                 <a href={`mailto:${staff.email}`} className="p-2 rounded-xl bg-gray-50 text-gray-500"><Mail className="w-3.5 h-3.5" /></a>
                                                 <a href={`tel:${staff.phone}`} className="p-2 rounded-xl bg-gray-50 text-gray-500"><Wifi className="w-3.5 h-3.5 rotate-90" /></a>
+                                                {profile?.role === "ceo" && (
+                                                    <button 
+                                                        onClick={() => downloadTaskReport("weekly", staff.id)}
+                                                        disabled={exporting === staff.id}
+                                                        className="p-2 rounded-xl bg-gray-50 text-gray-500 hover:text-blue-500 active:scale-95 transition-all disabled:opacity-50"
+                                                        title="Export Staff Performance Audit"
+                                                    >
+                                                        {exporting === staff.id ? (
+                                                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                                                        ) : (
+                                                            <FileText className="w-3.5 h-3.5 text-[#31267D]" />
+                                                        )}
+                                                    </button>
+                                                )}
                                             </div>
                                             {userRole === 'CEO' && (
                                                 <Button variant="ghost" onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className="h-8 px-3 rounded-xl text-red-600 font-black uppercase text-[8px] gap-1.5">
@@ -489,11 +573,30 @@ export function StaffManagement() {
                                                 </div>
                                             </td>
                                             <td className="py-5 px-8 text-right">
-                                                {userRole === 'CEO' && (
-                                                    <button onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} className={cn("p-2 rounded-xl transition-all duration-300", isHovered ? "bg-red-50 text-red-600" : "opacity-0")}>
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                )}
+                                                <div className="flex items-center justify-end gap-2">
+                                                    {profile?.role === "ceo" && (
+                                                        <button 
+                                                            onClick={() => downloadTaskReport("weekly", staff.id)}
+                                                            disabled={exporting === staff.id}
+                                                            className="p-2 rounded-xl transition-all duration-300 flex items-center justify-center hover:bg-gray-50 dark:hover:bg-zinc-800 text-gray-500 hover:text-blue-500 disabled:opacity-50"
+                                                            title="Export Staff Task Audit"
+                                                        >
+                                                            {exporting === staff.id ? (
+                                                                <Loader2 className="w-4 h-4 animate-spin text-blue-500" />
+                                                            ) : (
+                                                                <FileText className="w-4 h-4 text-[#31267D]" />
+                                                            )}
+                                                        </button>
+                                                    )}
+                                                    {userRole === 'CEO' && (
+                                                        <button 
+                                                            onClick={() => { setStaffToDelete(staff); setIsDeleteModalOpen(true); }} 
+                                                            className="p-2 rounded-xl transition-all duration-300 hover:bg-red-50 dark:hover:bg-red-950/20 text-gray-400 hover:text-red-600"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     );

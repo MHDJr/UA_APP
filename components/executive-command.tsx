@@ -53,6 +53,8 @@ import {
     Video,
     Bookmark,
     Crown,
+    Megaphone,
+    Send,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
@@ -82,8 +84,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import AddStaffDialog from "./AddStaffDialog";
 import { NewIdeaDialog } from "./new-idea-dialog";
 import { ThoughtCapture } from "./thought-capture";
+import { MessageDialog, MessageType } from "./message-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
+import { deleteFile } from "@/lib/storage";
 import { SkeletonCommandCenter } from "./skeleton-loader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -268,6 +272,63 @@ const ExecutivePerformanceEngine = React.memo(({ tasks, completedTasks }: { task
 });
 ExecutivePerformanceEngine.displayName = "ExecutivePerformanceEngine";
 
+const renderCEOTaskGauge = (t: Task) => {
+    const s = (t.status || "PENDING").toUpperCase();
+    const progress = s === "COMPLETED" ? 100 : (t.progress || 0);
+    const radius = 14;
+    const circumference = 2 * Math.PI * radius; // ~88
+    const strokeDashoffset = circumference - (circumference * progress) / 100;
+    
+    let strokeColor = "stroke-blue-500";
+    if (s === "COMPLETED") {
+        strokeColor = "stroke-emerald-500";
+    } else if (s === "PENDING") {
+        strokeColor = "stroke-orange-500";
+    } else if (s === "UNDER_REVIEW" || s === "IN_REVIEW") {
+        strokeColor = "stroke-purple-500";
+    }
+
+    return (
+        <div className="flex items-center gap-2 select-none shrink-0">
+            <span className="text-sm font-black text-slate-800 dark:text-zinc-200 tracking-tight">
+                {progress}%
+            </span>
+            <div className="relative w-8 h-8 flex-shrink-0">
+                <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                        cx="16"
+                        cy="16"
+                        r={radius}
+                        className="stroke-slate-100 dark:stroke-zinc-800 fill-none"
+                        strokeWidth="2.5"
+                    />
+                    <circle
+                        cx="16"
+                        cy="16"
+                        r={radius}
+                        className={cn("fill-none transition-all duration-500 ease-out", strokeColor)}
+                        strokeWidth="2.5"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                    />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                    {s === "COMPLETED" ? (
+                        <Check className="w-3 h-3 text-emerald-500 dark:text-emerald-400" />
+                    ) : s === "PENDING" ? (
+                        <Zap className="w-2.5 h-2.5 text-orange-500 dark:text-orange-400 fill-orange-500/10" />
+                    ) : s === "UNDER_REVIEW" || s === "IN_REVIEW" ? (
+                        <Clock className="w-2.5 h-2.5 text-purple-500 dark:text-purple-400 animate-pulse" />
+                    ) : (
+                        <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // MAIN COMPONENT: EXECUTIVE COMMAND
 // ============================================
 
@@ -315,8 +376,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [isChatModalOpen, setIsChatModalOpen] = useState(false);
     const [selectedStaffForChat, setSelectedStaffForChat] = useState<Profile | null>(null);
     const [chatMessage, setChatMessage] = useState("");
-    const [isScheduleMeetingOpen, setIsScheduleMeetingOpen] = useState(false);
-    const [meetingStep, setMeetingStep] = useState(1);
+    
+    // Global Announcement States
+    const [isAnnouncementDialogOpen, setIsAnnouncementDialogOpen] = useState(false);
+    const [announcementDefaultType, setAnnouncementDefaultType] = useState<MessageType>("announcement");
+    const [announcementMessage, setAnnouncementMessage] = useState("");
+    const [isDeployingAnnouncement, setIsDeployingAnnouncement] = useState(false);
+    const [channelDestination, setChannelDestination] = useState<"CEO_BROADCAST" | "COMMUNITY_BOARD">("CEO_BROADCAST");
+    const [announcementType, setAnnouncementType] = useState<"MEETING" | "NOTICE" | "DEADLINE">("NOTICE");
     
     // Tracking Sets
     const [completedIdeas, setCompletedIdeas] = useState<Set<string>>(new Set());
@@ -327,17 +394,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [newIdea, setNewIdea] = useState({ title: "", description: "", priority: "medium" });
     const [selectedStaffForIdea, setSelectedStaffForIdea] = useState<string[]>([]);
     const [hoveredRequest, setHoveredRequest] = useState<any | null>(null);
-    const [newMeeting, setNewMeeting] = useState({
-        title: "", agenda: "", date: "", time: "", participants: [] as string[],
-        type: "strategic" as "strategic" | "review" | "emergency" | "1-on-1",
-        priority: "medium" as "low" | "medium" | "high" | "critical",
-        outcome: "decision" as "decision" | "discussion" | "approval",
-        duration: "60", location: "Virtual HQ",
-        agendaItems: [] as { id: string; topic: string; owner: string; time: string; }[],
-        preMeetingTasks: [] as { id: string; title: string; assigned_to: string; deadline: string; }[],
-        notifications: { dashboard: true, email: false, push: true, sms: false },
-        reminder: "10", notes: "",
-    });
 
     // Refs
     const channelsRef = useRef<any[]>([]);
@@ -874,8 +930,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 case "new-directive":
                     setIsAssignTaskOpen(true);
                     break;
-                case "schedule-meeting":
-                    setIsScheduleMeetingOpen(true);
+                case "announcement":
+                    setAnnouncementDefaultType("announcement");
+                    setIsAnnouncementDialogOpen(true);
                     break;
             }
         };
@@ -1118,7 +1175,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     status: 'delegated',
                     assigned_to: staffMember.id,
                     assigned_to_name: staffMember.full_name,
-                    delegated_by_manager: profile?.full_name || 'Manager',
+                    delegated_by_manager: profile?.full_name || 'Administrator',
                     updated_at: new Date().toISOString()
                 } as any)
                 .eq("id", selectedIdeaForDelegation.id);
@@ -1226,6 +1283,18 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 toast.error("Task not found in database");
                 fetchData();
                 return;
+            }
+            
+            // Delete attachment if it exists in storage
+            if (existingTask.attachment_url && existingTask.attachment_url.includes('/storage/v1/object/public/')) {
+                try {
+                    await deleteFile('attachments', existingTask.attachment_url);
+                    console.log("Deleted task attachment from storage");
+                } catch (e) {
+                    console.warn("Failed to delete attachment from storage:", e);
+                    // Proceed with DB deletion even if file removal fails, 
+                    // though strictly speaking we should perhaps abort or retry.
+                }
             }
             
             // Now attempt the deletion - try multiple approaches
@@ -1441,11 +1510,43 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             
             // Also remove from local completed tasks immediately for better UX
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
-            
-            fetchData(); // Refresh the data to update the UI
+            fetchData();
         } catch (error) {
             console.error("Mark as reviewed exception:", error);
             toast.error("Something went wrong marking task as reviewed");
+        }
+    };
+
+    const approveAndCloseTask = async (id: string) => {
+        try {
+            console.log('Approve and close task:', id);
+            
+            const { error, data } = await supabase
+                .from("tasks")
+                .update({ 
+                    status: "COMPLETED",
+                    progress: 100,
+                    updated_at: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })
+                .eq("id", id)
+                .select();
+
+            if (error) {
+                console.error("Approve and close error:", error);
+                toast.error("Failed to approve and close task: " + error.message);
+                return;
+            }
+            
+            console.log('Task approved and closed successfully:', data);
+            toast.success("Task approved and marked as completed!");
+            
+            // Invalidate queries to trigger real-time refresh instantly
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            fetchData();
+        } catch (error) {
+            console.error("Approve and close exception:", error);
+            toast.error("Something went wrong approving and closing the task");
         }
     };
 
@@ -1537,207 +1638,11 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         setSelectedStaffForChat(null);
     };
 
-    const handleScheduleMeeting = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (
-            !newMeeting.title ||
-            !newMeeting.date ||
-            !newMeeting.time ||
-            newMeeting.participants.length === 0
-        ) {
-            return toast.error("Mission parameters incomplete");
-        }
-
-        try {
-            const scheduledAt = new Date(
-                `${newMeeting.date}T${newMeeting.time}`,
-            ).toISOString();
-
-            // Format dynamic agenda items into a single string for now if the DB doesn't support JSON yet.
-            let fullAgenda = newMeeting.agenda || "";
-            if (newMeeting.agendaItems.length > 0) {
-                fullAgenda =
-                    "STRATEGIC AGENDA:\n" +
-                    newMeeting.agendaItems
-                        .map((item, i) => {
-                            const ownerName =
-                                item.owner === "CEO"
-                                    ? "CEO"
-                                    : staff.find((s) => s.id === item.owner)
-                                          ?.full_name || "Unassigned";
-                            return `${i + 1}. ${item.topic} (${ownerName} - ${item.time}m)`;
-                        })
-                        .join("\n") +
-                    "\n\n" +
-                    (newMeeting.agenda
-                        ? `ADDITIONAL NOTES:\n${newMeeting.agenda}`
-                        : "");
-            }
-
-            // Append location and other new fields to the agenda notes as a fallback
-            const meetingDetails = `\n\nLOGISTICS:\nLocation/Link: ${newMeeting.location || "TBD"}\nDuration: ${newMeeting.duration}m\nClassification: ${newMeeting.type.toUpperCase()}\nPriority: ${newMeeting.priority.toUpperCase()}`;
-            fullAgenda += meetingDetails;
-
-            // 1. Create meeting with basic fields first
-            let meeting: any = null;
-            let meetingError: any = null;
-            
-            // Calculate start and end times
-            const startTime = scheduledAt;
-            const endTime = new Date(new Date(scheduledAt).getTime() + (parseInt(newMeeting.duration) || 60) * 60000).toISOString();
-            
-            try {
-                const result = await supabase
-                    .from("meetings")
-                    .insert({
-                        title: newMeeting.title,
-                        agenda: fullAgenda,
-                        scheduled_at: scheduledAt,
-                        start_time: startTime,
-                        end_time: endTime,
-                        duration_minutes: parseInt(newMeeting.duration) || 60,
-                        attendees: newMeeting.participants, // Use attendees field as per original schema
-                        participants: newMeeting.participants, // Also try participants field in case it exists
-                    })
-                    .select()
-                    .single();
-                
-                meeting = result.data;
-                meetingError = result.error;
-            } catch (err) {
-                console.error('Meeting creation error:', err);
-                meetingError = err;
-            }
-
-            if (meetingError || !meeting) {
-                console.error("Meeting creation error:", meetingError);
-                
-                // Try with minimal fields as fallback
-                try {
-                    const fallbackResult = await supabase
-                        .from("meetings")
-                        .insert({
-                            title: newMeeting.title,
-                            scheduled_at: scheduledAt,
-                            start_time: startTime,
-                            end_time: endTime,
-                            attendees: newMeeting.participants, // Add attendees to fallback too
-                            participants: newMeeting.participants, // Also add participants
-                        })
-                        .select()
-                        .single();
-                    
-                    meeting = fallbackResult.data;
-                    meetingError = fallbackResult.error;
-                } catch (fallbackErr) {
-                    console.error("Fallback meeting creation also failed:", fallbackErr);
-                    meetingError = fallbackErr;
-                }
-                
-                if (meetingError || !meeting) {
-                    throw new Error("Failed to create meeting: " + (meetingError as any)?.message || "Unknown error");
-                }
-            }
-
-            // 2. Add participants to meeting_participants table
-            const participantData = newMeeting.participants.map((pid) => ({
-                meeting_id: meeting.id,
-                user_id: pid,
-            }));
-
-            const { error: partError } = await supabase
-                .from("meeting_participants")
-                .insert(participantData);
-
-            if (partError) {
-                console.error("Participant addition error:", partError);
-                throw partError;
-            }
-
-            // 3. Dispatch Pre-Meeting Tasks (if any)
-            if (newMeeting.preMeetingTasks.length > 0) {
-                const tasksToInsert = newMeeting.preMeetingTasks
-                    .filter(
-                        (t) =>
-                            t.title && t.assigned_to && t.assigned_to !== "CEO",
-                    )
-                    .map((t) => ({
-                        title: `[PRE-MEETING] ${t.title}`,
-                        description: `Preparatory task for summit: ${newMeeting.title}`,
-                        assigned_to: t.assigned_to,
-                        priority:
-                            newMeeting.priority === "critical"
-                                ? "urgent"
-                                : "high",
-                        status: "pending",
-                        created_by: profile?.id,
-                        due_date: newMeeting.date, // Use meeting date as deadline
-                    }));
-
-                if (tasksToInsert.length > 0) {
-                    const { error: tasksError } = await supabase
-                        .from("tasks")
-                        .insert(tasksToInsert);
-                    if (tasksError)
-                        console.error(
-                            "Failed to assign pre-meeting tasks:",
-                            tasksError,
-                        );
-                }
-            }
-
-            // 4. Dispatch notifications to participants
-            const notificationData = newMeeting.participants.map((pid) => ({
-                recipient_id: pid,
-                meeting_id: meeting.id,
-                title: `${newMeeting.priority.toUpperCase()} EXECUTIVE SUMMONS`,
-                message: `You are summoned for: ${newMeeting.title} at ${format(parseISO(scheduledAt), "p")}. Type: ${newMeeting.type}`,
-            }));
-
-            const { error: notifError } = await supabase
-                .from("meeting_notifications")
-                .insert(notificationData);
-
-            if (notifError) {
-                console.error("Notification dispatch error:", notifError);
-                // Don't throw error for notifications, just log it
-            }
-
-            toast.success("EXECUTIVE SUMMIT DEPLOYED", {
-                description: `Summons sent to ${newMeeting.participants.length} operatives.`,
-            });
-            setIsScheduleMeetingOpen(false);
-
-            // Reset state
-            setNewMeeting({
-                title: "",
-                type: "strategic",
-                priority: "medium",
-                outcome: "decision",
-                duration: "60",
-                location: "Virtual HQ",
-                agendaItems: [],
-                preMeetingTasks: [],
-                notifications: { dashboard: true, email: true, push: true, sms: false },
-                reminder: "15",
-                notes: "",
-                agenda: "",
-                date: "",
-                time: "",
-                participants: [],
-            });
-            setMeetingStep(1);
-            fetchData();
-        } catch (error) {
-            console.error("Meeting failed:", error);
-            toast.error("Deployment failure: " + (error as any)?.message || "Unknown error");
-        }
-    };
-
     const openChatModal = (staff: Profile) => {
         setSelectedStaffForChat(staff);
         setIsChatModalOpen(true);
     };
+
     // Show skeleton loader while initial data is loading
     if (staff.length === 0 && isRefreshing) {
         return <SkeletonCommandCenter />;
@@ -1745,26 +1650,20 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     return (
         <div className={cn(
-            "min-h-screen relative overflow-hidden font-sans selection:bg-indigo-100 p-6 flex flex-col gap-6 transition-colors duration-500",
-            userRole === 'CEO' ? "bg-slate-50 dark:bg-[#050505]" : "bg-[#F8F9FA] dark:bg-zinc-950"
+            "min-h-screen relative overflow-hidden font-sans selection:bg-cyber-blue/20 p-6 flex flex-col gap-6 transition-all duration-700 ease-cinematic",
+            "bg-[#F4F7FE] text-slate-900 dark:bg-transparent dark:text-white"
         )}>
             {/* Cinematic Mesh Gradient Background Layer */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
                 <div className={cn(
-                    "absolute top-[-10%] left-[-10%] rounded-full blur-[120px] animate-pulse transition-all duration-1000",
-                    userRole === 'CEO' 
-                        ? "w-[60%] h-[60%] bg-indigo-600/10 dark:bg-indigo-900/20" 
-                        : "w-[50%] h-[50%] bg-indigo-500/5 dark:bg-indigo-500/10"
+                    "absolute top-[-10%] left-[-10%] rounded-full blur-[120px] animate-glow-pulse transition-all duration-1000",
+                    "w-[60%] h-[60%] bg-cyber-blue/10"
                 )} />
                 <div className={cn(
                     "absolute bottom-[10%] right-[-5%] rounded-full blur-[100px] transition-all duration-1000",
-                    userRole === 'CEO'
-                        ? "w-[50%] h-[50%] bg-amber-600/5 dark:bg-amber-900/10"
-                        : "w-[45%] h-[45%] bg-amber-500/3 dark:bg-amber-500/5"
+                    "w-[50%] h-[50%] bg-cyber-rose/5"
                 )} />
-                {userRole === 'CEO' && (
-                    <div className="absolute top-[40%] left-[20%] w-[40%] h-[40%] rounded-full bg-purple-600/5 dark:bg-purple-900/10 blur-[120px]" />
-                )}
+                <div className="absolute top-[40%] left-[20%] w-[40%] h-[40%] rounded-full bg-cyber-blue/5 blur-[120px]" />
             </div>
 
             {/* FLOATING GLASSMORPHIC HEADER */}
@@ -1808,7 +1707,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     {/* Mobile Dashboard Title */}
                     <div className="md:hidden">
                         <h1 className="text-xl font-black text-slate-900 dark:text-zinc-100 uppercase tracking-tighter">
-                            {userRole === 'CEO' ? 'CEO HUB' : 'MANAGER HUB'}
+                            {userRole === 'CEO' ? 'CEO HUB' : 'ADMINISTRATOR HUB'}
                         </h1>
                         <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Academy Management</p>
                     </div>
@@ -1853,7 +1752,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
                     <div className="hidden md:block">
                         <h1 className="text-sm font-black uppercase tracking-[0.3em] text-slate-900 dark:text-zinc-100 opacity-80">
-                            {userRole === 'CEO' ? 'CEO DASHBOARD' : 'MANAGER DASHBOARD'}
+                            {userRole === 'CEO' ? 'CEO DASHBOARD' : 'ADMINISTRATOR DASHBOARD'}
                         </h1>
                     </div>
 
@@ -2000,7 +1899,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </div>
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">Tactical Revenue</p>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">Today's Revenue</p>
                             <h2 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
                                 ${(stats.paymentsReceivedToday * 250).toLocaleString()}
                             </h2>
@@ -2409,9 +2308,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                             )}
                                         >
                                         <div className="flex justify-between items-start gap-4">
-                                            <div className="flex-1 flex flex-col gap-1.5">
+                                            <div className="flex-1 flex flex-col gap-1.5 min-w-0">
                                                 <div className="flex flex-wrap items-center gap-2">
-                                                    <h4 className="text-sm font-black text-slate-900 dark:text-zinc-100 leading-tight uppercase">
+                                                    <h4 className="text-sm font-black text-slate-900 dark:text-zinc-100 leading-tight uppercase truncate max-w-[220px] sm:max-w-[320px]">
                                                         {t.title}
                                                     </h4>
                                                     {(t as any).creator && (
@@ -2429,41 +2328,48 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                             ) : (
                                                                 <>
                                                                     <Zap className="w-2.5 h-2.5" />
-                                                                    Assigned by Manager
+                                                                    Assigned by Administrator
                                                                 </>
                                                             )}
                                                         </Badge>
                                                     )}
                                                 </div>
-                                                <p className="text-[10px] text-slate-400 dark:text-zinc-400 font-medium tracking-wide line-clamp-2 leading-relaxed">
+                                                <p className="text-[10px] text-slate-400 dark:text-zinc-400 font-medium tracking-wide line-clamp-2 leading-relaxed mt-1">
                                                     {t.description ||
                                                         "No operational description provided."}
                                                 </p>
                                             </div>
-                                            <Badge
-                                                className={cn(
-                                                    "text-[8px] uppercase font-black px-2.5 py-1 flex items-center gap-1.5 border-none shadow-none",
-                                                    isOverdue
-                                                        ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                                                        : t.status === "in_progress"
-                                                          ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                                                          : t.priority === "urgent"
-                                                            ? "bg-amber-500/15 text-amber-600 dark:text-amber-400"
-                                                            : "bg-amber-500/10 text-amber-600/80 dark:text-amber-400/80"
-                                                )}
-                                            >
-                                                {isOverdue ||
-                                                t.priority === "urgent" ? (
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                {renderCEOTaskGauge(t)}
+                                                <Badge
+                                                    className={cn(
+                                                        "text-[8px] uppercase font-black px-2.5 py-1 flex items-center gap-1.5 border-none shadow-none shrink-0",
+                                                        isOverdue
+                                                            ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                                            : (() => {
+                                                                const s = (t.status || "PENDING").toUpperCase();
+                                                                if (s === "PENDING") return "bg-orange-500/10 text-orange-600 dark:text-orange-400";
+                                                                if (s === "IN_PROGRESS") return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
+                                                                if (s === "UNDER_REVIEW" || s === "IN_REVIEW") return "bg-purple-500/10 text-purple-600 dark:text-purple-400 animate-pulse";
+                                                                if (s === "COMPLETED") return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+                                                                return "bg-slate-500/10 text-slate-600 dark:text-slate-400";
+                                                            })()
+                                                    )}
+                                                >
+                                                {(isOverdue || t.priority === "urgent") && (
                                                     <AlertTriangle className="w-2.5 h-2.5" />
-                                                ) : null}
-                                                {isOverdue
-                                                    ? "OVERDUE"
-                                                    : t.priority === "urgent"
-                                                      ? "BLOCKED"
-                                                      : t.status === "in_progress"
-                                                        ? "ACTIVE"
-                                                        : "PENDING"}
+                                                )}
+                                                {(() => {
+                                                    if (isOverdue) return "OVERDUE";
+                                                    const s = (t.status || "PENDING").toUpperCase();
+                                                    if (s === "PENDING") return "PENDING";
+                                                    if (s === "IN_PROGRESS") return "IN PROGRESS";
+                                                    if (s === "UNDER_REVIEW" || s === "IN_REVIEW") return "UNDER REVIEW";
+                                                    if (s === "COMPLETED") return "COMPLETED";
+                                                    return s;
+                                                })()}
                                             </Badge>
+                                            </div>
                                         </div>
 
                                         <div className="mt-2 pt-3 border-t border-theme-border-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -2509,6 +2415,15 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2">
+                                                {((t.status || "").toUpperCase() === "UNDER_REVIEW" || (t.status || "").toUpperCase() === "IN_REVIEW") && (
+                                                    <button
+                                                        onClick={() => approveAndCloseTask(t.id)}
+                                                        className="h-8 px-3 text-[9px] font-black uppercase bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-all border-none shadow-md shadow-emerald-500/25 flex items-center gap-1.5 hover:-translate-y-0.5"
+                                                        title="Approve and Close Task"
+                                                    >
+                                                        <Check className="w-3.5 h-3.5" strokeWidth={3} /> Approve & Close
+                                                    </button>
+                                                )}
                                                 {taskTab === "completed" ? (
                                                     <button
                                                         onClick={() => markTaskAsReviewed(t.id)}
@@ -2553,7 +2468,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <SectionHeader
-                                    title={userRole === 'CEO' ? "CEO Directives" : "Manager Directives"}
+                                    title={userRole === 'CEO' ? "CEO Directives" : "Administrator Directives"}
                                     color="bg-orange-500"
                                     className="mb-0"
                                 />
@@ -2598,7 +2513,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             <ThoughtCapture 
                                 onCapture={() => fetchData()} 
                                 compact={true}
-                                placeholder={userRole === 'CEO' ? "Capture a Strategic CEO Directive..." : "Log a manager task update..."}
+                                placeholder={userRole === 'CEO' ? "Capture a Strategic CEO Directive..." : "Log an administrator task update..."}
                             />
                             
                             {visibleIdeas.length > 0 && (
@@ -2659,12 +2574,17 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             )}
                         </div>
                     </CommandCard>
-
                     <ExecutivePerformanceEngine tasks={tasks} completedTasks={completedTasks} />
                 </aside>
             </main>
 
             {/* MODALS */}
+            <MessageDialog
+                isOpen={isAnnouncementDialogOpen}
+                onClose={() => setIsAnnouncementDialogOpen(false)}
+                defaultType={announcementDefaultType}
+                onSuccess={() => fetchData()}
+            />
             <AddStaffDialog
                 open={isAddStaffOpen}
                 onOpenChange={setIsAddStaffOpen}
@@ -3473,1335 +3393,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     </div>
                 </DialogContent>
             </Dialog>
-            {/* Schedule Meeting Dialog */}
-            <Dialog
-                open={isScheduleMeetingOpen}
-                onOpenChange={setIsScheduleMeetingOpen}
-            >
-                <DialogContent className="bg-gradient-to-br from-slate-50 to-slate-100 border-0 text-slate-900 max-w-6xl rounded-3xl shadow-2xl p-0 flex flex-col max-h-[95vh] backdrop-blur-xl">
-                    {/* Enhanced Header Area */}
-                    <div className="bg-gradient-to-r from-indigo-900 via-purple-900 to-pink-900 p-8 text-white relative flex-shrink-0">
-                        <div className="absolute top-0 right-0 w-96 h-96 bg-gradient-to-br from-orange-500/30 via-pink-500/20 to-purple-500/10 rounded-full -mr-32 -mt-32 blur-3xl pointer-events-none animate-pulse" />
-                        <div className="absolute top-4 left-4 w-32 h-32 bg-cyan-400/10 rounded-full blur-2xl pointer-events-none" />
-                        <div className="relative z-10">
-                            <div className="flex items-start justify-between mb-6">
-                                <div>
-                                    <div className="text-2xl font-black uppercase tracking-widest flex items-center gap-4">
-                                        <div className="p-3 bg-white/15 rounded-2xl backdrop-blur-md shadow-inner border border-white/20">
-                                            <Target className="h-8 w-8 text-orange-400 animate-pulse" />
-                                        </div>
-                                        <div>
-                                            <div className="text-3xl font-black bg-gradient-to-r from-orange-400 to-pink-400 bg-clip-text text-transparent">
-                                                Executive Summit Deployment
-                                            </div>
-                                            <p className="text-white/70 text-sm font-medium uppercase tracking-widest mt-2">
-                                                Configure intelligence parameters & operative assignments
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    {[1, 2, 3].map((step) => (
-                                        <div
-                                            key={step}
-                                            className="flex items-center"
-                                        >
-                                            <div
-                                                className={`w-12 h-12 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-500 ${meetingStep === step ? "bg-gradient-to-r from-orange-500 to-pink-500 text-white shadow-lg shadow-orange-500/50 scale-110" : meetingStep > step ? "bg-white/30 text-white border-2 border-white/50" : "bg-white/10 text-white/40 border-2 border-white/20"}`}
-                                            >
-                                                {meetingStep > step ? (
-                                                    <Check className="w-5 h-5" />
-                                                ) : (
-                                                    <span className="flex items-center gap-1">
-                                                        <span>{step}</span>
-                                                        {meetingStep === step && <span className="w-2 h-2 bg-white rounded-full animate-pulse" />}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            {step < 3 && (
-                                                <div
-                                                    className={`w-16 h-1 mx-2 transition-all duration-500 ${meetingStep > step ? "bg-gradient-to-r from-orange-400 to-pink-400" : "bg-white/20"}`}
-                                                />
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                            
-                            {/* Quick Stats Bar */}
-                            <div className="grid grid-cols-4 gap-4 mt-6 p-4 bg-white/10 rounded-2xl backdrop-blur-md border border-white/20">
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-orange-300">{newMeeting.participants.length}</div>
-                                    <div className="text-xs text-white/60 uppercase tracking-wider">Operatives</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-cyan-300">{newMeeting.agendaItems.length}</div>
-                                    <div className="text-xs text-white/60 uppercase tracking-wider">Agenda Items</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-pink-300">{newMeeting.preMeetingTasks.length}</div>
-                                    <div className="text-xs text-white/60 uppercase tracking-wider">Pre-Tasks</div>
-                                </div>
-                                <div className="text-center">
-                                    <div className="text-2xl font-bold text-green-300">{newMeeting.duration || '60'}</div>
-                                    <div className="text-xs text-white/60 uppercase tracking-wider">Minutes</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Scrollable Content Area */}
-                    <ScrollArea className="flex-1 p-6 custom-scrollbar overflow-y-auto" style={{ height: 'calc(95vh - 280px)' }}>
-                        {/* STEP 1: MEETING INFO */}
-                        {meetingStep === 1 && (
-                            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 pb-4">
-                                <div className="bg-gradient-to-r from-orange-500/10 to-pink-500/10 p-6 rounded-2xl border border-orange-200/30">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-12 h-12 bg-gradient-to-r from-orange-500 to-pink-500 rounded-xl flex items-center justify-center shadow-lg">
-                                            <Target className="h-6 w-6 text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-pink-600 bg-clip-text text-transparent">
-                                                Core Parameters
-                                            </h3>
-                                            <p className="text-slate-600 font-medium">Configure basic meeting information and classification</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-8">
-                                        {/* Title */}
-                                        <div className="space-y-3 col-span-2">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-orange-400 to-pink-400 rounded-lg flex items-center justify-center">
-                                                    <span className="text-white text-xs font-bold">T</span>
-                                                </div>
-                                                Summit Designation (Title)
-                                            </Label>
-                                            <Input
-                                                placeholder="e.g. Q3 Strategic Realignment"
-                                                value={newMeeting.title}
-                                                onChange={(e) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        title: e.target.value,
-                                                    })
-                                                }
-                                                className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-orange-500 focus:shadow-lg focus:shadow-orange-500/20 rounded-2xl h-16 text-lg font-bold placeholder:text-slate-400 transition-all duration-300 px-6"
-                                            />
-                                        </div>
-
-                                        {/* Type */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-cyan-400 rounded-lg flex items-center justify-center">
-                                                    <span className="text-white text-xs font-bold">C</span>
-                                                </div>
-                                                Summit Classification
-                                            </Label>
-                                            <Select
-                                                value={newMeeting.type}
-                                                onValueChange={(val: any) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        type: val,
-                                                    })
-                                                }
-                                            >
-                                                <SelectTrigger className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-blue-500 focus:shadow-lg focus:shadow-blue-500/20 rounded-2xl h-16 px-6 font-bold transition-all duration-300">
-                                                    <SelectValue placeholder="Select classification" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-white/95 backdrop-blur-xl border-2 border-slate-200/50 rounded-2xl shadow-2xl">
-                                                    <SelectItem
-                                                        value="strategic"
-                                                        className="font-bold cursor-pointer hover:bg-blue-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-blue-600 text-xs font-bold">S</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">Strategic Planning</div>
-                                                                <div className="text-xs text-slate-500">Long-term organizational goals</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="review"
-                                                        className="font-bold cursor-pointer hover:bg-green-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-green-600 text-xs font-bold">R</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">Performance Review</div>
-                                                                <div className="text-xs text-slate-500">Quarterly assessments</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="emergency"
-                                                        className="font-bold cursor-pointer hover:bg-red-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-red-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-red-600 text-xs font-bold">E</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-red-600">Emergency Protocol</div>
-                                                                <div className="text-xs text-slate-500">Crisis management</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="1-on-1"
-                                                        className="font-bold cursor-pointer hover:bg-purple-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-purple-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-purple-600 text-xs font-bold">1</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">Direct 1-on-1</div>
-                                                                <div className="text-xs text-slate-500">Individual meetings</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-
-                                        {/* Priority */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-red-400 to-orange-400 rounded-lg flex items-center justify-center">
-                                                    <span className="text-white text-xs font-bold">!</span>
-                                                </div>
-                                                Priority Level
-                                            </Label>
-                                            <Select
-                                                value={newMeeting.priority}
-                                                onValueChange={(val: any) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        priority: val,
-                                                    })
-                                                }
-                                            >
-                                                <SelectTrigger className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-red-500 focus:shadow-lg focus:shadow-red-500/20 rounded-2xl h-16 px-6 font-bold transition-all duration-300">
-                                                    <SelectValue placeholder="Select priority" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-white/95 backdrop-blur-xl border-2 border-slate-200/50 rounded-2xl shadow-2xl">
-                                                    <SelectItem
-                                                        value="low"
-                                                        className="font-bold cursor-pointer hover:bg-slate-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-slate-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-slate-600 text-xs font-bold">L</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-slate-600">Low (Routine)</div>
-                                                                <div className="text-xs text-slate-500">Standard operations</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="medium"
-                                                        className="font-bold cursor-pointer hover:bg-blue-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-blue-600 text-xs font-bold">M</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-blue-600">Medium (Standard)</div>
-                                                                <div className="text-xs text-slate-500">Regular priority</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="high"
-                                                        className="font-bold cursor-pointer hover:bg-orange-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-orange-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-orange-600 text-xs font-bold">H</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-orange-600">High (Accelerated)</div>
-                                                                <div className="text-xs text-slate-500">Urgent attention</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="critical"
-                                                        className="font-bold cursor-pointer hover:bg-red-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-red-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-red-600 text-xs font-bold">C</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold text-red-600">Critical (Immediate)</div>
-                                                                <div className="text-xs text-slate-500">Emergency response</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <div className="my-8 border-t-2 border-slate-200/30" />
-                                
-                                <div className="bg-gradient-to-r from-blue-500/10 to-cyan-500/10 p-6 rounded-2xl border border-blue-200/30">
-                                    <div className="flex items-center gap-3 mb-4">
-                                        <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center shadow-lg">
-                                            <Clock className="h-6 w-6 text-white" />
-                                        </div>
-                                        <div>
-                                            <h3 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
-                                                Logistics & Scheduling
-                                            </h3>
-                                            <p className="text-slate-600 font-medium">Set timing, location, and expected outcomes</p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-3 gap-8">
-                                        {/* Date */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-green-400 to-emerald-400 rounded-lg flex items-center justify-center">
-                                                    <Calendar className="h-4 w-4 text-white" />
-                                                </div>
-                                                Execution Date
-                                            </Label>
-                                            <Input
-                                                type="date"
-                                                value={newMeeting.date}
-                                                onChange={(e) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        date: e.target.value,
-                                                    })
-                                                }
-                                                className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-green-500 focus:shadow-lg focus:shadow-green-500/20 rounded-2xl h-16 px-6 text-sm font-bold transition-all duration-300"
-                                            />
-                                        </div>
-
-                                        {/* Time */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-purple-400 to-pink-400 rounded-lg flex items-center justify-center">
-                                                    <Clock className="h-4 w-4 text-white" />
-                                                </div>
-                                                Launch Time
-                                            </Label>
-                                            <Input
-                                                type="time"
-                                                value={newMeeting.time}
-                                                onChange={(e) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        time: e.target.value,
-                                                    })
-                                                }
-                                                className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-purple-500 focus:shadow-lg focus:shadow-purple-500/20 rounded-2xl h-16 px-6 text-sm font-bold transition-all duration-300"
-                                            />
-                                        </div>
-
-                                        {/* Duration */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-lg flex items-center justify-center">
-                                                    <span className="text-white text-xs font-bold">⏱</span>
-                                                </div>
-                                                Duration (Mins)
-                                            </Label>
-                                            <Select
-                                                value={newMeeting.duration}
-                                                onValueChange={(val) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        duration: val,
-                                                    })
-                                                }
-                                            >
-                                                <SelectTrigger className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-yellow-500 focus:shadow-lg focus:shadow-yellow-500/20 rounded-2xl h-16 px-6 font-bold transition-all duration-300">
-                                                    <SelectValue placeholder="Select duration" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-white/95 backdrop-blur-xl border-2 border-slate-200/50 rounded-2xl shadow-2xl">
-                                                    <SelectItem
-                                                        value="15"
-                                                        className="font-bold cursor-pointer hover:bg-yellow-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="text-2xl font-bold text-yellow-600">15</div>
-                                                            <div>
-                                                                <div className="font-bold">Briefing</div>
-                                                                <div className="text-xs text-slate-500">Quick updates</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="30"
-                                                        className="font-bold cursor-pointer hover:bg-green-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="text-2xl font-bold text-green-600">30</div>
-                                                            <div>
-                                                                <div className="font-bold">Standard</div>
-                                                                <div className="text-xs text-slate-500">Regular meeting</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="60"
-                                                        className="font-bold cursor-pointer hover:bg-blue-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="text-2xl font-bold text-blue-600">60</div>
-                                                            <div>
-                                                                <div className="font-bold">Deep Dive</div>
-                                                                <div className="text-xs text-slate-500">Extended discussion</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="90"
-                                                        className="font-bold cursor-pointer hover:bg-purple-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="text-2xl font-bold text-purple-600">90</div>
-                                                            <div>
-                                                                <div className="font-bold">Extended</div>
-                                                                <div className="text-xs text-slate-500">Comprehensive</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="120"
-                                                        className="font-bold cursor-pointer hover:bg-red-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="text-2xl font-bold text-red-600">120</div>
-                                                            <div>
-                                                                <div className="font-bold">Summit</div>
-                                                                <div className="text-xs text-slate-500">Maximum duration</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-2 gap-8 pt-4">
-                                        {/* Location */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-indigo-400 to-purple-400 rounded-lg flex items-center justify-center">
-                                                    <MapPin className="h-4 w-4 text-white" />
-                                                </div>
-                                                Location / Protocol Link
-                                            </Label>
-                                            <Input
-                                                placeholder="e.g. Boardroom A, Zoom Link, Teams Meeting..."
-                                                value={newMeeting.location}
-                                                onChange={(e) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        location: e.target.value,
-                                                    })
-                                                }
-                                                className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-indigo-500 focus:shadow-lg focus:shadow-indigo-500/20 rounded-2xl h-16 text-sm font-bold placeholder:text-slate-400 transition-all duration-300"
-                                            />
-                                        </div>
-                                        {/* Outcome */}
-                                        <div className="space-y-3">
-                                            <Label className="text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-2">
-                                                <div className="w-8 h-8 bg-gradient-to-r from-teal-400 to-cyan-400 rounded-lg flex items-center justify-center">
-                                                    <Target className="h-4 w-4 text-white" />
-                                                </div>
-                                                Expected Outcome
-                                            </Label>
-                                            <Select
-                                                value={newMeeting.outcome}
-                                                onValueChange={(val: any) =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        outcome: val,
-                                                    })
-                                                }
-                                            >
-                                                <SelectTrigger className="bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 focus:border-teal-500 focus:shadow-lg focus:shadow-teal-500/20 rounded-2xl h-16 px-6 font-bold transition-all duration-300">
-                                                    <SelectValue placeholder="Select outcome" />
-                                                </SelectTrigger>
-                                                <SelectContent className="bg-white/95 backdrop-blur-xl border-2 border-slate-200/50 rounded-2xl shadow-2xl">
-                                                    <SelectItem
-                                                        value="decision"
-                                                        className="font-bold cursor-pointer hover:bg-teal-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-teal-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-teal-600 text-xs font-bold">D</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">Firm Decision</div>
-                                                                <div className="text-xs text-slate-500">Final resolution</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="discussion"
-                                                        className="font-bold cursor-pointer hover:bg-blue-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-blue-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-blue-600 text-xs font-bold">💬</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">Strategic Discussion</div>
-                                                                <div className="text-xs text-slate-500">Brainstorming</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                    <SelectItem
-                                                        value="approval"
-                                                        className="font-bold cursor-pointer hover:bg-green-50 rounded-xl p-3"
-                                                    >
-                                                        <div className="flex items-center gap-3">
-                                                            <div className="w-6 h-6 bg-green-100 rounded-lg flex items-center justify-center">
-                                                                <span className="text-green-600 text-xs font-bold">✓</span>
-                                                            </div>
-                                                            <div>
-                                                                <div className="font-bold">Plan Approval</div>
-                                                                <div className="text-xs text-slate-500">Go-ahead</div>
-                                                            </div>
-                                                        </div>
-                                                    </SelectItem>
-                                                </SelectContent>
-                                            </Select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* STEP 2: PARTICIPANTS & AGENDA */}
-                        {meetingStep === 2 && (
-                            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 pb-4">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    {/* Left Column: Participants */}
-                                    <div className="space-y-4">
-                                        <SectionHeader
-                                            title="Operative Selection"
-                                            color="bg-[#351e6a]"
-                                        />
-                                        <p className="text-xs text-theme-text-40 font-bold px-1 mb-2">
-                                            Select required personnel for this
-                                            summit.
-                                        </p>
-
-                                        <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar bg-theme-bg-white-5 p-3 rounded-2xl border border-theme-border-5">
-                                            {staff.map((s) => {
-                                                const isSelected =
-                                                    newMeeting.participants.includes(
-                                                        s.id,
-                                                    );
-                                                return (
-                                                    <button
-                                                        key={s.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setNewMeeting({
-                                                                ...newMeeting,
-                                                                participants:
-                                                                    isSelected
-                                                                        ? newMeeting.participants.filter(
-                                                                              (
-                                                                                  id,
-                                                                              ) =>
-                                                                                  id !==
-                                                                                  s.id,
-                                                                          )
-                                                                        : [
-                                                                              ...newMeeting.participants,
-                                                                              s.id,
-                                                                          ],
-                                                            });
-                                                        }}
-                                                        className={`flex items-center gap-3 p-3 rounded-xl border-2 transition-all duration-300 ${
-                                                            isSelected
-                                                                ? "bg-[#2F1E73]/5 border-[#2F1E73] shadow-inner"
-                                                                : "bg-theme-card border-transparent hover:border-theme-brand/30"
-                                                        }`}
-                                                    >
-                                                        <div className="relative">
-                                                            <Avatar className="h-10 w-10 border-2 border-theme-border">
-                                                                <AvatarImage
-                                                                    src={
-                                                                        s.avatar_url
-                                                                    }
-                                                                />
-                                                                <AvatarFallback className="bg-theme-bg-white-10 text-xs font-black">
-                                                                    {s.full_name
-                                                                        ?.substring(
-                                                                            0,
-                                                                            2,
-                                                                        )
-                                                                        .toUpperCase()}
-                                                                </AvatarFallback>
-                                                            </Avatar>
-                                                            <div
-                                                                className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-theme-card ${
-                                                                    s.status ===
-                                                                    "online"
-                                                                        ? "bg-green-500"
-                                                                        : s.status ===
-                                                                            "busy"
-                                                                          ? "bg-red-500"
-                                                                          : s.status ===
-                                                                              "away"
-                                                                            ? "bg-yellow-500"
-                                                                            : "bg-gray-400"
-                                                                }`}
-                                                            />
-                                                        </div>
-                                                        <div className="flex flex-col items-start min-w-0 flex-1">
-                                                            <span
-                                                                className={`text-xs font-black uppercase tracking-tight truncate w-full ${isSelected ? "text-[#2F1E73]" : "text-theme-text-80"}`}
-                                                            >
-                                                                {s.full_name}
-                                                            </span>
-                                                            <span className="text-[9px] text-theme-text-30 font-bold uppercase tracking-widest truncate w-full">
-                                                                {s.designation ||
-                                                                    s.department ||
-                                                                    s.role}
-                                                            </span>
-                                                        </div>
-                                                        <div
-                                                            className={`w-5 h-5 rounded-full flex items-center justify-center transition-all ${isSelected ? "bg-[#2F1E73] text-white" : "bg-theme-bg-white-10 text-transparent"}`}
-                                                        >
-                                                            <Check className="w-3 h-3" />
-                                                        </div>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    {/* Right Column: Dynamic Agenda */}
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <SectionHeader
-                                                title="Strategic Agenda"
-                                                color="bg-[#FA4616]"
-                                            />
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                onClick={() =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        agendaItems: [
-                                                            ...newMeeting.agendaItems,
-                                                            {
-                                                                id: Date.now().toString(),
-                                                                topic: "",
-                                                                owner: "",
-                                                                time: "10",
-                                                            },
-                                                        ],
-                                                    })
-                                                }
-                                                className="text-[#FA4616] hover:bg-[#FA4616]/10 hover:text-[#FA4616] text-xs font-black uppercase tracking-widest gap-1 h-8 px-3 rounded-lg"
-                                            >
-                                                <Plus className="w-3 h-3" /> Add
-                                                Topic
-                                            </Button>
-                                        </div>
-                                        <p className="text-xs text-theme-text-40 font-bold px-1 mb-2">
-                                            Build dynamic discussion points.
-                                        </p>
-
-                                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                            {newMeeting.agendaItems.length ===
-                                            0 ? (
-                                                <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-theme-border-10 rounded-2xl bg-theme-bg-white-5">
-                                                    <ListTodo className="h-6 w-6 text-theme-text-20 mb-2" />
-                                                    <p className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest">
-                                                        No agenda items defined
-                                                    </p>
-                                                </div>
-                                            ) : (
-                                                newMeeting.agendaItems.map(
-                                                    (item, index) => (
-                                                        <div
-                                                            key={item.id}
-                                                            className="bg-theme-bg-white-5 border border-theme-border-10 rounded-2xl p-4 space-y-3 relative group animate-in fade-in slide-in-from-bottom-2"
-                                                        >
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    setNewMeeting(
-                                                                        {
-                                                                            ...newMeeting,
-                                                                            agendaItems:
-                                                                                newMeeting.agendaItems.filter(
-                                                                                    (
-                                                                                        i,
-                                                                                    ) =>
-                                                                                        i.id !==
-                                                                                        item.id,
-                                                                                ),
-                                                                        },
-                                                                    )
-                                                                }
-                                                                className="absolute top-3 right-3 text-theme-text-20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            >
-                                                                <X className="h-4 w-4" />
-                                                            </button>
-
-                                                            <div className="space-y-1 pr-6">
-                                                                <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40">
-                                                                    Topic{" "}
-                                                                    {index + 1}
-                                                                </Label>
-                                                                <Input
-                                                                    placeholder="e.g. Q3 Marketing Review"
-                                                                    value={
-                                                                        item.topic
-                                                                    }
-                                                                    onChange={(
-                                                                        e,
-                                                                    ) => {
-                                                                        const newItems =
-                                                                            [
-                                                                                ...newMeeting.agendaItems,
-                                                                            ];
-                                                                        newItems[
-                                                                            index
-                                                                        ].topic =
-                                                                            e.target.value;
-                                                                        setNewMeeting(
-                                                                            {
-                                                                                ...newMeeting,
-                                                                                agendaItems:
-                                                                                    newItems,
-                                                                            },
-                                                                        );
-                                                                    }}
-                                                                    className="h-10 bg-theme-card border-none text-sm font-bold placeholder:text-theme-text-20 shadow-inner"
-                                                                />
-                                                            </div>
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40">
-                                                                        Owner
-                                                                    </Label>
-                                                                    <Select
-                                                                        value={
-                                                                            item.owner
-                                                                        }
-                                                                        onValueChange={(
-                                                                            val,
-                                                                        ) => {
-                                                                            const newItems =
-                                                                                [
-                                                                                    ...newMeeting.agendaItems,
-                                                                                ];
-                                                                            newItems[
-                                                                                index
-                                                                            ].owner =
-                                                                                val;
-                                                                            setNewMeeting(
-                                                                                {
-                                                                                    ...newMeeting,
-                                                                                    agendaItems:
-                                                                                        newItems,
-                                                                                },
-                                                                            );
-                                                                        }}
-                                                                    >
-                                                                        <SelectTrigger className="h-10 bg-theme-card border-none rounded-xl px-3 font-bold text-xs shadow-inner">
-                                                                            <SelectValue placeholder="Assign" />
-                                                                        </SelectTrigger>
-                                                                        <SelectContent className="bg-theme-card border-theme-border rounded-xl shadow-xl">
-                                                                            {staff
-                                                                                .filter(
-                                                                                    (
-                                                                                        s,
-                                                                                    ) =>
-                                                                                        newMeeting.participants.includes(
-                                                                                            s.id,
-                                                                                        ) ||
-                                                                                        newMeeting
-                                                                                            .participants
-                                                                                            .length ===
-                                                                                            0,
-                                                                                )
-                                                                                .map(
-                                                                                    (
-                                                                                        s,
-                                                                                    ) => (
-                                                                                        <SelectItem
-                                                                                            key={
-                                                                                                s.id
-                                                                                            }
-                                                                                            value={
-                                                                                                s.id
-                                                                                            }
-                                                                                            className="font-bold cursor-pointer text-xs"
-                                                                                        >
-                                                                                            {
-                                                                                                s.full_name
-                                                                                            }
-                                                                                        </SelectItem>
-                                                                                    ),
-                                                                                )}
-                                                                            <SelectItem
-                                                                                value="CEO"
-                                                                                className="font-bold cursor-pointer text-xs text-[#FA4616]"
-                                                                            >
-                                                                                CEO
-                                                                                (Self)
-                                                                            </SelectItem>
-                                                                        </SelectContent>
-                                                                    </Select>
-                                                                </div>
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40">
-                                                                        Time
-                                                                        (Mins)
-                                                                    </Label>
-                                                                    <Input
-                                                                        type="number"
-                                                                        min="1"
-                                                                        value={
-                                                                            item.time
-                                                                        }
-                                                                        onChange={(
-                                                                            e,
-                                                                        ) => {
-                                                                            const newItems =
-                                                                                [
-                                                                                    ...newMeeting.agendaItems,
-                                                                                ];
-                                                                            newItems[
-                                                                                index
-                                                                            ].time =
-                                                                                e.target.value;
-                                                                            setNewMeeting(
-                                                                                {
-                                                                                    ...newMeeting,
-                                                                                    agendaItems:
-                                                                                        newItems,
-                                                                                },
-                                                                            );
-                                                                        }}
-                                                                        className="h-10 bg-theme-card border-none text-xs font-bold shadow-inner"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ),
-                                                )
-                                            )}
-
-                                            {/* Textarea Fallback for quick notes if they don't want structured agenda */}
-                                            <div className="mt-4 pt-4 border-t border-theme-border-5">
-                                                <Label className="text-[10px] uppercase font-black tracking-widest text-theme-text-40 ml-1 mb-2 block">
-                                                    General Notes / Quick Agenda
-                                                </Label>
-                                                <Textarea
-                                                    placeholder="Or paste unformatted agenda / notes here..."
-                                                    value={newMeeting.agenda}
-                                                    onChange={(e) =>
-                                                        setNewMeeting({
-                                                            ...newMeeting,
-                                                            agenda: e.target
-                                                                .value,
-                                                        })
-                                                    }
-                                                    className="bg-theme-bg-white-5 border-theme-border-10 focus:border-theme-brand rounded-xl min-h-[80px] text-xs font-bold placeholder:text-theme-text-20 transition-all resize-none shadow-inner"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {/* STEP 3: ACTIONS & REVIEW */}
-                        {meetingStep === 3 && (
-                            <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-300 pb-4">
-                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                                    {/* Left Column: Pre-Meeting Tasks */}
-                                    <div className="space-y-4">
-                                        <div className="flex items-center justify-between">
-                                            <SectionHeader
-                                                title="Pre-Meeting Directives"
-                                                color="bg-[#3b82f6]"
-                                            />
-                                            <Button
-                                                type="button"
-                                                variant="ghost"
-                                                onClick={() =>
-                                                    setNewMeeting({
-                                                        ...newMeeting,
-                                                        preMeetingTasks: [
-                                                            ...newMeeting.preMeetingTasks,
-                                                            {
-                                                                id: Date.now().toString(),
-                                                                title: "",
-                                                                assigned_to: "",
-                                                                deadline: "",
-                                                            },
-                                                        ],
-                                                    })
-                                                }
-                                                className="text-[#3b82f6] hover:bg-[#3b82f6]/10 hover:text-[#3b82f6] text-xs font-black uppercase tracking-widest gap-1 h-8 px-3 rounded-lg"
-                                            >
-                                                <Plus className="w-3 h-3" />{" "}
-                                                Assign Task
-                                            </Button>
-                                        </div>
-                                        <p className="text-xs text-theme-text-40 font-bold px-1 mb-2">
-                                            Assign preparatory tasks required
-                                            before deployment.
-                                        </p>
-
-                                        <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                                            {newMeeting.preMeetingTasks
-                                                .length === 0 ? (
-                                                <div className="flex flex-col items-center justify-center h-32 border-2 border-dashed border-theme-border-10 rounded-2xl bg-theme-bg-white-5">
-                                                    <CheckSquare className="h-6 w-6 text-theme-text-20 mb-2" />
-                                                    <p className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest">
-                                                        No pre-meeting tasks
-                                                        required
-                                                    </p>
-                                                </div>
-                                            ) : (
-                                                newMeeting.preMeetingTasks.map(
-                                                    (task, index) => (
-                                                        <div
-                                                            key={task.id}
-                                                            className="bg-theme-bg-white-5 border border-theme-border-10 rounded-2xl p-4 space-y-3 relative group animate-in fade-in slide-in-from-bottom-2"
-                                                        >
-                                                            <button
-                                                                type="button"
-                                                                onClick={() =>
-                                                                    setNewMeeting(
-                                                                        {
-                                                                            ...newMeeting,
-                                                                            preMeetingTasks:
-                                                                                newMeeting.preMeetingTasks.filter(
-                                                                                    (
-                                                                                        t,
-                                                                                    ) =>
-                                                                                        t.id !==
-                                                                                        task.id,
-                                                                                ),
-                                                                        },
-                                                                    )
-                                                                }
-                                                                className="absolute top-3 right-3 text-theme-text-20 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                            >
-                                                                <X className="h-4 w-4" />
-                                                            </button>
-
-                                                            <div className="space-y-1 pr-6">
-                                                                <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40">
-                                                                    Task
-                                                                    Directive
-                                                                </Label>
-                                                                <Input
-                                                                    placeholder="e.g. Prepare Q3 financial reports"
-                                                                    value={
-                                                                        task.title
-                                                                    }
-                                                                    onChange={(
-                                                                        e,
-                                                                    ) => {
-                                                                        const newTasks =
-                                                                            [
-                                                                                ...newMeeting.preMeetingTasks,
-                                                                            ];
-                                                                        newTasks[
-                                                                            index
-                                                                        ].title =
-                                                                            e.target.value;
-                                                                        setNewMeeting(
-                                                                            {
-                                                                                ...newMeeting,
-                                                                                preMeetingTasks:
-                                                                                    newTasks,
-                                                                            },
-                                                                        );
-                                                                    }}
-                                                                    className="h-10 bg-theme-card border-none text-sm font-bold placeholder:text-theme-text-20 shadow-inner"
-                                                                />
-                                                            </div>
-                                                            <div className="grid grid-cols-2 gap-3">
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40">
-                                                                        Operative
-                                                                    </Label>
-                                                                    <Select
-                                                                        value={
-                                                                            task.assigned_to
-                                                                        }
-                                                                        onValueChange={(
-                                                                            val,
-                                                                        ) => {
-                                                                            const newTasks =
-                                                                                [
-                                                                                    ...newMeeting.preMeetingTasks,
-                                                                                ];
-                                                                            newTasks[
-                                                                                index
-                                                                            ].assigned_to =
-                                                                                val;
-                                                                            setNewMeeting(
-                                                                                {
-                                                                                    ...newMeeting,
-                                                                                    preMeetingTasks:
-                                                                                        newTasks,
-                                                                                },
-                                                                            );
-                                                                        }}
-                                                                    >
-                                                                        <SelectTrigger className="h-10 bg-theme-card border-none rounded-xl px-3 font-bold text-xs shadow-inner">
-                                                                            <SelectValue placeholder="Assign" />
-                                                                        </SelectTrigger>
-                                                                        <SelectContent className="bg-theme-card border-theme-border rounded-xl shadow-xl">
-                                                                            {staff
-                                                                                .filter(
-                                                                                    (
-                                                                                        s,
-                                                                                    ) =>
-                                                                                        newMeeting.participants.includes(
-                                                                                            s.id,
-                                                                                        ) ||
-                                                                                        newMeeting
-                                                                                            .participants
-                                                                                            .length ===
-                                                                                            0,
-                                                                                )
-                                                                                .map(
-                                                                                    (
-                                                                                        s,
-                                                                                    ) => (
-                                                                                        <SelectItem
-                                                                                            key={
-                                                                                                s.id
-                                                                                            }
-                                                                                            value={
-                                                                                                s.id
-                                                                                            }
-                                                                                            className="font-bold cursor-pointer text-xs"
-                                                                                        >
-                                                                                            {
-                                                                                                s.full_name
-                                                                                            }
-                                                                                        </SelectItem>
-                                                                                    ),
-                                                                                )}
-                                                                            <SelectItem
-                                                                                value="CEO"
-                                                                                className="font-bold cursor-pointer text-xs text-[#FA4616]"
-                                                                            >
-                                                                                CEO
-                                                                                (Self)
-                                                                            </SelectItem>
-                                                                        </SelectContent>
-                                                                    </Select>
-                                                                </div>
-                                                                <div className="space-y-1">
-                                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40">
-                                                                        Deadline
-                                                                    </Label>
-                                                                    <Input
-                                                                        type="date"
-                                                                        value={
-                                                                            task.deadline ||
-                                                                            newMeeting.date
-                                                                        }
-                                                                        onChange={(
-                                                                            e,
-                                                                        ) => {
-                                                                            const newTasks =
-                                                                                [
-                                                                                    ...newMeeting.preMeetingTasks,
-                                                                                ];
-                                                                            newTasks[
-                                                                                index
-                                                                            ].deadline =
-                                                                                e.target.value;
-                                                                            setNewMeeting(
-                                                                                {
-                                                                                    ...newMeeting,
-                                                                                    preMeetingTasks:
-                                                                                        newTasks,
-                                                                                },
-                                                                            );
-                                                                        }}
-                                                                        className="h-10 bg-theme-card border-none text-xs font-bold shadow-inner"
-                                                                    />
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    ),
-                                                )
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Right Column: Final Review Summary */}
-                                    <div className="space-y-4">
-                                        <SectionHeader
-                                            title="Deployment Summary"
-                                            color="bg-[#10b981]"
-                                        />
-                                        <p className="text-xs text-theme-text-40 font-bold px-1 mb-2">
-                                            Review final parameters before
-                                            executing protocol.
-                                        </p>
-
-                                        <div className="bg-white dark:bg-zinc-900 shadow-sm dark:shadow-2xl border border-slate-200 dark:border-zinc-800/50">
-                                            {/* Header Info */}
-                                            <div>
-                                                <div className="flex items-start justify-between">
-                                                    <div>
-                                                        <h4 className="text-base font-black uppercase tracking-tight text-theme-text max-w-[200px] truncate">
-                                                            {newMeeting.title ||
-                                                                "Unnamed Summit"}
-                                                        </h4>
-                                                        <p className="text-[10px] font-bold text-theme-text-40 uppercase tracking-widest mt-1">
-                                                            {newMeeting.type} •{" "}
-                                                            {
-                                                                newMeeting.priority
-                                                            }{" "}
-                                                            Priority
-                                                        </p>
-                                                    </div>
-                                                    <div className="text-right">
-                                                        <div className="text-sm font-black text-[#FA4616] bg-[#FA4616]/10 px-3 py-1 rounded-lg inline-block">
-                                                            {newMeeting.date
-                                                                ? new Date(
-                                                                      newMeeting.date,
-                                                                  ).toLocaleDateString(
-                                                                      "en-US",
-                                                                      {
-                                                                          month: "short",
-                                                                          day: "numeric",
-                                                                      },
-                                                                  )
-                                                                : "-- / --"}
-                                                        </div>
-                                                        <p className="text-[10px] font-bold text-theme-text-40 mt-1 uppercase">
-                                                            {newMeeting.time ||
-                                                                "--:--"}{" "}
-                                                            (
-                                                            {
-                                                                newMeeting.duration
-                                                            }
-                                                            m)
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-
-                                            <div className="border-t border-theme-border-5" />
-
-                                            {/* Operatives */}
-                                            <div>
-                                                <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40 block mb-3">
-                                                    Deployed Operatives (
-                                                    {
-                                                        newMeeting.participants
-                                                            .length
-                                                    }
-                                                    )
-                                                </Label>
-                                                <div className="flex flex-wrap gap-2">
-                                                    {newMeeting.participants
-                                                        .length > 0 ? (
-                                                        newMeeting.participants.map(
-                                                            (id) => {
-                                                                const s =
-                                                                    staff.find(
-                                                                        (
-                                                                            staff,
-                                                                        ) =>
-                                                                            staff.id ===
-                                                                            id,
-                                                                    );
-                                                                return s ? (
-                                                                    <div
-                                                                        key={id}
-                                                                        className="flex items-center gap-1.5 bg-theme-bg-white-5 border border-theme-border-10 rounded-full pl-1 pr-3 py-1"
-                                                                    >
-                                                                        <Avatar className="h-4 w-4">
-                                                                            <AvatarImage
-                                                                                src={
-                                                                                    s.avatar_url
-                                                                                }
-                                                                            />
-                                                                            <AvatarFallback className="bg-theme-bg-white-10 text-[8px] font-black">
-                                                                                {s.full_name
-                                                                                    ?.substring(
-                                                                                        0,
-                                                                                        2,
-                                                                                    )
-                                                                                    .toUpperCase()}
-                                                                            </AvatarFallback>
-                                                                        </Avatar>
-                                                                        <span className="text-[9px] font-bold uppercase truncate max-w-[80px]">
-                                                                            {
-                                                                                s.full_name?.split(
-                                                                                    " ",
-                                                                                )[0]
-                                                                            }
-                                                                        </span>
-                                                                    </div>
-                                                                ) : null;
-                                                            },
-                                                        )
-                                                    ) : (
-                                                        <span className="text-[10px] font-bold text-red-500 uppercase tracking-widest">
-                                                            No operatives
-                                                            selected
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            <div className="border-t border-theme-border-5" />
-
-                                            {/* Agenda & Tasks Overviews */}
-                                            <div className="grid grid-cols-2 gap-4">
-                                                <div>
-                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40 block mb-2">
-                                                        Agenda Topics
-                                                    </Label>
-                                                    <div className="text-xs font-black text-theme-text">
-                                                        {
-                                                            newMeeting
-                                                                .agendaItems
-                                                                .length
-                                                        }{" "}
-                                                        Defined
-                                                    </div>
-                                                </div>
-                                                <div>
-                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40 block mb-2">
-                                                        Pre-Meeting Tasks
-                                                    </Label>
-                                                    <div className="text-xs font-black text-theme-text">
-                                                        {
-                                                            newMeeting
-                                                                .preMeetingTasks
-                                                                .length
-                                                        }{" "}
-                                                        Assigned
-                                                    </div>
-                                                </div>
-                                                <div className="col-span-2">
-                                                    <Label className="text-[9px] uppercase font-black tracking-widest text-theme-text-40 block mb-2">
-                                                        Location
-                                                    </Label>
-                                                    <div className="text-xs font-bold text-theme-text bg-theme-bg-white-5 p-2 rounded-lg break-all">
-                                                        {newMeeting.location ||
-                                                            "Not specified"}
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </ScrollArea>
-
-                    {/* Enhanced Fixed Footer Actions */}
-                    <div className="p-8 border-t-2 border-slate-200/30 bg-gradient-to-r from-slate-50/90 to-slate-100/90 backdrop-blur-xl flex items-center justify-between flex-shrink-0">
-                        <Button
-                            type="button"
-                            onClick={() =>
-                                meetingStep > 1
-                                    ? setMeetingStep((prev) => prev - 1)
-                                    : setIsScheduleMeetingOpen(false)
-                            }
-                            className="group relative bg-white/80 backdrop-blur-sm border-2 border-slate-200/50 hover:bg-slate-100 hover:border-slate-300 hover:shadow-lg text-slate-600 font-bold uppercase tracking-widest text-sm h-14 px-8 rounded-2xl transition-all duration-300"
-                        >
-                            <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 bg-slate-200 rounded-lg flex items-center justify-center group-hover:bg-slate-300 transition-colors">
-                                    {meetingStep === 1 ? (
-                                        <X className="w-4 h-4" />
-                                    ) : (
-                                        <ChevronLeft className="w-4 h-4" />
-                                    )}
-                                </div>
-                                <span>
-                                    {meetingStep === 1
-                                        ? "Cancel Deployment"
-                                        : "Previous Phase"}
-                                </span>
-                            </div>
-                            <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                        </Button>
-
-                        {meetingStep < 3 ? (
-                            <Button
-                                type="button"
-                                onClick={() =>
-                                    setMeetingStep((prev) => prev + 1)
-                                }
-                                disabled={
-                                    meetingStep === 1 &&
-                                    (!newMeeting.title ||
-                                        !newMeeting.date ||
-                                        !newMeeting.time)
-                                }
-                                className="group relative bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 hover:from-blue-700 hover:via-purple-700 hover:to-pink-700 text-white font-bold uppercase tracking-widest text-sm h-14 px-10 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-2xl hover:shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-3"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <span>Advance to Phase {meetingStep + 1}</span>
-                                    <ArrowRight className="w-5 h-5 transition-transform group-hover:translate-x-1" />
-                                </div>
-                                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                                <div className="absolute -inset-1 bg-gradient-to-r from-blue-400/20 via-purple-400/20 to-pink-400/20 rounded-2xl animate-spin-slow opacity-30" />
-                            </Button>
-                        ) : (
-                            <Button
-                                type="button"
-                                onClick={handleScheduleMeeting}
-                                className="group relative bg-gradient-to-r from-orange-600 via-red-600 to-pink-600 hover:from-orange-700 hover:via-red-700 hover:to-pink-700 text-white font-black uppercase tracking-widest text-sm h-16 px-12 rounded-2xl transition-all duration-300 shadow-2xl hover:shadow-3xl hover:shadow-orange-500/40 flex items-center gap-4"
-                            >
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
-                                        <Rocket className="w-6 h-6 text-white animate-pulse" />
-                                    </div>
-                                    <div>
-                                        <div className="text-lg font-bold">Execute Summit Deployment</div>
-                                        <div className="text-xs opacity-80">Finalize & notify operatives</div>
-                                    </div>
-                                </div>
-                                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                                <div className="absolute -inset-2 bg-gradient-to-r from-orange-500/30 via-red-500/20 to-pink-500/30 rounded-2xl animate-pulse opacity-20" />
-                                <div className="absolute top-2 right-2 w-6 h-6 bg-green-400 rounded-full flex items-center justify-center animate-ping">
-                                    <Check className="w-4 h-4 text-white" />
-                                </div>
-                            </Button>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
-
             {/* Delegation Modal */}
             <Dialog open={isDelegationModalOpen} onOpenChange={setIsDelegationModalOpen}>
                 <DialogContent className="bg-white/95 backdrop-blur-2xl border-slate-200 text-slate-900 max-w-lg rounded-3xl shadow-2xl p-6 overflow-hidden">

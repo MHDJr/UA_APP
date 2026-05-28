@@ -15,6 +15,7 @@ import { ErrorBoundary } from "@/components/error-boundary";
 import { NetworkStatusProvider } from "@/components/network-status-provider";
 import { TabResiliencyEngine } from "@/components/tab-resiliency-engine";
 import { MobileBottomNav } from "@/components/mobile-bottom-nav";
+import { SyncWrapper } from "@/components/sync-wrapper";
 
 export const metadata: Metadata = {
     title: "Usthad Academy - Executive Command",
@@ -63,20 +64,22 @@ export default function RootLayout({
                         <ThemeProvider>
                             <FocusProvider>
                                 <QueryProvider>
-                                    <AuthProvider>
-                                        <TabResiliencyEngine>
-                                            {children}
-                                            <MobileBottomNav />
-                                        </TabResiliencyEngine>
-                                        <Toaster
-                                            position="top-right"
-                                            theme="dark"
-                                            toastOptions={{
-                                                className:
-                                                    "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
-                                            }}
-                                        />
-                                    </AuthProvider>
+                                    <SyncWrapper>
+                                        <AuthProvider>
+                                            <TabResiliencyEngine>
+                                                {children}
+                                                <MobileBottomNav />
+                                            </TabResiliencyEngine>
+                                            <Toaster
+                                                position="top-right"
+                                                theme="dark"
+                                                toastOptions={{
+                                                    className:
+                                                        "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
+                                                }}
+                                            />
+                                        </AuthProvider>
+                                    </SyncWrapper>
                                 </QueryProvider>
                             </FocusProvider>
                         </ThemeProvider>

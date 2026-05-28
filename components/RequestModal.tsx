@@ -57,12 +57,14 @@ type RequestTypeConfig = {
 
 interface BudgetFormData {
     amount: string;
-    category: "marketing" | "development" | "office" | "";
+    category: "marketing" | "development" | "office" | "other" | "";
+    otherCategory?: string;
     reason: string;
 }
 
 interface AccessElevationFormData {
-    system: "finance" | "student_db" | "admin_panel" | "";
+    system: "finance" | "student_db" | "admin_panel" | "other" | "";
+    otherSystem?: string;
     duration: "permanent" | "temporary" | "";
     justification: string;
 }
@@ -75,6 +77,7 @@ interface RoleChangeFormData {
 
 interface PermissionFormData {
     specificAction: string;
+    otherSpecificAction?: string;
     managerialJustification: string;
     urgency: "low" | "medium" | "high" | "urgent";
 }
@@ -161,11 +164,13 @@ const validateForm = (formData: FormData): boolean => {
             return (
                 formData.data.amount.trim() !== "" &&
                 formData.data.category !== "" &&
+                (formData.data.category !== "other" || (formData.data.otherCategory || "").trim() !== "") &&
                 formData.data.reason.trim() !== ""
             );
         case "access_elevation":
             return (
                 formData.data.system !== "" &&
+                (formData.data.system !== "other" || (formData.data.otherSystem || "").trim() !== "") &&
                 formData.data.duration !== "" &&
                 formData.data.justification.trim() !== ""
             );
@@ -177,7 +182,8 @@ const validateForm = (formData: FormData): boolean => {
             );
         case "permission":
             return (
-                formData.data.specificAction.trim() !== "" &&
+                formData.data.specificAction !== "" &&
+                (formData.data.specificAction !== "custom" || (formData.data.otherSpecificAction || "").trim() !== "") &&
                 formData.data.managerialJustification.trim() !== ""
             );
         default:
@@ -314,11 +320,12 @@ const BudgetFormStep: React.FC<{
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider ml-1">
                     Category <span className="text-[#F14D24]">*</span>
                 </label>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     {[
                         { id: "marketing", label: "Marketing", icon: Building2 },
                         { id: "development", label: "Dev", icon: Code2 },
                         { id: "office", label: "Office", icon: Briefcase },
+                        { id: "other", label: "Other", icon: Sparkles },
                     ].map((cat) => {
                         const Icon = cat.icon;
                         const isSelected = data.category === cat.id;
@@ -341,6 +348,29 @@ const BudgetFormStep: React.FC<{
                         );
                     })}
                 </div>
+                <AnimatePresence>
+                    {data.category === "other" && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="mt-2"
+                        >
+                            <input
+                                type="text"
+                                value={data.otherCategory || ""}
+                                onChange={(e) => onChange({ ...data, otherCategory: e.target.value })}
+                                placeholder="Type the category..."
+                                className={cn(
+                                    "w-full px-4 py-3 bg-white/80 border-2 rounded-xl",
+                                    "focus:ring-0 focus:border-[#31267D] outline-none",
+                                    "text-sm font-semibold text-slate-900",
+                                    "placeholder:text-slate-400"
+                                )}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
 
             <motion.div variants={fadeInUp} className="space-y-2">
@@ -390,6 +420,7 @@ const AccessElevationFormStep: React.FC<{
                         { id: "finance", label: "Finance System", desc: "Access to financial records and reports" },
                         { id: "student_db", label: "Student Database", desc: "Full access to student records" },
                         { id: "admin_panel", label: "Admin Panel", desc: "System administration privileges" },
+                        { id: "other", label: "Other System", desc: "Request access to other systems" },
                     ].map((sys) => {
                         const isSelected = data.system === sys.id;
                         return (
@@ -414,6 +445,29 @@ const AccessElevationFormStep: React.FC<{
                         );
                     })}
                 </div>
+                <AnimatePresence>
+                    {data.system === "other" && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="mt-2"
+                        >
+                            <input
+                                type="text"
+                                value={data.otherSystem || ""}
+                                onChange={(e) => onChange({ ...data, otherSystem: e.target.value })}
+                                placeholder="Type the system name..."
+                                className={cn(
+                                    "w-full px-4 py-3 bg-white/80 border-2 rounded-xl",
+                                    "focus:ring-0 focus:border-[#31267D] outline-none",
+                                    "text-sm font-semibold text-slate-900",
+                                    "placeholder:text-slate-400"
+                                )}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
 
             <motion.div variants={fadeInUp} className="space-y-2">
@@ -573,7 +627,7 @@ const PermissionFormStep: React.FC<{
                         { id: "approve_expenses", label: "Approve Expenses", desc: "Authorize expenditure requests" },
                         { id: "custom", label: "Custom Action", desc: "Other specific permission" },
                     ].map((action) => {
-                        const isSelected = data.specificAction === action.id || (action.id === "custom" && data.specificAction && !["delete_records", "export_data", "modify_financial", "approve_expenses"].includes(data.specificAction));
+                        const isSelected = data.specificAction === action.id;
                         return (
                             <button
                                 key={action.id}
@@ -596,22 +650,29 @@ const PermissionFormStep: React.FC<{
                         );
                     })}
                 </div>
-                {data.specificAction === "custom" && (
-                    <motion.input
-                        initial={{ opacity: 0, height: 0 }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        type="text"
-                        value={data.specificAction === "custom" ? "" : data.specificAction}
-                        onChange={(e) => onChange({ ...data, specificAction: e.target.value })}
-                        placeholder="Describe the custom action..."
-                        className={cn(
-                            "w-full px-4 py-3 bg-white/80 border-2 rounded-xl mt-2",
-                            "focus:ring-0 focus:border-[#31267D] outline-none",
-                            "text-sm font-semibold text-slate-900",
-                            "placeholder:text-slate-400"
-                        )}
-                    />
-                )}
+                <AnimatePresence>
+                    {data.specificAction === "custom" && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: "auto" }}
+                            exit={{ opacity: 0, height: 0 }}
+                            className="mt-2"
+                        >
+                            <input
+                                type="text"
+                                value={data.otherSpecificAction || ""}
+                                onChange={(e) => onChange({ ...data, otherSpecificAction: e.target.value })}
+                                placeholder="Describe the custom action..."
+                                className={cn(
+                                    "w-full px-4 py-3 bg-white/80 border-2 rounded-xl",
+                                    "focus:ring-0 focus:border-[#31267D] outline-none",
+                                    "text-sm font-semibold text-slate-900",
+                                    "placeholder:text-slate-400"
+                                )}
+                            />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </motion.div>
 
             <motion.div variants={fadeInUp} className="space-y-2">
@@ -644,7 +705,7 @@ const PermissionFormStep: React.FC<{
 
             <motion.div variants={fadeInUp} className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider ml-1">
-                    Managerial Justification <span className="text-[#F14D24]">*</span>
+                    Administrative Justification <span className="text-[#F14D24]">*</span>
                 </label>
                 <textarea
                     value={data.managerialJustification}
@@ -678,18 +739,20 @@ const ReviewStep: React.FC<{
         switch (formData.type) {
             case "budget":
                 const budgetData = formData.data as BudgetFormData;
+                const budgetCategory = budgetData.category === "other" ? (budgetData.otherCategory || "Other") : (budgetData.category.charAt(0).toUpperCase() + budgetData.category.slice(1));
                 return (
                     <div className="space-y-4">
                         <ReviewItem label="Amount" value={`$${budgetData.amount}`} icon={DollarSign} />
-                        <ReviewItem label="Category" value={budgetData.category.charAt(0).toUpperCase() + budgetData.category.slice(1)} icon={Briefcase} />
+                        <ReviewItem label="Category" value={budgetCategory} icon={Briefcase} />
                         <ReviewItem label="Reason" value={budgetData.reason} icon={FileText} isMultiline />
                     </div>
                 );
             case "access_elevation":
                 const accessData = formData.data as AccessElevationFormData;
+                const accessSystem = accessData.system === "other" ? (accessData.otherSystem || "Other") : (accessData.system.replace("_", " ").toUpperCase());
                 return (
                     <div className="space-y-4">
-                        <ReviewItem label="System" value={accessData.system.replace("_", " ").toUpperCase()} icon={Shield} />
+                        <ReviewItem label="System" value={accessSystem} icon={Shield} />
                         <ReviewItem label="Duration" value={accessData.duration.charAt(0).toUpperCase() + accessData.duration.slice(1)} icon={Calendar} />
                         <ReviewItem label="Justification" value={accessData.justification} icon={FileText} isMultiline />
                     </div>
@@ -705,9 +768,10 @@ const ReviewStep: React.FC<{
                 );
             case "permission":
                 const permData = formData.data as PermissionFormData;
+                const permAction = permData.specificAction === "custom" ? (permData.otherSpecificAction || "Custom Action") : (permData.specificAction.replace("_", " ").toUpperCase());
                 return (
                     <div className="space-y-4">
-                        <ReviewItem label="Specific Action" value={permData.specificAction.replace("_", " ").toUpperCase()} icon={Key} />
+                        <ReviewItem label="Specific Action" value={permAction} icon={Key} />
                         <ReviewItem label="Urgency" value={permData.urgency.toUpperCase()} icon={AlertCircle} />
                         <ReviewItem label="Justification" value={permData.managerialJustification} icon={FileText} isMultiline />
                     </div>
@@ -832,10 +896,12 @@ export const RequestModal: React.FC<RequestModalProps> = ({
     const [budgetForm, setBudgetForm] = useState<BudgetFormData>({
         amount: "",
         category: "",
+        otherCategory: "",
         reason: "",
     });
     const [accessForm, setAccessForm] = useState<AccessElevationFormData>({
         system: "",
+        otherSystem: "",
         duration: "",
         justification: "",
     });
@@ -846,6 +912,7 @@ export const RequestModal: React.FC<RequestModalProps> = ({
     });
     const [permissionForm, setPermissionForm] = useState<PermissionFormData>({
         specificAction: "",
+        otherSpecificAction: "",
         managerialJustification: "",
         urgency: "medium",
     });
@@ -912,21 +979,24 @@ export const RequestModal: React.FC<RequestModalProps> = ({
             // Build title and description based on type
             switch (formData.type) {
                 case "budget":
-                    requestPayload.title = `Budget Request: ${formData.data.category.toUpperCase()}`;
-                    requestPayload.description = `Amount: $${formData.data.amount} | Category: ${formData.data.category} | Reason: ${formData.data.reason}`;
+                    const category = formData.data.category === "other" ? formData.data.otherCategory : formData.data.category;
+                    requestPayload.title = `Budget Request: ${(category || "").toUpperCase()}`;
+                    requestPayload.description = `Amount: $${formData.data.amount} | Category: ${category} | Reason: ${formData.data.reason}`;
                     requestPayload.amount = parseFloat(formData.data.amount);
                     break;
                 case "access_elevation":
-                    requestPayload.title = `Access Request: ${formData.data.system.replace("_", " ").toUpperCase()}`;
-                    requestPayload.description = `System: ${formData.data.system} | Duration: ${formData.data.duration} | Justification: ${formData.data.justification}`;
+                    const system = formData.data.system === "other" ? formData.data.otherSystem : formData.data.system;
+                    requestPayload.title = `Access Request: ${(system || "").replace("_", " ").toUpperCase()}`;
+                    requestPayload.description = `System: ${system} | Duration: ${formData.data.duration} | Justification: ${formData.data.justification}`;
                     break;
                 case "role_change":
                     requestPayload.title = `Role Change: ${formData.data.newDesignation}`;
                     requestPayload.description = `New Designation: ${formData.data.newDesignation} | Effective: ${formData.data.effectiveDate} | Reason: ${formData.data.reason}`;
                     break;
                 case "permission":
-                    requestPayload.title = `Permission: ${formData.data.specificAction.replace("_", " ").toUpperCase()}`;
-                    requestPayload.description = `Action: ${formData.data.specificAction} | Urgency: ${formData.data.urgency} | Justification: ${formData.data.managerialJustification}`;
+                    const action = formData.data.specificAction === "custom" ? formData.data.otherSpecificAction : formData.data.specificAction;
+                    requestPayload.title = `Permission: ${(action || "").replace("_", " ").toUpperCase()}`;
+                    requestPayload.description = `Action: ${action} | Urgency: ${formData.data.urgency} | Justification: ${formData.data.managerialJustification}`;
                     requestPayload.priority = formData.data.urgency;
                     break;
             }
@@ -954,10 +1024,10 @@ export const RequestModal: React.FC<RequestModalProps> = ({
         // Reset state
         setCurrentStep("type");
         setSelectedType(null);
-        setBudgetForm({ amount: "", category: "", reason: "" });
-        setAccessForm({ system: "", duration: "", justification: "" });
+        setBudgetForm({ amount: "", category: "", otherCategory: "", reason: "" });
+        setAccessForm({ system: "", otherSystem: "", duration: "", justification: "" });
         setRoleForm({ newDesignation: "", effectiveDate: "", reason: "" });
-        setPermissionForm({ specificAction: "", managerialJustification: "", urgency: "medium" });
+        setPermissionForm({ specificAction: "", otherSpecificAction: "", managerialJustification: "", urgency: "medium" });
         onClose();
     };
 

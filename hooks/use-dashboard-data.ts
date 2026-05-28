@@ -24,7 +24,7 @@ export function useTasks() {
             const { data, error } = await supabase
                 .from("tasks")
                 .select("*, assigned_to_user:profiles!assigned_to(full_name, department), creator:profiles!created_by(role, is_manager)")
-                .not("status", "in", '("completed","deleted")')
+                .not("status", "in", '("completed","deleted","COMPLETED")')
                 .order("updated_at", { ascending: false });
             if (error) throw error;
             return data;
@@ -38,7 +38,7 @@ export function useTasks() {
             const { data, error } = await supabase
                 .from("tasks")
                 .select("*, assigned_to_user:profiles!assigned_to(full_name, department), creator:profiles!created_by(role, is_manager)")
-                .eq("status", "completed")
+                .in("status", ["completed", "COMPLETED"])
                 .is("reviewed_at", null)
                 .order("updated_at", { ascending: false })
                 .limit(50);
@@ -88,7 +88,11 @@ export function useLeads() {
                 .select("*")
                 .or(`created_at.gte.${threeDaysAgo},status.eq.converted,updated_at.gte.${threeDaysAgo}`)
                 .order("updated_at", { ascending: false });
-            if (error) throw error;
+            if (error) {
+                console.error("Leads fetch error:", error);
+                throw error;
+            }
+            console.log("Leads fetched:", data?.length, data);
             return data;
         },
         ...DASHBOARD_QUERY_CONFIG

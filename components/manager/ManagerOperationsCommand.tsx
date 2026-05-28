@@ -159,7 +159,7 @@ export function ManagerOperationsCommand({ className }: ManagerOperationsCommand
 
     const fetchConversions = async () => {
         try {
-            console.log("Fetching conversions for manager...");
+            console.log("Fetching conversions for administrator...");
             const { data, error } = await supabase
                 .from("conversions")
                 .select("*")
@@ -319,7 +319,7 @@ export function ManagerOperationsCommand({ className }: ManagerOperationsCommand
             <div className="bg-white border-b border-slate-200 px-8 py-6">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-2xl font-bold text-slate-900">Manager Operations</h1>
+                        <h1 className="text-2xl font-bold text-slate-900">Administrator Operations</h1>
                         <p className="text-slate-600 mt-1">Team management and oversight dashboard</p>
                     </div>
                     <div className="flex items-center gap-3">

@@ -49,8 +49,8 @@ export function MobileBottomNav({ activeView, onViewChange }: MobileBottomNavPro
     };
 
     const getNavItems = (): NavItem[] => {
-        const homeHref = userRole === 'CEO' ? '/ceo' : userRole === 'MANAGER' ? '/manager' : '/staff';
-        const homeId = userRole === 'CEO' ? 'command-center' : 'home';
+        const homeHref = userRole === 'CEO' || userRole === 'MANAGER' ? '/ceo' : '/staff';
+        const homeId = userRole === 'CEO' || userRole === 'MANAGER' ? 'command-center' : 'home';
         
         const items: NavItem[] = [
             { id: homeId, label: "HOME", icon: Home, href: homeHref }

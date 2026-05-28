@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 
 export interface BadgeCounts {
@@ -14,6 +14,7 @@ export function useBadgeCounts() {
     victories: 0,
   });
   const [loading, setLoading] = useState(true);
+  const subscriptionsRef = useRef<any[]>([]);
 
   const fetchBadgeCounts = async (isMounted: boolean = true) => {
     try {
@@ -40,7 +41,6 @@ export function useBadgeCounts() {
   useEffect(() => {
     let isMounted = true;
     let debounceTimer: NodeJS.Timeout;
-    let subscriptions: any[] = [];
 
     const debouncedFetch = () => {
       clearTimeout(debounceTimer);
@@ -50,8 +50,18 @@ export function useBadgeCounts() {
     };
 
     const setupSubscriptions = () => {
-      // Clear existing
-      subscriptions.forEach(s => s.unsubscribe());
+      // 1. If older subscriptions exist, remove/unsubscribe them first to avoid memory leaks
+      if (subscriptionsRef.current && subscriptionsRef.current.length > 0) {
+        subscriptionsRef.current.forEach(s => {
+          if (s) {
+            try {
+              supabase.removeChannel(s);
+            } catch (e) {
+              console.error("Failed to remove old badge channel reference:", e);
+            }
+          }
+        });
+      }
       
       console.log('Setting up badge count realtime subscriptions...');
       const requestsSub = supabase
@@ -64,7 +74,7 @@ export function useBadgeCounts() {
         .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, debouncedFetch)
         .subscribe();
         
-      subscriptions = [requestsSub, tasksSub];
+      subscriptionsRef.current = [requestsSub, tasksSub];
     };
 
     fetchBadgeCounts(isMounted);
@@ -85,16 +95,43 @@ export function useBadgeCounts() {
       if (isMounted) setupSubscriptions();
     };
 
-    window.addEventListener("academyos-global-resync", handleResync);
-    window.addEventListener("academyos-reconnect-realtime", handleReconnect);
+    // Listen for custom channels reset event to bind fresh channels
+    const handleChannelsReset = () => {
+      if (isMounted) {
+        console.log("Badge counts: Supabase channels reset event detected, re-initializing subscriptions...");
+        setupSubscriptions();
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("academyos-global-resync", handleResync);
+      window.addEventListener("academyos-reconnect-realtime", handleReconnect);
+      window.addEventListener("supabase-channels-reset", handleChannelsReset);
+    }
 
     return () => {
       isMounted = false;
       clearTimeout(debounceTimer);
-      subscriptions.forEach(s => s.unsubscribe());
+      
+      // Clean up subscriptionsRef on unmount
+      if (subscriptionsRef.current && subscriptionsRef.current.length > 0) {
+        subscriptionsRef.current.forEach(s => {
+          if (s) {
+            try {
+              supabase.removeChannel(s);
+            } catch (e) {
+              console.error("Failed to clean up badge channel on unmount:", e);
+            }
+          }
+        });
+      }
+      
       clearInterval(interval);
-      window.removeEventListener("academyos-global-resync", handleResync);
-      window.removeEventListener("academyos-reconnect-realtime", handleReconnect);
+      if (typeof window !== "undefined") {
+        window.removeEventListener("academyos-global-resync", handleResync);
+        window.removeEventListener("academyos-reconnect-realtime", handleReconnect);
+        window.removeEventListener("supabase-channels-reset", handleChannelsReset);
+      }
     };
   }, []);
 

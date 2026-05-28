@@ -10,7 +10,7 @@ import { useAuth } from "@/lib/auth-context";
 import { useEffect, useState, useMemo, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { Loader2, Plus, Target, Clock, UserPlus } from "lucide-react";
+import { Loader2, Plus, Target, Clock, UserPlus, Megaphone } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type CEOView = "command-center" | "inbox" | "staff-management" | "sales-intelligence" | "financial-intelligence";
@@ -162,19 +162,19 @@ function CEOPageContent() {
                         </button>
                         <button
                             onClick={() => {
-                                window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "schedule-meeting" } }));
+                                window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "announcement" } }));
                                 setIsActionMenuOpen(false);
                             }}
                             className="flex items-center gap-3 bg-theme-card text-theme-text border border-theme-border-10 px-4 py-3 rounded-2xl shadow-lg hover:bg-theme-bg-white-5 hover:border-theme-brand/30 transition-all hover:-translate-x-1"
                         >
                             <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">
-                                Schedule Meeting
+                                Send Announcement/Notification
                             </span>
-                            <div className="p-1.5 bg-blue-500/10 text-blue-500 rounded-lg">
-                                <Clock className="w-4 h-4" />
+                            <div className="p-1.5 bg-[#F14D24]/10 text-[#F14D24] rounded-lg">
+                                <Megaphone className="w-4 h-4" />
                             </div>
                         </button>
-                        {(userRole === 'CEO' || (profile && profile.role === 'ceo')) && (
+                        {(userRole === 'CEO' || userRole === 'MANAGER' || (profile && profile.role === 'ceo')) && (
                             <button
                                 onClick={() => {
                                     window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "add-staff" } }));

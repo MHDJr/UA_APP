@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, X, UserPlus, Lightbulb, FileText, Target } from "lucide-react";
+import { Plus, X, UserPlus, Lightbulb, FileText, Target, Megaphone } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth-context";
@@ -40,6 +40,15 @@ export function MobileFAB({ actions, onMainClick, variant = "default" }: MobileF
                 window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "new-directive" } }));
             },
             color: BRAND_COLORS.indigo,
+        },
+        {
+            id: "announcements",
+            label: "Announcements & Alerts",
+            icon: Megaphone,
+            onClick: () => {
+                window.dispatchEvent(new CustomEvent("fab-action", { detail: { action: "announcement" } }));
+            },
+            color: BRAND_COLORS.orange,
         },
         ...(userRole === 'CEO' ? [{
             id: "add-staff",

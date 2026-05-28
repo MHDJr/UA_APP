@@ -169,7 +169,7 @@ const mockStaffData = [
     {
         id: "7",
         name: "Tom Martinez",
-        role: "Operations Manager",
+        role: "Operations Administrator",
         department: "Operations",
         email: "tom@ua.academy",
         status: "active",
@@ -574,7 +574,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
 
         try {
             const staffMember = staffData.find(s => s.id === selectedStaffForDelegation);
-            const managerName = profile?.full_name || "Manager";
+            const managerName = profile?.full_name || "Administrator";
 
             // Update the directive with the assigned staff member and delegation info
             const { error: directiveError } = await supabase
@@ -651,6 +651,32 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
         }
     };
 
+    const markTaskAsCompleted = async (taskId: string) => {
+        try {
+            const { error } = await supabase
+                .from("tasks")
+                .update({ 
+                    status: "completed",
+                    progress: 100,
+                    updated_at: new Date().toISOString()
+                })
+                .eq("id", taskId);
+                
+            if (error) {
+                console.error("Mark as completed error:", error);
+                toast.error("Failed to mark task as completed");
+                return;
+            }
+            
+            toast.success("Task marked as completed");
+            // Refresh tasks list
+            await fetchTasks();
+        } catch (error) {
+            console.error("Mark as completed exception:", error);
+            toast.error("Something went wrong");
+        }
+    };
+
     const markAllAsReviewed = async () => {
         if (completedTasks.length === 0) return;
         if (!confirm(`Mark all ${completedTasks.length} completed tasks as reviewed?`)) return;
@@ -702,7 +728,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                 <Crown className="w-5 h-5 text-white" />
                             </div>
                             <span className="text-[10px] font-black uppercase tracking-wider text-[#2F1E73]">
-                                Manager Hub
+                                Administrator Hub
                             </span>
                         </div>
 
@@ -710,7 +736,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                         <div className="hidden md:flex items-center gap-4">
                             <div className="flex items-center px-4 py-2 bg-[#2F1E73]/10 rounded-xl">
                                 <span className="text-sm font-bold text-[#2F1E73] uppercase tracking-wider">
-                                    MANAGER HUB | COMMAND CENTER
+                                    ADMINISTRATOR HUB | COMMAND CENTER
                                 </span>
                             </div>
                             <Badge 
@@ -728,15 +754,15 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                         <div className="flex items-center gap-3">
                             <div className="text-right hidden sm:block">
                                 <p className="text-sm font-semibold text-slate-900">
-                                    {profile?.full_name || "Manager"}
+                                    {profile?.full_name || "Administrator"}
                                 </p>
                                 <p className="text-xs text-slate-500">
                                     {profile?.role === "ceo" ? "Executive" : 
                                      (() => {
                                          const role = profile?.role || "";
-                                         if (role === "sales") return "Sales Manager";
-                                         if (role === "staff") return "Department Manager";
-                                         return "Department Manager";
+                                         if (role === "sales") return "Sales Administrator";
+                                         if (role === "staff") return "Department Administrator";
+                                         return "Department Administrator";
                                      })()}
                                 </p>
                             </div>
@@ -776,7 +802,7 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                             </div>
                             <div>
                                 <h1 className="text-xl md:text-3xl font-bold text-slate-900 tracking-tight">
-                                    {greeting.text}, {profile?.full_name?.split(' ')[0] || 'Manager'}
+                                    {greeting.text}, {profile?.full_name?.split(' ')[0] || 'Administrator'}
                                 </h1>
                                 <p className="text-sm text-slate-500 mt-1">
                                     Deploy missions and oversee your department operations
@@ -1400,6 +1426,15 @@ export function ManagerCommandCenter({ className }: ManagerCommandCenterProps) {
                                             <Info className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
                                             "{task.description}"
                                         </div>
+                                        {!showCompleted && task.assigned_to === profile?.id && (
+                                            <Button
+                                                onClick={() => markTaskAsCompleted(task.id)}
+                                                className="w-full bg-[#2F1E73] hover:bg-[#2F1E73]/90 text-white rounded-2xl py-6 font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2"
+                                            >
+                                                <CheckCircle2 className="w-5 h-5" />
+                                                Mark Completed
+                                            </Button>
+                                        )}
                                         {showCompleted && (
                                             <Button
                                                 onClick={() => markTaskAsReviewed(task.id)}

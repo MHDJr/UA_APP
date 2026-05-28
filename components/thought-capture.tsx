@@ -171,7 +171,7 @@ export function ThoughtCapture({ onCapture, compact = false, placeholder }: Thou
                         <Input
                             ref={inputRef}
                             type="text"
-                            placeholder={placeholder || (userRole === 'CEO' ? "Capture a CEO Directive..." : "Capture a Manager Directive...")}
+                            placeholder={placeholder || (userRole === 'CEO' ? "Capture a CEO Directive..." : "Capture an Administrator Directive...")}
                             value={content}
                             onChange={(e) => setContent(e.target.value)}
                             onFocus={handleFocus}
@@ -205,7 +205,7 @@ export function ThoughtCapture({ onCapture, compact = false, placeholder }: Thou
                                     <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
                                         <Sparkles className="w-4 h-4 text-white" />
                                     </div>
-                                    <span className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-zinc-100">{userRole === 'CEO' ? 'CEO Directive' : 'Manager Directive'} Capture</span>
+                                    <span className="text-sm font-black uppercase tracking-tight text-slate-900 dark:text-zinc-100">{userRole === 'CEO' ? 'CEO Directive' : 'Administrator Directive'} Capture</span>
                                 </div>
                                 <button
                                     onClick={() => {

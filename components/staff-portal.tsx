@@ -57,7 +57,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { compressImage } from "@/lib/image-utils";
+import { uploadPublicFile, deleteFile } from "@/lib/storage";
 import MobileNavigation from "@/components/mobile-navigation";
+import { motion, AnimatePresence } from "framer-motion";
 import { format, differenceInMinutes } from "date-fns";
 import { RequestModal } from "@/components/RequestModal";
 import { LeaveRequestModal } from "@/components/LeaveRequestModal";
@@ -512,13 +515,73 @@ const formatTrackerRequest = (req: any) => {
     return { title, detail };
 };
 
+const renderDigitalGauge = (task: Task, showCompleted: boolean) => {
+    const s = (task.status || "PENDING").toUpperCase();
+    const progress = showCompleted ? 100 : (task.progress || 0);
+    const radius = 14;
+    const circumference = 2 * Math.PI * radius; // ~88
+    const strokeDashoffset = circumference - (circumference * progress) / 100;
+    
+    let strokeColor = "stroke-blue-500";
+    
+    if (showCompleted) {
+        strokeColor = "stroke-emerald-500";
+    } else if (s === "PENDING") {
+        strokeColor = "stroke-orange-500";
+    } else if (s === "UNDER_REVIEW" || s === "IN_REVIEW") {
+        strokeColor = "stroke-purple-500";
+    }
+
+    return (
+        <div className="flex items-center gap-2.5 select-none shrink-0">
+            <span className="text-xl md:text-2xl font-black text-slate-800 dark:text-white tracking-tight">
+                {progress}%
+            </span>
+            <div className="relative w-9 h-9 flex-shrink-0">
+                <svg className="w-full h-full transform -rotate-90">
+                    <circle
+                        cx="18"
+                        cy="18"
+                        r={radius}
+                        className="stroke-slate-100 dark:stroke-zinc-800 fill-none"
+                        strokeWidth="3"
+                    />
+                    <circle
+                        cx="18"
+                        cy="18"
+                        r={radius}
+                        className={cn("fill-none transition-all duration-500 ease-out", strokeColor)}
+                        strokeWidth="3"
+                        strokeDasharray={circumference}
+                        strokeDashoffset={strokeDashoffset}
+                        strokeLinecap="round"
+                    />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                    {showCompleted ? (
+                        <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                    ) : s === "PENDING" ? (
+                        <Zap className="w-2.5 h-2.5 text-orange-600 dark:text-orange-400 fill-orange-500/10" />
+                    ) : s === "UNDER_REVIEW" || s === "IN_REVIEW" ? (
+                        <Clock className="w-2.5 h-2.5 text-purple-600 dark:text-purple-400 animate-pulse" />
+                    ) : (
+                        <Circle className="w-2 h-2 text-blue-600 dark:text-blue-500 fill-blue-500" />
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 export default function StaffPortal() {
-    const { user } = useAuth();
+    const { user, refreshProfile } = useAuth();
     const router = useRouter();
     const [profile, setProfile] = useState<Profile | null>(null);
     const [time, setTime] = useState("");
     const [vibe, setVibe] = useState("Focused");
     const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
+    const [isProfileOpen, setIsProfileOpen] = useState(false);
+    const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
     const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
     const [activeModal, setActiveModal] = useState<string | null>(null);
     const [expandedTask, setExpandedTask] = useState<string | null>(null);
@@ -528,6 +591,8 @@ export default function StaffPortal() {
         {},
     );
     const [broadcasts, setBroadcasts] = useState<any[]>([]);
+    const [latestBroadcast, setLatestBroadcast] = useState<any | null>(null);
+    const [communityAnnouncements, setCommunityAnnouncements] = useState<any[]>([]);
     const [requests, setRequests] = useState<any[]>([]);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -575,7 +640,21 @@ export default function StaffPortal() {
 
         updateTime();
         const timer = setInterval(updateTime, 1000);
-        return () => clearInterval(timer);
+    }, []);
+
+    useEffect(() => {
+        const handleOpenProfile = () => {
+            console.log("Global open-profile-dialog event triggered in StaffPortal!");
+            setIsProfileOpen(true);
+        };
+        if (typeof window !== "undefined") {
+            window.addEventListener("open-profile-dialog", handleOpenProfile);
+        }
+        return () => {
+            if (typeof window !== "undefined") {
+                window.removeEventListener("open-profile-dialog", handleOpenProfile);
+            }
+        };
     }, []);
 
     const getGreeting = () => {
@@ -626,13 +705,13 @@ export default function StaffPortal() {
                     .from("tasks")
                     .select("*")
                     .eq("assigned_to", profile.id)
-                    .in("status", ["pending", "in_progress"])
+                    .in("status", ["pending", "in_progress", "in_review", "under_review", "PENDING", "IN_PROGRESS", "UNDER_REVIEW"])
                     .order("created_at", { ascending: false }),
                 supabase
                     .from("tasks")
                     .select("*")
                     .eq("assigned_to", profile.id)
-                    .eq("status", "completed")
+                    .in("status", ["completed", "COMPLETED"])
                     .order("updated_at", { ascending: false }),
                 supabase
                     .from("broadcasts")
@@ -684,7 +763,14 @@ export default function StaffPortal() {
                 setCompletedTasks(completedTasksData.data);
             }
 
-            if (broadcastsData.data) setBroadcasts(broadcastsData.data);
+            if (broadcastsData.data) {
+                setBroadcasts(broadcastsData.data);
+                const ceoBroadcasts = broadcastsData.data.filter((b: any) => b.target === 'CEO_BROADCAST');
+                setLatestBroadcast(ceoBroadcasts.length > 0 ? ceoBroadcasts[0] : null);
+                
+                const community = broadcastsData.data.filter((b: any) => b.target === 'COMMUNITY_BOARD');
+                setCommunityAnnouncements(community);
+            }
             if (requestsData.data) {
                 setRequests(requestsData.data);
             } else {
@@ -845,8 +931,30 @@ export default function StaffPortal() {
         // Optimized 15-second polling
         const interval = setInterval(fetchData, 15000);
 
+        // Zero-Lag Real-Time Pipeline for Broadcasts & Notifications
+        const channel = supabase
+            .channel("broadcasts-realtime")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "broadcasts" },
+                () => {
+                    console.log("Real-time Broadcast Update Detected!");
+                    fetchData();
+                }
+            )
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "notifications" },
+                () => {
+                    console.log("Real-time Notification Update Detected!");
+                    fetchData();
+                }
+            )
+            .subscribe();
+
         return () => {
             clearInterval(interval);
+            supabase.removeChannel(channel);
         };
     }, [profile?.id, fetchData]);
 
@@ -874,7 +982,16 @@ export default function StaffPortal() {
                       ? "HIGH"
                       : "MEDIUM",
             description: task.description || "No description provided",
-            status: task.status === "pending" ? "PENDING" : "IN PROGRESS",
+            status: ((task.status as any) === "PENDING" || (task.status as any) === "pending")
+                ? "PENDING"
+                : ((task.status as any) === "IN_PROGRESS" || (task.status as any) === "in_progress")
+                    ? "IN_PROGRESS"
+                    : ((task.status as any) === "UNDER_REVIEW" || (task.status as any) === "in_review" || (task.status as any) === "under_review")
+                        ? "UNDER_REVIEW"
+                        : ((task.status as any) === "COMPLETED" || (task.status as any) === "completed")
+                            ? "COMPLETED"
+                            : "PENDING",
+            progress: typeof task.progress === "number" ? task.progress : 0,
             isDaily: task.is_daily_task || task.priority === "urgent",
             is_daily_task: task.is_daily_task,
             dueDate: task.due_date
@@ -939,6 +1056,115 @@ export default function StaffPortal() {
         } catch (error) {
             console.error("Clear all completed exception:", error);
             toast.error("Something went wrong deleting completed tasks");
+        }
+    };
+
+    const startMission = async (taskId: string) => {
+        try {
+            console.log('Starting mission for task:', taskId);
+            const { error } = await supabase
+                .from("tasks")
+                .update({ 
+                    status: "IN_PROGRESS",
+                    progress: 10,
+                    updated_at: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })
+                .eq("id", taskId);
+                
+            if (error) {
+                console.error("Start mission error:", error);
+                toast.error("Failed to start mission: " + error.message);
+                return;
+            }
+            
+            toast.success("Mission started! Status set to IN PROGRESS");
+            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "IN_PROGRESS", progress: 10 } : t));
+        } catch (err) {
+            console.error("Start mission exception:", err);
+            toast.error("Something went wrong starting the mission");
+        }
+    };
+
+    const updateTaskProgress = async (taskId: string, progressVal: number) => {
+        try {
+            console.log(`Updating task ${taskId} progress to:`, progressVal);
+            // Update local state immediately for instant visual response
+            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, progress: progressVal } : t));
+
+            const { error } = await supabase
+                .from("tasks")
+                .update({ 
+                    progress: progressVal,
+                    updated_at: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })
+                .eq("id", taskId);
+                
+            if (error) {
+                console.error("Update progress error:", error);
+                toast.error("Failed to update progress in database");
+                return;
+            }
+        } catch (err) {
+            console.error("Update progress exception:", err);
+            toast.error("Something went wrong updating progress");
+        }
+    };
+
+    const submitForReview = async (taskId: string) => {
+        try {
+            console.log('Submitting task for review:', taskId);
+            const { error } = await supabase
+                .from("tasks")
+                .update({ 
+                    status: "UNDER_REVIEW",
+                    progress: 100,
+                    updated_at: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })
+                .eq("id", taskId);
+                
+            if (error) {
+                console.error("Submit for review error:", error);
+                toast.error("Failed to submit task for review: " + error.message);
+                return;
+            }
+            
+            toast.success("Task submitted for administrator review!");
+            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "UNDER_REVIEW", progress: 100 } : t));
+        } catch (err) {
+            console.error("Submit for review exception:", err);
+            toast.error("Something went wrong submitting task for review");
+        }
+    };
+
+    const markAsCompleted = async (taskId: string) => {
+        try {
+            console.log('Marking task as completed:', taskId);
+            const { error } = await supabase
+                .from("tasks")
+                .update({ 
+                    status: "COMPLETED",
+                    progress: 100,
+                    updated_at: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                })
+                .eq("id", taskId);
+                
+            if (error) {
+                console.error("Mark as completed error:", error);
+                toast.error("Failed to mark task as completed: " + error.message);
+                return;
+            }
+            
+            toast.success("Task marked as completed!");
+            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "COMPLETED", progress: 100 } : t));
+            // Fetch updated data to reflect in completed section
+            fetchData();
+        } catch (err) {
+            console.error("Mark as completed exception:", err);
+            toast.error("Something went wrong marking task as completed");
         }
     };
 
@@ -1114,7 +1340,7 @@ export default function StaffPortal() {
                     {/* Manage Button - Only for Staff with Manager Access */}
                     {profile?.is_manager && (
                         <a
-                            href="/manager"
+                            href="/ceo"
                             className="relative group flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300 hover:scale-[1.02]"
                             style={{
                                 backgroundColor: brand.orange,
@@ -1138,10 +1364,15 @@ export default function StaffPortal() {
                     </button>
 
                     <div
+                        onClick={() => setIsProfileOpen(true)}
                         style={{ backgroundColor: brand.navy }}
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold shadow-md"
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:scale-105 transition-all duration-300 relative overflow-hidden shrink-0"
                     >
-                        {profile?.full_name?.[0] || profile?.email?.[0] || "U"}
+                        {profile?.avatar_url ? (
+                            <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            profile?.full_name?.[0] || profile?.email?.[0] || "U"
+                        )}
                     </div>
                 </div>
             </header>
@@ -1272,18 +1503,18 @@ export default function StaffPortal() {
                     </div>
                 </div>
 
-                {/* Mobile: CEO Broadcast at Top */}
+                {/* Mobile: Live Feed at Top */}
                 <div className="col-span-12 lg:hidden order-first">
                     <div
                         style={{ backgroundColor: brand.navy }}
-                        className="rounded-2xl md:rounded-[2.5rem] p-4 md:p-7 text-white shadow-2xl relative overflow-hidden"
+                        className="rounded-2xl md:rounded-[2.5rem] p-5 text-white shadow-2xl relative overflow-hidden"
                     >
                         <div className="relative z-10">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-2">
-                                    <Megaphone className="w-4 h-4 text-orange-400 animate-bounce" />
+                                    <Activity className="w-4 h-4 text-orange-400 animate-pulse" />
                                     <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
-                                        CEO Broadcast
+                                        Live Feed
                                         <span className="relative flex h-2 w-2">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
                                             <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
@@ -1292,61 +1523,50 @@ export default function StaffPortal() {
                                 </div>
                                 <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping"></div>
                             </div>
-                            <div className="space-y-3 max-h-48 overflow-y-auto scrollbar-thin">
-                                {notifications.slice(0, 3).map((msg) => {
-                                    const isAck = acknowledgedMessages.includes(
-                                        msg.id,
-                                    );
-                                    return (
-                                        <div
-                                            key={msg.id}
-                                            className={`p-3 rounded-xl border transition-all ${msg.type === "alert" ? "bg-orange-500/10 border-orange-500/30" : "bg-white/5 border-white/10"}`}
-                                        >
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span
-                                                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${msg.type === "alert" ? "bg-orange-500 text-white" : "bg-indigo-400/20 text-indigo-200"}`}
-                                                >
-                                                    {msg.type}
-                                                </span>
-                                                <span className="text-[8px] text-white/40 font-bold">
-                                                    {format(
-                                                        new Date(
-                                                            msg.created_at,
-                                                        ),
-                                                        "h ago",
-                                                    )}
-                                                </span>
-                                            </div>
-                                            <p className="text-[11px] font-medium leading-relaxed text-white/90 mb-2">
-                                                {msg.message}
-                                            </p>
-
-                                            <button
-                                                disabled={isAck}
-                                                onClick={() =>
-                                                    handleAcknowledge(msg.id)
-                                                }
-                                                className={`w-full py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 border ${
-                                                    isAck
-                                                        ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400"
-                                                        : "bg-white/10 border-white/10 hover:bg-white/20 text-white"
-                                                }`}
-                                            >
-                                                {isAck ? (
-                                                    <>
-                                                        <Check className="w-3 h-3" />{" "}
-                                                        Seen
-                                                    </>
-                                                ) : (
-                                                    "Acknowledge"
+                            
+                            <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                                {notifications.length > 0 ? (
+                                    notifications.map((notif) => {
+                                        const isUrgent = notif.type === "alert";
+                                        return (
+                                            <motion.div
+                                                key={notif.id}
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className={cn(
+                                                    "p-3 rounded-xl border transition-all duration-300 relative overflow-hidden flex flex-col gap-1.5 group hover:scale-[1.01]",
+                                                    isUrgent 
+                                                        ? "bg-red-500/10 border-red-500/30 ring-1 ring-red-500/20 hover:border-red-500/50 hover:bg-red-500/15" 
+                                                        : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10"
                                                 )}
-                                            </button>
-                                        </div>
-                                    );
-                                })}
-                                {notifications.length === 0 && (
-                                    <div className="text-center py-4 text-white/50 text-xs">
-                                        No new broadcasts
+                                            >
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <Badge 
+                                                        className={cn(
+                                                            "text-[7px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border-none",
+                                                            isUrgent 
+                                                                ? "bg-red-500 text-white animate-pulse" 
+                                                                : "bg-indigo-500/20 text-indigo-300"
+                                                        )}
+                                                    >
+                                                        {notif.title || (isUrgent ? "URGENT ALERT" : "MESSAGE")}
+                                                    </Badge>
+                                                    <span className="text-[7px] text-white/30 font-bold uppercase tracking-wider">
+                                                        {format(new Date(notif.created_at), 'MMM d, h:mm a')}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] font-medium leading-relaxed text-white/90">
+                                                    {notif.message}
+                                                </p>
+                                            </motion.div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="text-center py-8 text-white/30 flex flex-col items-center justify-center gap-2">
+                                        <Bell className="w-6 h-6 opacity-20" />
+                                        <p className="text-[10px] font-black uppercase tracking-widest">
+                                            No messages or alerts
+                                        </p>
                                     </div>
                                 )}
                             </div>
@@ -1361,71 +1581,65 @@ export default function StaffPortal() {
                         className="rounded-[2.5rem] p-7 text-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] border border-white/20 dark:border-zinc-800/30 relative overflow-hidden"
                     >
                         <div className="relative z-10">
-                            <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center justify-between mb-5">
                                 <div className="flex items-center gap-2">
-                                    <Megaphone className="w-4 h-4 text-orange-400 animate-bounce" />
+                                    <Activity className="w-4 h-4 text-orange-400 animate-pulse" />
                                     <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
-                                        CEO Broadcast
+                                        Live Feed
                                         <span className="relative flex h-2 w-2">
                                             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
                                             <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
                                         </span>
                                     </span>
                                 </div>
-                                <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping"></div>
+                                <div className="w-2 h-2 rounded-full bg-orange-405 animate-ping"></div>
                             </div>
-                            <div className="space-y-4">
-                                {notifications.slice(0, 3).map((msg) => {
-                                    const isAck = acknowledgedMessages.includes(
-                                        msg.id,
-                                    );
-                                    return (
-                                        <div
-                                            key={msg.id}
-                                            className={`p-4 rounded-2xl border transition-all ${msg.type === "alert" ? "bg-orange-500/10 border-orange-500/30" : "bg-white/5 border-white/10"}`}
-                                        >
-                                            <div className="flex justify-between items-start mb-1">
-                                                <span
-                                                    className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded ${msg.type === "alert" ? "bg-orange-500 text-white" : "bg-indigo-400/20 text-indigo-200"}`}
-                                                >
-                                                    {msg.type}
-                                                </span>
-                                                <span className="text-[8px] text-white/40 font-bold">
-                                                    {format(
-                                                        new Date(
-                                                            msg.created_at,
-                                                        ),
-                                                        "h ago",
-                                                    )}
-                                                </span>
-                                            </div>
-                                            <p className="text-[11px] font-medium leading-relaxed text-white/90 mb-3">
-                                                {msg.message}
-                                            </p>
-
-                                            <button
-                                                disabled={isAck}
-                                                onClick={() =>
-                                                    handleAcknowledge(msg.id)
-                                                }
-                                                className={`w-full py-2 rounded-xl text-[9px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-1.5 border ${
-                                                    isAck
-                                                        ? "bg-emerald-50/20 border-emerald-50/30 text-emerald-400"
-                                                        : "bg-white/10 border-white/10 hover:bg-white/20 text-white"
-                                                }`}
-                                            >
-                                                {isAck ? (
-                                                    <>
-                                                        <Check className="w-3 h-3" />{" "}
-                                                        Seen
-                                                    </>
-                                                ) : (
-                                                    "Acknowledge"
+                            
+                            <div className="max-h-[360px] overflow-y-auto pr-1 space-y-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                                {notifications.length > 0 ? (
+                                    notifications.map((notif) => {
+                                        const isUrgent = notif.type === "alert";
+                                        return (
+                                            <motion.div
+                                                key={notif.id}
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className={cn(
+                                                    "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col gap-1.5 group hover:scale-[1.02]",
+                                                    isUrgent 
+                                                        ? "bg-red-500/10 border-red-500/30 ring-1 ring-red-500/20 hover:border-red-500/50 hover:bg-red-500/15" 
+                                                        : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10"
                                                 )}
-                                            </button>
-                                        </div>
-                                    );
-                                })}
+                                            >
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <Badge 
+                                                        className={cn(
+                                                            "text-[7px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border-none",
+                                                            isUrgent 
+                                                                ? "bg-red-500 text-white animate-pulse" 
+                                                                : "bg-indigo-500/20 text-indigo-300"
+                                                        )}
+                                                    >
+                                                        {notif.title || (isUrgent ? "URGENT ALERT" : "MESSAGE")}
+                                                    </Badge>
+                                                    <span className="text-[7px] text-white/30 font-bold uppercase tracking-wider">
+                                                        {format(new Date(notif.created_at), 'MMM d, h:mm a')}
+                                                    </span>
+                                                </div>
+                                                <p className="text-[10px] font-medium leading-relaxed text-white/90">
+                                                    {notif.message}
+                                                </p>
+                                            </motion.div>
+                                        );
+                                    })
+                                ) : (
+                                    <div className="text-center py-12 text-white/30 flex flex-col items-center justify-center gap-2">
+                                        <Bell className="w-8 h-8 opacity-20" />
+                                        <p className="text-[10px] font-black uppercase tracking-widest">
+                                            No messages or alerts
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1627,24 +1841,23 @@ export default function StaffPortal() {
                             (showCompleted ? completedTasks : filteredTasks).map((task) => (
                             <div
                                 key={task.id}
-                                className={`bg-white dark:bg-zinc-900 rounded-2xl md:rounded-[2.5rem] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md border border-white/60 dark:border-zinc-800/50 overflow-hidden ${
+                                className={cn(
+                                    "bg-white/95 dark:bg-zinc-950/95 border border-slate-200/50 dark:border-white/10 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.03)] dark:shadow-2xl rounded-2xl overflow-hidden transition-all duration-300 ease-out hover:border-slate-300 dark:hover:border-white/20 translate-gpu hover:scale-[1.01] border-l-[6px]",
                                     showCompleted 
-                                        ? "border-l-[4px] border-l-emerald-500" 
-                                        : task.priority === "urgent" 
-                                            ? "border-l-[4px] border-l-rose-500" 
-                                            : task.priority === "high" 
-                                                ? "border-l-[4px] border-l-amber-500" 
-                                                : task.priority === "medium" 
-                                                    ? "border-l-[4px] border-l-indigo-600 dark:border-l-indigo-500" 
-                                                    : "border-l-[4px] border-l-slate-300 dark:border-l-zinc-700"
-                                } ${
-                                    expandedTask && expandedTask === task.id
-                                        ? "shadow-md ring-1 ring-orange-500/20"
-                                        : "shadow-[0_12px_40px_rgba(0,0,0,0.02)]"
-                                }`}
+                                        ? "border-l-emerald-500" 
+                                        : (task.status || "PENDING").toUpperCase() === "IN_PROGRESS"
+                                            ? "border-l-blue-500"
+                                            : ((task.status || "PENDING").toUpperCase() === "UNDER_REVIEW" || (task.status || "PENDING").toUpperCase() === "IN_REVIEW")
+                                                ? "border-l-purple-500"
+                                                : task.priority === "urgent" || task.priority === "high"
+                                                    ? "border-l-rose-500"
+                                                    : task.priority === "medium"
+                                                        ? "border-l-amber-500"
+                                                        : "border-l-zinc-700"
+                                )}
                             >
                                 <div
-                                    className="p-4 md:p-7 cursor-pointer flex items-center justify-between min-h-[56px]"
+                                    className="p-5 md:p-6 cursor-pointer flex items-center justify-between min-h-[56px]"
                                     onClick={() =>
                                         setExpandedTask(
                                             expandedTask &&
@@ -1656,13 +1869,14 @@ export default function StaffPortal() {
                                 >
                                     <div className="flex items-center gap-3 md:gap-5 flex-1 min-w-0">
                                         <div
-                                            className={`w-10 h-10 md:w-14 md:h-14 rounded-full flex items-center justify-center relative shrink-0 ${
+                                            className={cn(
+                                                "w-11 h-11 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 flex items-center justify-center relative shrink-0",
                                                 showCompleted
-                                                    ? "bg-emerald-50 text-emerald-500"
-                                                   : (task.priority === "urgent" || (task as any).category === "URGENT")
-                                                        ? "bg-red-50 text-red-500"
-                                                        : "bg-slate-50 text-slate-400"
-                                            }`}
+                                                    ? "text-emerald-600 dark:text-emerald-400"
+                                                    : (task.priority === "urgent" || (task as any).category === "URGENT")
+                                                        ? "text-rose-600 dark:text-red-400"
+                                                        : "text-slate-500 dark:text-zinc-400"
+                                            )}
                                         >
                                             {showCompleted ? (
                                                 <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" />
@@ -1672,105 +1886,69 @@ export default function StaffPortal() {
                                                 <LayoutDashboard className="w-5 h-5 md:w-6 md:h-6" />
                                             )}
                                             {task.is_daily_task && !showCompleted && (
-                                                <div className="absolute -top-1 -right-1 w-5 h-5 md:w-6 md:h-6 bg-orange-500 rounded-xl md:rounded-2xl border-2 border-white flex items-center justify-center shadow-md">
-                                                    <Target className="w-2.5 h-2.5 md:w-3 md:h-3 text-white" />
+                                                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-orange-500 rounded-lg border-2 border-white dark:border-zinc-950 flex items-center justify-center shadow-md">
+                                                    <Target className="w-2.5 h-2.5 text-white" />
                                                 </div>
                                             )}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                                                 <span
-                                                    className={`px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase border ${
+                                                    className={cn(
+                                                        "px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase border",
                                                         showCompleted
-                                                            ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/20"
-                                                            : task.priority === "urgent"
-                                                                ? "bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 border-rose-100 dark:border-rose-900/20"
-                                                                : "bg-slate-50 dark:bg-zinc-800/50 text-slate-600 dark:text-zinc-400 border-slate-100 dark:border-zinc-800/30"
-                                                    }`}
+                                                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                                                            : task.priority === "urgent" || task.priority === "high"
+                                                                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
+                                                                : "bg-slate-100 dark:bg-zinc-850 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700/80"
+                                                    )}
                                                 >
                                                     {showCompleted ? "COMPLETED" : task.priority?.toUpperCase()}
                                                 </span>
                                                 {task.is_daily_task && !showCompleted && (
-                                                    <span className="flex items-center gap-1 text-[8px] md:text-[9px] font-black text-orange-600 bg-orange-50 px-1.5 md:px-2 py-0.5 rounded-lg uppercase tracking-tighter">
+                                                    <span className="flex items-center gap-1 text-[9px] font-black text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 uppercase tracking-widest">
                                                         <Sparkles className="w-2 h-2" />{" "}
                                                         Daily
                                                     </span>
                                                 )}
                                             </div>
-                                            <h3 className="text-base md:text-xl font-black text-slate-900 dark:text-zinc-100 leading-tight">
+                                            <h3 className="text-base md:text-xl font-black text-slate-900 dark:text-white leading-tight">
                                                 {task.title}
                                             </h3>
                                             {task.due_date && (
-                                                <div className="flex items-center gap-1.5 mt-1 text-red-500">
-                                                    <Clock className="w-3 h-3" />
-                                                    <span className="text-[10px] font-black uppercase tracking-widest">
+                                                <div className="flex items-center gap-1.5 mt-1.5 text-rose-600 dark:text-rose-400/90">
+                                                    <Clock className="w-3.5 h-3.5" />
+                                                    <span className="text-[9px] font-black uppercase tracking-widest">
                                                         Due: {new Date(task.due_date).toLocaleDateString()}
                                                     </span>
                                                 </div>
                                             )}
                                             {taskCreators[task.created_by] && (
-                                                <div className="flex items-center gap-1.5 mt-2 text-slate-600 dark:text-zinc-400 text-[10px] font-bold tracking-wider uppercase">
+                                                <div className="flex items-center gap-1.5 mt-2 text-slate-500 dark:text-zinc-400 text-[9px] font-black tracking-widest uppercase">
                                                     <User className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
                                                     <span>
-                                                        Assigned by: <span className="text-slate-850 dark:text-zinc-250 font-extrabold">{
+                                                        Assigned by: <span className="text-slate-800 dark:text-zinc-200 font-extrabold">{
                                                             taskCreators[task.created_by].role === 'ceo' 
                                                                 ? 'CEO' 
                                                                 : (taskCreators[task.created_by].is_manager || taskCreators[task.created_by].role === 'manager')
-                                                                    ? 'Manager'
+                                                                    ? 'Administrator'
                                                                     : taskCreators[task.created_by].full_name || 'System'
                                                         }</span>
                                                     </span>
                                                 </div>
                                             )}                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-3 shrink-0 ml-3">
-                                        {!showCompleted ? (
-                                            <button
-                                                onClick={async (e) => {
-                                                    e.stopPropagation();
-                                                    if (typeof window !== "undefined" && (window as any).confetti) {
-                                                        (window as any).confetti();
-                                                    }
-                                                    toast.success("Task completed!");
-                                                    
-                                                    try {
-                                                        const { error } = await supabase
-                                                            .from("tasks")
-                                                            .update({ 
-                                                                status: "completed",
-                                                                updated_at: new Date().toISOString() 
-                                                            })
-                                                            .eq("id", task.id);
-                                                            
-                                                        if (error) {
-                                                            console.error('Task update error:', error);
-                                                            toast.error("Failed to complete task in database");
-                                                            return;
-                                                        }
-                                                        
-                                                        setTasks(prev => prev.filter(t => t.id !== task.id));
-                                                        setCompletedTasks(prev => [...prev, { ...task, status: "completed" }]);
-                                                    } catch (err) {
-                                                        console.error('Task complete error:', err);
-                                                    }
-                                                }}
-                                                className="group/btn p-2 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 rounded-full transition-all shrink-0"
-                                                title="Complete Task"
-                                            >
-                                                <Circle className="w-5 h-5 text-slate-300 dark:text-zinc-650 group-hover/btn:text-emerald-500 group-hover/btn:scale-110 transition-all duration-200" />
-                                            </button>
-                                        ) : (
-                                            <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
-                                        )}
+                                    <div className="flex items-center gap-4 shrink-0 ml-3">
+                                        {renderDigitalGauge(task, showCompleted)}
                                         <ChevronDown
-                                            className={`w-5 h-5 text-slate-350 transition-transform ${expandedTask && expandedTask === task.id ? "rotate-180 text-orange-500" : ""}`}
+                                            className={`w-5 h-5 text-slate-400 dark:text-zinc-500 transition-transform duration-300 ${expandedTask && expandedTask === task.id ? "rotate-180 text-orange-500" : ""}`}
                                         />
                                     </div>
                                 </div>
                                 {expandedTask && expandedTask === task.id && (
-                                    <div className="px-7 pb-7 space-y-5">
-                                        <div className="p-5 bg-slate-50 rounded-3xl italic text-sm text-slate-600 border border-slate-100 flex items-start gap-3">
-                                            <Info className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                                    <div className="px-5 md:px-6 pb-6 space-y-5">
+                                        <div className="p-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5 rounded-xl italic text-sm text-slate-600 dark:text-zinc-400 flex items-start gap-3">
+                                            <Info className="w-4 h-4 text-slate-400 dark:text-zinc-500 mt-0.5 flex-shrink-0" />
                                             &quot;{task.description}&quot;
                                         </div>
                                         <div className="flex gap-3">
@@ -1778,71 +1956,138 @@ export default function StaffPortal() {
                                                 <>
                                                     <button
                                                         onClick={() => removeCompletedTask(task.id)}
-                                                        className="flex-1 py-4 bg-red-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-red-100 flex items-center justify-center gap-2"
+                                                        className="flex-1 py-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all"
                                                     >
                                                         <X className="w-4 h-4" />{" "}
                                                         Delete Permanently
                                                     </button>
                                                     {(task as any).ceo_reviewed && (
-                                                        <div className="px-3 py-2 bg-blue-50 text-blue-600 rounded-2xl text-[9px] font-black uppercase border border-blue-200 flex items-center gap-2">
+                                                        <div className="px-3 py-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl text-[9px] font-black uppercase border border-blue-500/20 flex items-center gap-2 animate-pulse">
                                                             <Check className="w-3 h-3" />
                                                             CEO Reviewed
                                                         </div>
                                                     )}
                                                 </>
                                             ) : (
-                                                <button
-                                                    onClick={async () => {
-                                                        console.log('Starting task completion for:', task.id);
-                                                        triggerConfetti();
-                                                        
-                                                        try {
-                                                            // Update task status to completed
-                                                            const { error, data } = await supabase
-                                                                .from("tasks")
-                                                                .update({
-                                                                    status: "completed",
-                                                                    updated_at: new Date().toISOString()
-                                                                })
-                                                                .eq("id", task.id)
-                                                                .select();
-                                                            
-                                                            if (error) {
-                                                                console.error('Task completion error:', error);
-                                                                toast.error("Failed to complete task: " + error.message);
-                                                                return;
-                                                            }
-                                                            
-                                                            console.log('Task completion successful:', data);
-                                                            
-                                                            // Remove from active tasks in local state
-                                                            setTasks((prev) =>
-                                                                prev.filter(
-                                                                    (t) =>
-                                                                        t.id !==
-                                                                        task.id,
-                                                                ),
+                                                <div className="w-full space-y-4">
+                                                    {(() => {
+                                                        const s = (task.status || "PENDING").toUpperCase();
+                                                        if (s === "PENDING") {
+                                                            return (
+                                                                <button
+                                                                    onClick={() => startMission(task.id)}
+                                                                    className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-orange-500/10 flex items-center justify-center gap-2 transition-all duration-300 border border-transparent dark:border-white/10"
+                                                                >
+                                                                    <Zap className="w-4 h-4 fill-white" /> Start Mission
+                                                                </button>
                                                             );
-                                                            
-                                                            // Add to completed tasks immediately
-                                                            setCompletedTasks((prev) => [
-                                                                ...prev,
-                                                                { ...task, status: "completed" },
-                                                            ]);
-                                                            
-                                                            toast.success(
-                                                                "Task completed! Added to completed section.",
-                                                            );
-                                                        } catch (err) {
-                                                            console.error('Task completion exception:', err);
-                                                            toast.error("Something went wrong completing the task");
                                                         }
-                                                    }}
-                                                    className="flex-1 py-4 bg-emerald-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-100 flex items-center justify-center gap-2"
-                                                >
-                                                    <CheckCircle2 className="w-4 h-4" />{" "}
-                                                    Completed
-                                                </button>
+                                                        if (s === "IN_PROGRESS") {
+                                                            return (
+                                                                <div className="space-y-4 p-4 md:p-6 rounded-2xl bg-slate-50 dark:bg-zinc-950/40 border border-slate-200/60 dark:border-white/5 backdrop-blur-md">
+                                                                    <div className="flex items-center justify-between">
+                                                                        <span className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">
+                                                                            Operational Progress: {task.progress || 10}%
+                                                                        </span>
+                                                                    </div>
+                                                                    
+                                                                    {/* Premium Glassmorphic Slider Track */}
+                                                                    <div className="relative flex items-center select-none">
+                                                                        <input 
+                                                                            type="range"
+                                                                            min="0"
+                                                                            max="100"
+                                                                            value={task.progress || 10}
+                                                                            onChange={(e) => {
+                                                                                const val = parseInt(e.target.value);
+                                                                                // Update locally for instant fluid drag response
+                                                                                setTasks(prev => prev.map(t => t.id === task.id ? { ...t, progress: val } : t));
+                                                                            }}
+                                                                            onMouseUp={(e: any) => {
+                                                                                updateTaskProgress(task.id, parseInt(e.target.value));
+                                                                            }}
+                                                                            onTouchEnd={(e: any) => {
+                                                                                updateTaskProgress(task.id, parseInt(e.target.value));
+                                                                            }}
+                                                                            className="w-full h-2 bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-white/5 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
+                                                                        />
+                                                                    </div>
+                                                                    
+                                                                    {/* Quick Percentage Tabs */}
+                                                                    <div className="grid grid-cols-4 gap-2">
+                                                                        {[25, 50, 75, 100].map((pct) => {
+                                                                            const isSelected = (task.progress || 10) === pct;
+                                                                            return (
+                                                                                <button
+                                                                                    key={pct}
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        updateTaskProgress(task.id, pct);
+                                                                                    }}
+                                                                                    className={cn(
+                                                                                        "py-2 rounded-xl text-[10px] font-black transition-all border",
+                                                                                        isSelected
+                                                                                            ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/50 shadow-[0_0_12px_rgba(59,130,246,0.15)] scale-105"
+                                                                                            : "bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-white/[0.05] text-slate-600 dark:text-zinc-400"
+                                                                                    )}
+                                                                                >
+                                                                                    {pct === 100 ? "Complete" : `${pct}%`}
+                                                                                </button>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                    
+                                                                    {/* Action Submit Button */}
+                                                                    <div className="flex flex-col sm:flex-row gap-2">
+                                                                        {profile?.is_manager && (
+                                                                            <button
+                                                                                onClick={() => markAsCompleted(task.id)}
+                                                                                className="flex-1 py-3.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 active:scale-95 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 transition-all duration-300 border border-transparent dark:border-white/10"
+                                                                            >
+                                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Mark Completed
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => submitForReview(task.id)}
+                                                                            className={cn(
+                                                                                "py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-500 active:scale-95 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 transition-all duration-300 border border-transparent dark:border-white/10 disabled:opacity-50 disabled:pointer-events-none disabled:scale-100",
+                                                                                profile?.is_manager ? "flex-1" : "w-full"
+                                                                            )}
+                                                                        >
+                                                                            <Send className="w-3.5 h-3.5" /> Submit for Review
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        if (s === "UNDER_REVIEW" || s === "IN_REVIEW") {
+                                                            return (
+                                                                <div className="w-full p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col items-center justify-center gap-3 text-center animate-pulse">
+                                                                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 shadow-sm shadow-purple-500/10">
+                                                                        <Clock className="w-5 h-5 animate-spin" style={{ animationDuration: '4s' }} />
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <span className="text-xs font-black text-purple-400 uppercase tracking-widest">
+                                                                            Awaiting Verification
+                                                                        </span>
+                                                                        <p className="text-[10px] text-purple-400/70 font-medium">
+                                                                            Lock enabled. A CEO/Administrator is reviewing your completion.
+                                                                        </p>
+                                                                    </div>
+                                                                    {profile?.is_manager && (
+                                                                        <button
+                                                                            onClick={() => markAsCompleted(task.id)}
+                                                                            className="mt-2 w-full py-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl font-bold uppercase text-[9px] tracking-widest border border-emerald-500/20 transition-all flex items-center justify-center gap-2"
+                                                                        >
+                                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Complete (Admin)
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+                                                </div>
                                             )}
                                         </div>
                                     </div>
@@ -1987,38 +2232,51 @@ export default function StaffPortal() {
                         </div>
                         
                         <div className="space-y-3">
-                            {[
-                                {
-                                    icon: "🎯",
-                                    title: "General Staff Meeting",
-                                    time: "Today at 4:00 PM",
-                                    description: "Reviewing weekly summits & new tactical objectives."
-                                },
-                                {
-                                    icon: "💡",
-                                    title: "Submit Monthly Sparks",
-                                    time: "Due Friday",
-                                    description: "Pitch your ideas to the CEO Command OS innovation lab."
-                                }
-                            ].map((notice, idx) => (
-                                <div 
-                                    key={idx}
-                                    className="p-4 bg-slate-50/50 dark:bg-zinc-950/30 rounded-2xl border border-slate-100/50 dark:border-zinc-800/30 hover:border-orange-500/20 hover:bg-slate-50 dark:hover:bg-zinc-950/50 transition-all"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm">{notice.icon}</span>
-                                        <span className="text-xs font-bold text-slate-900 dark:text-zinc-100">
-                                            {notice.title}
-                                        </span>
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-bold mt-1 uppercase tracking-wider">
-                                        {notice.time}
-                                    </p>
-                                    <p className="text-[10px] text-slate-550 dark:text-zinc-400 mt-1 leading-relaxed">
-                                        {notice.description}
-                                    </p>
+                            {communityAnnouncements.length > 0 ? (
+                                communityAnnouncements.map((announcement) => {
+                                    const type = announcement.type || "NOTICE";
+                                    let icon = "📢";
+                                    let typeColor = "text-blue-500 bg-blue-50 dark:bg-blue-950/20";
+                                    let TypeIcon = Megaphone;
+
+                                    if (type === "MEETING") {
+                                        icon = "⏰";
+                                        typeColor = "text-orange-500 bg-orange-50 dark:bg-orange-950/20";
+                                        TypeIcon = Clock;
+                                    } else if (type === "DEADLINE") {
+                                        icon = "⏳";
+                                        typeColor = "text-red-500 bg-red-50 dark:bg-red-950/20";
+                                        TypeIcon = AlertTriangle;
+                                    }
+
+                                    return (
+                                        <div 
+                                            key={announcement.id}
+                                            className="p-4 bg-slate-50/50 dark:bg-zinc-950/30 rounded-2xl border border-slate-100/50 dark:border-zinc-800/30 hover:border-orange-500/20 hover:bg-slate-50 dark:hover:bg-zinc-950/50 transition-all duration-350 shadow-sm"
+                                        >
+                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm">{icon}</span>
+                                                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md flex items-center gap-1 ${typeColor}`}>
+                                                        <TypeIcon className="w-3 h-3" />
+                                                        {type}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[8px] text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
+                                                    {format(new Date(announcement.created_at), "MMM d, h:mm a")}
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-700 dark:text-zinc-300 font-semibold leading-relaxed">
+                                                {announcement.message}
+                                            </p>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="text-center py-8 text-slate-400 dark:text-zinc-500 text-xs font-bold uppercase tracking-widest">
+                                    No community announcements
                                 </div>
-                            ))}
+                            )}
                         </div>
                     </div>
                 </div>
@@ -2090,38 +2348,51 @@ export default function StaffPortal() {
                         </div>
                         
                         <div className="space-y-4">
-                            {[
-                                {
-                                    icon: "🎯",
-                                    title: "General Staff Meeting",
-                                    time: "Today at 4:00 PM",
-                                    description: "Reviewing weekly summits & new tactical objectives."
-                                },
-                                {
-                                    icon: "💡",
-                                    title: "Submit Monthly Sparks",
-                                    time: "Due Friday",
-                                    description: "Pitch your ideas to the CEO Command OS innovation lab."
-                                }
-                            ].map((notice, idx) => (
-                                <div 
-                                    key={idx}
-                                    className="p-4 bg-slate-50/50 dark:bg-zinc-950/30 rounded-2xl border border-slate-100/50 dark:border-zinc-800/30 hover:border-orange-500/20 hover:bg-slate-50 dark:hover:bg-zinc-950/50 transition-all"
-                                >
-                                    <div className="flex items-center gap-2">
-                                        <span className="text-sm">{notice.icon}</span>
-                                        <span className="text-xs font-bold text-slate-900 dark:text-zinc-100">
-                                            {notice.title}
-                                        </span>
-                                    </div>
-                                    <p className="text-[10px] text-slate-400 dark:text-zinc-500 font-bold mt-1 uppercase tracking-wider">
-                                        {notice.time}
-                                    </p>
-                                    <p className="text-[10px] text-slate-550 dark:text-zinc-400 mt-1 leading-relaxed">
-                                        {notice.description}
-                                    </p>
+                            {communityAnnouncements.length > 0 ? (
+                                communityAnnouncements.map((announcement) => {
+                                    const type = announcement.type || "NOTICE";
+                                    let icon = "📢";
+                                    let typeColor = "text-blue-500 bg-blue-50 dark:bg-blue-950/20";
+                                    let TypeIcon = Megaphone;
+
+                                    if (type === "MEETING") {
+                                        icon = "⏰";
+                                        typeColor = "text-orange-500 bg-orange-50 dark:bg-orange-950/20";
+                                        TypeIcon = Clock;
+                                    } else if (type === "DEADLINE") {
+                                        icon = "⏳";
+                                        typeColor = "text-red-500 bg-red-50 dark:bg-red-950/20";
+                                        TypeIcon = AlertTriangle;
+                                    }
+
+                                    return (
+                                        <div 
+                                            key={announcement.id}
+                                            className="p-4 bg-slate-50/50 dark:bg-zinc-950/30 rounded-2xl border border-slate-100/50 dark:border-zinc-800/30 hover:border-orange-500/20 hover:bg-slate-50 dark:hover:bg-zinc-950/50 transition-all duration-300 shadow-sm"
+                                        >
+                                            <div className="flex items-center justify-between gap-2 mb-2">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm">{icon}</span>
+                                                    <span className={`text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md flex items-center gap-1 ${typeColor}`}>
+                                                        <TypeIcon className="w-3 h-3" />
+                                                        {type}
+                                                    </span>
+                                                </div>
+                                                <span className="text-[8px] text-slate-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
+                                                    {format(new Date(announcement.created_at), "MMM d, h:mm a")}
+                                                </span>
+                                            </div>
+                                            <p className="text-[11px] text-slate-700 dark:text-zinc-300 font-semibold leading-relaxed">
+                                                {announcement.message}
+                                            </p>
+                                        </div>
+                                    );
+                                })
+                            ) : (
+                                <div className="text-center py-8 text-slate-400 dark:text-zinc-500 text-xs font-bold uppercase tracking-widest">
+                                    No community announcements
                                 </div>
-                            ))}
+                            )}
                         </div>
                     </div>
                 </div>
@@ -2142,6 +2413,207 @@ export default function StaffPortal() {
                 onSubmitSuccess={() => fetchData()}
                 setInteracting={setIsUserInteracting}
             />
+
+            {/* Mobile Bottom Navigation */}
+            <MobileNavigation currentPage="home" />
+
+            {/* Profile Settings Modal */}
+            {/* Profile Sidebar */}
+            <div className={`fixed inset-0 z-50 overflow-hidden transition-all duration-300 ease-in-out ${isProfileOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}>
+                {/* Backdrop */}
+                <div 
+                    className="absolute inset-0 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm transition-opacity duration-300"
+                    onClick={() => setIsProfileOpen(false)}
+                />
+                
+                {/* Sidebar Drawer */}
+                <div className={`absolute top-0 right-0 h-full w-full max-w-[400px] bg-white/95 dark:bg-zinc-900/95 backdrop-blur-xl border-l border-slate-100 dark:border-zinc-800 shadow-2xl flex flex-col justify-between transition-transform duration-300 ease-in-out transform ${isProfileOpen ? "translate-x-0" : "translate-x-full"}`}>
+                    
+                    {/* Header */}
+                    <div className="p-6 border-b border-slate-100 dark:border-zinc-800/50 flex items-center justify-between select-none">
+                        <div className="flex items-center gap-2.5">
+                            <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                                <User className="w-4 h-4" />
+                            </div>
+                            <h2 className="text-sm font-black tracking-tight text-slate-900 dark:text-white uppercase">
+                                Personnel File
+                            </h2>
+                        </div>
+                        <button 
+                            onClick={() => setIsProfileOpen(false)}
+                            className="w-7 h-7 rounded-full bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 flex items-center justify-center text-slate-500 dark:text-zinc-400 transition-colors"
+                        >
+                            <span className="text-xs font-black">✕</span>
+                        </button>
+                    </div>
+
+                    {/* Scrollable Body */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-6 flex flex-col items-center">
+                        {/* Profile Photo Display with Upload */}
+                        <div className="relative group cursor-pointer">
+                            <div className="w-24 h-24 md:w-28 md:h-28 rounded-[2rem] border-4 border-white dark:border-zinc-800 shadow-lg overflow-hidden relative flex items-center justify-center bg-indigo-950 text-white font-bold text-3xl select-none">
+                                {isUploadingPhoto ? (
+                                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
+                                        <div className="animate-spin h-6 w-6 border-2 border-white/20 border-t-white rounded-full" />
+                                    </div>
+                                ) : profile?.avatar_url ? (
+                                    <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                                ) : (
+                                    profile?.full_name?.[0] || profile?.email?.[0] || "U"
+                                )}
+                                
+                                {/* Overlay Camera Icon on Hover */}
+                                {!isUploadingPhoto && (
+                                    <label className="absolute inset-0 bg-black/50 backdrop-blur-sm opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center gap-1 transition-all duration-300 text-white text-[8px] font-black uppercase tracking-widest cursor-pointer select-none">
+                                        <Plus className="w-4 h-4" />
+                                        Upload Image
+                                        <input
+                                            type="file"
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={async (e) => {
+                                                const file = e.target.files?.[0];
+                                                if (!file) return;
+                                                
+                                                // Validate file size (under 3MB for base64 storage)
+                                                if (file.size > 3 * 1024 * 1024) {
+                                                    toast.error("Photo size must be under 3MB");
+                                                    return;
+                                                }
+                                                
+                                                setIsUploadingPhoto(true);
+                                                try {
+                                                    // 1. Compress image client-side
+                                                    const compressedBlob = await compressImage(file, {
+                                                        maxWidth: 800, // Avatars don't need to be huge
+                                                        maxHeight: 800,
+                                                        maxFileSizeKB: 200, // Extra strict for avatars
+                                                        outputFormat: "image/webp"
+                                                    });
+
+                                                    const fileName = `${profile?.id || user?.id}-${Date.now()}.webp`;
+                                                    const filePath = `avatars/${fileName}`;
+
+                                                    // 2. Delete old avatar if it exists in storage
+                                                    if (profile?.avatar_url && profile.avatar_url.includes('/storage/v1/object/public/')) {
+                                                        try {
+                                                            await deleteFile('avatars', profile.avatar_url);
+                                                        } catch (e) {
+                                                            console.warn("Failed to delete old avatar:", e);
+                                                            // Continue anyway to allow new upload
+                                                        }
+                                                    }
+
+                                                    // 3. Upload to storage
+                                                    const publicUrl = await uploadPublicFile('avatars', filePath, compressedBlob);
+                                                    
+                                                    // 4. Update Database with URL
+                                                    const { error } = await supabase
+                                                        .from("profiles")
+                                                        .update({ avatar_url: publicUrl })
+                                                        .eq("id", profile?.id || user?.id);
+                                                            
+                                                    if (error) {
+                                                        console.error("Photo DB update error:", error);
+                                                        toast.error("Database update failed: " + error.message);
+                                                        setIsUploadingPhoto(false);
+                                                        return;
+                                                    }
+                                                    
+                                                    // Update local state
+                                                    setProfile(prev => prev ? { ...prev, avatar_url: publicUrl } : null);
+                                                    // Synchronize global Auth Context profile
+                                                    await refreshProfile();
+                                                    toast.success("Profile photo updated successfully!");
+                                                    setIsUploadingPhoto(false);
+                                                } catch (err: any) {
+                                                    console.error("Upload process error:", err);
+                                                    toast.error(err.message || "Failed to update profile photo");
+                                                    setIsUploadingPhoto(false);
+                                                }
+                                            }}
+                                        />
+                                    </label>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Interactive Profile Information List */}
+                        <div className="w-full space-y-4">
+                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-100 dark:border-zinc-800/50">
+                                <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest block mb-1 select-none">
+                                    Full Identification Name
+                                </span>
+                                <span className="text-xs font-black text-slate-900 dark:text-zinc-100 uppercase">
+                                    {profile?.full_name || "Unidentified Personnel"}
+                                </span>
+                            </div>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-100 dark:border-zinc-800/50">
+                                    <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest block mb-1 select-none">
+                                        Assigned Role
+                                    </span>
+                                    <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-400 uppercase">
+                                        {profile?.role || "Staff Member"}
+                                    </span>
+                                </div>
+
+                                <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-100 dark:border-zinc-800/50">
+                                    <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest block mb-1 select-none">
+                                        Operational Sector
+                                    </span>
+                                    <span className="text-[10px] font-black text-orange-600 dark:text-orange-400 uppercase">
+                                        {profile?.department || "General Operations"}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-100 dark:border-zinc-800/50">
+                                <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest block mb-1 select-none">
+                                    Primary Communications Email
+                                </span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-zinc-300">
+                                    {profile?.email || "No Email Registered"}
+                                </span>
+                            </div>
+
+                            <div className="p-4 rounded-xl bg-slate-50 dark:bg-zinc-800/40 border border-slate-100 dark:border-zinc-800/50">
+                                <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-widest block mb-1 select-none">
+                                    Operational Contact Number
+                                </span>
+                                <input
+                                    type="text"
+                                    value={profile?.phone || ""}
+                                    placeholder="Enter contact number..."
+                                    onChange={async (e) => {
+                                        const phoneVal = e.target.value;
+                                        setProfile(prev => prev ? { ...prev, phone: phoneVal } : null);
+                                        
+                                        // Update Supabase
+                                        await supabase
+                                            .from("profiles")
+                                            .update({ phone: phoneVal })
+                                            .eq("id", profile?.id);
+                                    }}
+                                    className="w-full bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-xs font-bold text-slate-900 dark:text-zinc-100 placeholder-slate-350"
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="p-6 border-t border-slate-100 dark:border-zinc-800/50 flex gap-3 select-none">
+                        <button
+                            onClick={() => setIsProfileOpen(false)}
+                            className="flex-1 py-3 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-slate-700 dark:text-zinc-300 rounded-xl font-black uppercase text-[10px] tracking-widest transition-all"
+                        >
+                            Close File
+                        </button>
+                    </div>
+                </div>
+            </div>
+
 
             {/* Legacy Modals */}
             {activeModal && (

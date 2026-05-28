@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Send, User, Megaphone } from "lucide-react";
+import { X, Send, User, Megaphone, Loader2, Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -12,7 +14,7 @@ const BRAND_COLORS = {
     orange: "#F14D24",
 };
 
-type MessageType = "direct" | "global";
+export type MessageType = "direct" | "global" | "announcement";
 
 interface StaffProfile {
     id: string;
@@ -23,19 +25,67 @@ interface StaffProfile {
     avatar_url?: string;
 }
 
+const ALL_STAFF_OPTION: StaffProfile = {
+    id: "all",
+    full_name: "All Staff",
+    email: "all@workspace.com",
+    role: "ALL WORKSPACE PERSONNEL",
+    department: "GLOBAL",
+};
+
 interface MessageDialogProps {
     isOpen: boolean;
     onClose: () => void;
+    defaultType?: MessageType;
+    onSuccess?: () => void;
 }
 
-export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
-    const [messageType, setMessageType] = useState<MessageType>("direct");
+export function MessageDialog({ isOpen, onClose, defaultType = "direct", onSuccess }: MessageDialogProps) {
+    const [messageType, setMessageType] = useState<MessageType>(defaultType);
     const [selectedStaff, setSelectedStaff] = useState<StaffProfile | null>(null);
     const [message, setMessage] = useState("");
     const [isDropdownOpen, setIsDropdownOpen] = useState(false);
     const [staffList, setStaffList] = useState<StaffProfile[]>([]);
     const [loading, setLoading] = useState(true);
-    const { user } = useAuth();
+    const [isSending, setIsSending] = useState(false);
+    const { user, profile } = useAuth();
+
+    // Global Announcement States
+    const [announcementMessage, setAnnouncementMessage] = useState("");
+    const [channelDestination, setChannelDestination] = useState<"CEO_BROADCAST" | "COMMUNITY_BOARD">("COMMUNITY_BOARD");
+    const [announcementType, setAnnouncementType] = useState<"MEETING" | "NOTICE">("NOTICE");
+    const [isDeployingAnnouncement, setIsDeployingAnnouncement] = useState(false);
+
+    // Common configurations
+    const [expiryDuration, setExpiryDuration] = useState<"5h" | "12h" | "1d" | "7d">("7d");
+    const [isUrgent, setIsUrgent] = useState(false);
+
+    const getExpiryDate = (duration: "5h" | "12h" | "1d" | "7d") => {
+        const date = new Date();
+        switch (duration) {
+            case "5h":
+                date.setHours(date.getHours() + 5);
+                break;
+            case "12h":
+                date.setHours(date.getHours() + 12);
+                break;
+            case "1d":
+                date.setDate(date.getDate() + 1);
+                break;
+            case "7d":
+                date.setDate(date.getDate() + 7);
+                break;
+        }
+        return date.toISOString();
+    };
+
+    useEffect(() => {
+        if (isOpen) {
+            setMessageType(defaultType);
+            setIsUrgent(false);
+            setExpiryDuration("7d");
+        }
+    }, [isOpen, defaultType]);
 
     useEffect(() => {
         const fetchStaff = async () => {
@@ -50,7 +100,7 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                 if (error) throw error;
                 setStaffList(data || []);
                 if (data && data.length > 0) {
-                    setSelectedStaff(data[0]);
+                    setSelectedStaff(ALL_STAFF_OPTION);
                 }
             } catch (error) {
                 console.error("Error fetching staff:", error);
@@ -64,15 +114,124 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
         }
     }, [isOpen, user]);
 
-    const handleSend = () => {
-        if (message.trim()) {
+    const handleDeployAnnouncement = async () => {
+        if (!announcementMessage.trim()) {
+            toast.error("Announcement message cannot be empty");
+            return;
+        }
+        setIsDeployingAnnouncement(true);
+        try {
+            const expiryStr = getExpiryDate(expiryDuration);
+
+            const { error } = await supabase
+                .from("broadcasts")
+                .insert({
+                    message: announcementMessage.trim(),
+                    target: channelDestination,
+                    type: channelDestination === "COMMUNITY_BOARD" ? announcementType : null,
+                    created_by: profile?.id || null,
+                    expires_at: expiryStr
+                });
+
+            if (error) throw error;
+
+            // If urgent is checked, insert high priority alerts into notifications table for all staff members
+            if (isUrgent) {
+                let targets: any[] = staffList;
+                if (targets.length === 0) {
+                    const { data } = await supabase
+                        .from("profiles")
+                        .select("id")
+                        .neq("role", "ceo")
+                        .neq("id", user?.id);
+                    targets = data || [];
+                }
+
+                if (targets.length > 0) {
+                    const senderRole = profile?.role === 'ceo' ? 'CEO' : 'Administrator';
+                    const notificationAlerts = targets.map((staff) => ({
+                        user_id: staff.id,
+                        title: `URGENT BROADCAST FROM ${senderRole.toUpperCase()}`,
+                        message: announcementMessage.trim(),
+                        type: "alert",
+                    }));
+                    await supabase.from("notifications").insert(notificationAlerts);
+                }
+            }
+
+            toast.success("Global Announcement deployed successfully!");
+            setAnnouncementMessage("");
+            setIsUrgent(false);
+            setExpiryDuration("7d");
+            
+            if (typeof window !== "undefined") {
+                window.dispatchEvent(new CustomEvent("academyos-global-resync"));
+            }
+
+            if (onSuccess) {
+                onSuccess();
+            }
+            onClose();
+        } catch (error: any) {
+            console.error("Failed to deploy announcement:", error);
+            toast.error("Deployment failure: " + (error.message || "Unknown error"));
+        } finally {
+            setIsDeployingAnnouncement(false);
+        }
+    };
+
+    const handleSend = async () => {
+        if (messageType === "announcement") {
+            await handleDeployAnnouncement();
+            return;
+        }
+
+        if (!message.trim()) {
+            toast.error("Message content cannot be empty");
+            return;
+        }
+
+        setIsSending(true);
+        try {
             if (messageType === "direct" && selectedStaff) {
-                console.log(`Direct message to ${selectedStaff.full_name}: ${message}`);
-            } else if (messageType === "global") {
-                console.log(`Global announcement: ${message}`);
+                const senderRole = profile?.role === 'ceo' ? 'CEO' : 'Administrator';
+                
+                if (selectedStaff.id === "all") {
+                    if (staffList.length > 0) {
+                        const notifications = staffList.map((staff) => ({
+                            user_id: staff.id,
+                            title: isUrgent ? `URGENT MESSAGE FROM ${senderRole.toUpperCase()}` : `MESSAGE FROM ${senderRole.toUpperCase()}`,
+                            message: message.trim(),
+                            type: isUrgent ? "alert" : "direct",
+                        }));
+                        const { error } = await supabase.from("notifications").insert(notifications);
+                        if (error) throw error;
+                    }
+                    toast.success("Message sent to all staff members");
+                } else {
+                    const { error } = await supabase.from("notifications").insert({
+                        user_id: selectedStaff.id,
+                        title: isUrgent ? `URGENT MESSAGE FROM ${senderRole.toUpperCase()}` : `MESSAGE FROM ${senderRole.toUpperCase()}`,
+                        message: message.trim(),
+                        type: isUrgent ? "alert" : "direct",
+                    });
+                    if (error) throw error;
+                    toast.success(`Message sent to ${selectedStaff.full_name}`);
+                }
             }
             setMessage("");
+            setIsUrgent(false);
+            setExpiryDuration("7d");
+            
+            if (onSuccess) {
+                onSuccess();
+            }
             onClose();
+        } catch (error: any) {
+            console.error("Failed to send message:", error);
+            toast.error("Failed to send: " + error.message);
+        } finally {
+            setIsSending(false);
         }
     };
 
@@ -84,7 +243,7 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                 <div className="bg-white rounded-3xl p-8 shadow-2xl max-w-lg w-full">
                     <div className="text-center py-8">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600">Loading staff...</p>
+                        <p className="text-gray-650 font-semibold">Loading staff...</p>
                     </div>
                 </div>
             </div>
@@ -93,10 +252,10 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
 
     return (
         <div className="fixed inset-0 bg-black/30 backdrop-blur-[2px] z-[9999] flex items-start justify-center pt-[10vh] p-4">
-            <div className="backdrop-blur-2xl bg-white/95 border border-white/20 rounded-3xl p-8 shadow-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto my-auto">
+            <div className="backdrop-blur-2xl bg-white/95 border border-white/25 rounded-3xl p-8 shadow-2xl max-w-lg w-full max-h-[85vh] overflow-y-auto my-auto relative">
                 {/* Header */}
                 <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-2xl font-bold text-gray-900">Send Message</h2>
+                    <h2 className="text-2xl font-black text-gray-900 uppercase tracking-tight">Communications Center</h2>
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -109,36 +268,36 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                 <div className="flex bg-gray-100 rounded-full p-1 mb-6">
                     <button
                         onClick={() => setMessageType("direct")}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-full transition-all duration-200 ${
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full transition-all duration-200 ${
                             messageType === "direct"
                                 ? "bg-white shadow-sm"
                                 : ""
                         }`}
                     >
                         <User className="w-4 h-4" style={{ color: messageType === "direct" ? BRAND_COLORS.indigo : "#6b7280" }} />
-                        <span className="text-sm font-medium" style={{ color: messageType === "direct" ? BRAND_COLORS.indigo : "#6b7280" }}>
-                            Direct
+                        <span className="text-xs font-bold" style={{ color: messageType === "direct" ? BRAND_COLORS.indigo : "#6b7280" }}>
+                            Message
                         </span>
                     </button>
                     <button
-                        onClick={() => setMessageType("global")}
-                        className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-full transition-all duration-200 ${
-                            messageType === "global"
+                        onClick={() => setMessageType("announcement")}
+                        className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-full transition-all duration-200 ${
+                            messageType === "announcement"
                                 ? "bg-white shadow-sm"
                                 : ""
                         }`}
                     >
-                        <Megaphone className="w-4 h-4" style={{ color: messageType === "global" ? BRAND_COLORS.orange : "#6b7280" }} />
-                        <span className="text-sm font-medium" style={{ color: messageType === "global" ? BRAND_COLORS.orange : "#6b7280" }}>
-                            Broadcast
+                        <Megaphone className="w-4 h-4" style={{ color: messageType === "announcement" ? BRAND_COLORS.indigo : "#6b7280" }} />
+                        <span className="text-xs font-bold" style={{ color: messageType === "announcement" ? BRAND_COLORS.indigo : "#6b7280" }}>
+                            Announcements
                         </span>
                     </button>
                 </div>
 
-                {/* Staff Selection - Only for Direct */}
+                {/* Direct Message Fields */}
                 {messageType === "direct" && (
                     <div className="mb-6">
-                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                        <label className="block text-xs font-bold uppercase tracking-widest text-gray-700 mb-2">
                             Send To
                         </label>
                         <div className="relative">
@@ -151,13 +310,13 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                                     <div className="flex items-center gap-3">
                                         <div
                                             className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-xs"
-                                            style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                            style={{ backgroundColor: selectedStaff.id === "all" ? BRAND_COLORS.orange : BRAND_COLORS.indigo }}
                                         >
                                             {selectedStaff.full_name.charAt(0).toUpperCase()}
                                         </div>
                                         <div>
-                                            <div className="font-medium text-gray-900">{selectedStaff.full_name}</div>
-                                            <div className="text-xs text-gray-500">{selectedStaff.role} {selectedStaff.department ? `• ${selectedStaff.department}` : ''}</div>
+                                            <div className="font-semibold text-gray-900">{selectedStaff.full_name}</div>
+                                            <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{selectedStaff.role} {selectedStaff.department ? `• ${selectedStaff.department}` : ''}</div>
                                         </div>
                                     </div>
                                 ) : (
@@ -168,7 +327,7 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                             
                             {isDropdownOpen && staffList.length > 0 && (
                                 <div className="absolute z-10 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg max-h-60 overflow-y-auto">
-                                    {staffList.map((staff) => (
+                                    {[ALL_STAFF_OPTION, ...staffList].map((staff) => (
                                         <button
                                             key={staff.id}
                                             onClick={() => {
@@ -179,13 +338,13 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                                         >
                                             <div
                                                 className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-xs"
-                                                style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                                style={{ backgroundColor: staff.id === "all" ? BRAND_COLORS.orange : BRAND_COLORS.indigo }}
                                             >
                                                 {staff.full_name.charAt(0).toUpperCase()}
                                             </div>
                                             <div>
-                                                <div className="font-medium text-gray-900">{staff.full_name}</div>
-                                                <div className="text-xs text-gray-500">{staff.role} {staff.department ? `• ${staff.department}` : ''}</div>
+                                                <div className="font-semibold text-gray-900">{staff.full_name}</div>
+                                                <div className="text-[10px] text-gray-500 font-bold uppercase tracking-wider">{staff.role} {staff.department ? `• ${staff.department}` : ''}</div>
                                             </div>
                                         </button>
                                     ))}
@@ -195,35 +354,148 @@ export function MessageDialog({ isOpen, onClose }: MessageDialogProps) {
                     </div>
                 )}
 
-                {/* Message Input */}
-                <div className="mb-6">
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Message
-                    </label>
-                    <textarea
-                        value={message}
-                        onChange={(e) => setMessage(e.target.value)}
-                        placeholder={messageType === "direct" ? "Enter your message..." : "Compose your announcement..."}
-                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm resize-none h-32 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-400"
-                    />
-                </div>
+                {/* Direct Message Input */}
+                {messageType === "direct" && (
+                    <>
+                        <div className="mb-6">
+                            <label className="block text-xs font-bold uppercase tracking-widest text-gray-700 mb-2">
+                                Message
+                            </label>
+                            <textarea
+                                value={message}
+                                onChange={(e) => setMessage(e.target.value)}
+                                placeholder="Enter your direct message..."
+                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm resize-none h-32 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-400 text-sm font-medium leading-relaxed"
+                            />
+                        </div>
+
+                        <div className="flex items-center pl-2 pb-6 animate-in fade-in slide-in-from-top-1 duration-200">
+                            <label className="flex items-center gap-3 cursor-pointer select-none group">
+                                <input
+                                    type="checkbox"
+                                    checked={isUrgent}
+                                    onChange={(e) => setIsUrgent(e.target.checked)}
+                                    className="w-5 h-5 rounded border-gray-300 text-red-650 focus:ring-red-500 cursor-pointer accent-[#31267D]"
+                                />
+                                <div className="flex items-center gap-2 text-red-650 group-hover:text-red-750 transition-colors">
+                                    <Bell className={cn("w-4 h-4", isUrgent ? "animate-bounce" : "")} />
+                                    <span className="text-xs font-black uppercase tracking-wider">
+                                        Send Notification Alert (Urgent)
+                                    </span>
+                                </div>
+                            </label>
+                        </div>
+                    </>
+                )}
+
+                {/* Announcements form layout */}
+                {messageType === "announcement" && (
+                    <div className="space-y-4 mb-6">
+                        <div className="space-y-2">
+                            <label className="block text-xs font-bold uppercase tracking-widest text-gray-700">
+                                Announcement Content
+                            </label>
+                            <textarea
+                                value={announcementMessage}
+                                onChange={(e) => setAnnouncementMessage(e.target.value)}
+                                placeholder="Type the announcement details..."
+                                className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl shadow-sm resize-none h-32 focus:outline-none focus:ring-2 focus:ring-blue-550 focus:border-transparent transition-all duration-200 text-gray-900 placeholder-gray-400 text-sm font-medium leading-relaxed"
+                            />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <label className="block text-xs font-bold uppercase tracking-widest text-gray-700">
+                                    Announcement Type
+                                </label>
+                                <select
+                                    value={announcementType}
+                                    onChange={(e) => setAnnouncementType(e.target.value as any)}
+                                    className="w-full text-xs p-3 rounded-xl border border-gray-200 bg-white text-gray-950 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+                                >
+                                    <option value="NOTICE">Notice</option>
+                                    <option value="MEETING">Meeting</option>
+                                </select>
+                            </div>
+
+                            <div className="space-y-2">
+                                <label className="block text-xs font-bold uppercase tracking-widest text-gray-700">
+                                    Display Duration
+                                </label>
+                                <select
+                                    value={expiryDuration}
+                                    onChange={(e) => setExpiryDuration(e.target.value as any)}
+                                    className="w-full text-xs p-3 rounded-xl border border-gray-200 bg-white text-gray-950 font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500/50 cursor-pointer"
+                                >
+                                    <option value="5h">5 Hours</option>
+                                    <option value="12h">12 Hours</option>
+                                    <option value="1d">1 Day</option>
+                                    <option value="7d">7 Days</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center pl-2 pt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                            <label className="flex items-center gap-3 cursor-pointer select-none group">
+                                <input
+                                    type="checkbox"
+                                    checked={isUrgent}
+                                    onChange={(e) => setIsUrgent(e.target.checked)}
+                                    className="w-5 h-5 rounded border-gray-355 text-red-650 focus:ring-red-500 cursor-pointer accent-[#F14D24]"
+                                />
+                                <div className="flex items-center gap-2 text-red-650 group-hover:text-red-750 transition-colors">
+                                    <Bell className={cn("w-4 h-4", isUrgent ? "animate-bounce" : "")} />
+                                    <span className="text-xs font-black uppercase tracking-wider">
+                                        Send Notification Alert (Urgent)
+                                    </span>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+                )}
 
                 {/* Action Buttons */}
-                <div className="flex gap-3 justify-end">
+                <div className="flex gap-3 justify-end pt-2 border-t border-gray-150">
                     <button
                         onClick={onClose}
-                        className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl font-medium transition-colors duration-200"
+                        className="px-6 py-3 text-gray-650 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold text-xs uppercase tracking-widest transition-colors duration-200"
                     >
                         Cancel
                     </button>
                     <Button
                         onClick={handleSend}
-                        className="px-6 py-3 text-white font-semibold rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2"
-                        style={{ backgroundColor: messageType === "global" ? BRAND_COLORS.orange : BRAND_COLORS.indigo }}
-                        disabled={(messageType === "direct" && !selectedStaff) || !message.trim()}
+                        className="px-6 py-3 text-white font-black rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-105 active:scale-95 flex items-center gap-2 text-xs uppercase tracking-widest"
+                        style={{ 
+                            backgroundColor: 
+                                messageType === "announcement" ? "#31267D" : BRAND_COLORS.indigo 
+                        }}
+                        disabled={
+                            messageType === "announcement" 
+                                ? (isDeployingAnnouncement || !announcementMessage.trim())
+                                : (isSending || (messageType === "direct" && !selectedStaff) || !message.trim())
+                        }
                     >
-                        <Send className="w-4 h-4" />
-                        {messageType === "direct" ? "Send Message" : "Broadcast"}
+                        {messageType === "announcement" ? (
+                            isDeployingAnnouncement ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Deploying...
+                                </>
+                            ) : (
+                                <>
+                                    <Send className="w-4 h-4" /> Deploy
+                                </>
+                            )
+                        ) : (
+                            isSending ? (
+                                <>
+                                    <Loader2 className="w-4 h-4 animate-spin" /> Sending...
+                                </>
+                            ) : (
+                                <>
+                                    <Send className="w-4 h-4" /> Send Message
+                                </>
+                            )
+                        )}
                     </Button>
                 </div>
             </div>

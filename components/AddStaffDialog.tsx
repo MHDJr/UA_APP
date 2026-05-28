@@ -121,41 +121,7 @@ export default function AddStaffDialog({
                     }
                 }
 
-                if (userRole === "MANAGER") {
-                    // Create a request for the CEO
-                    const { error: requestError } = await supabase.from("requests").insert({
-                        type: "add_staff",
-                        submitted_by: user?.id,
-                        title: `Staff Addition: ${fullName}`,
-                        description: `Request to add new staff member ${fullName} (@${username}) as ${designation} in ${formData.role} department.`,
-                        priority: "normal",
-                        status: "pending",
-                        metadata: {
-                            ...formData,
-                            department: formData.role === "sales" ? "Sales" : formData.role === "accounts" ? "Finance" : formData.role === "marketing" ? "Marketing" : "Administration",
-                        }
-                    });
-
-                    if (requestError) throw requestError;
-
-                    // Invalidate requests query to show the new request in the list
-                    queryClient.invalidateQueries({ queryKey: ["requests"] });
-
-                    toast.success("Request sent to CEO for final deployment authorization.");
-                    onOpenChange(false);
-                    setFormData({
-                        fullName: "",
-                        email: "",
-                        username: "",
-                        designation: "",
-                        password: "",
-                        role: "staff",
-                        systemRole: "staff",
-                    });
-                    return;
-                }
-
-                console.log("Creating new user (Direct CEO Action):", { email, username, fullName });
+                console.log("Creating new user:", { email, username, fullName });
                 
                 // Use a separate client for signup to prevent overwriting the current CEO session
                 const authClient = createClient(supabaseUrl, supabaseAnonKey, {

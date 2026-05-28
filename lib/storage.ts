@@ -1,38 +1,53 @@
 import { supabase } from "./supabase";
-import { supabaseAdmin } from "./supabase-admin";
 
 // Upload a file to a public bucket and return the public URL
 export async function uploadPublicFile(
     bucket: string,
     path: string,
-    file: File,
+    file: File | Blob,
 ) {
     const { error } = await supabase.storage
         .from(bucket)
-        .upload(path, file, { upsert: false });
+        .upload(path, file, { 
+            upsert: true,
+            contentType: file.type || 'image/webp'
+        });
+        
     if (error) throw error;
     const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
 }
 
-// Create a signed URL for a private object (server-side via admin client)
-export async function createSignedUrl(
-    bucket: string,
-    path: string,
-    expires = 60,
-) {
-    const { data, error } = await supabaseAdmin.storage
-        .from(bucket)
-        .createSignedUrl(path, expires);
-    if (error) throw error;
-    return data.signedUrl;
-}
-
-// Delete object (admin)
-export async function removeObject(bucket: string, path: string) {
-    const { data, error } = await supabaseAdmin.storage
+/**
+ * Deletes a file from a bucket using its public URL or path
+ */
+export async function deleteFile(bucket: string, pathOrUrl: string) {
+    const path = extractPathFromUrl(pathOrUrl);
+    const { data, error } = await supabase.storage
         .from(bucket)
         .remove([path]);
-    if (error) throw error;
+        
+    if (error) {
+        console.error(`Error deleting file from ${bucket}:`, error);
+        throw error;
+    }
     return data;
+}
+
+/**
+ * Extracts the storage path from a Supabase public URL
+ */
+export function extractPathFromUrl(url: string): string {
+    if (!url || !url.includes('/storage/v1/object/public/')) return url;
+    try {
+        const parts = url.split('/storage/v1/object/public/');
+        if (parts.length < 2) return url;
+        
+        // Remove the bucket name (first part after 'public/')
+        const pathWithBucket = parts[1];
+        const bucketMatch = pathWithBucket.match(/^([^\/]+)\/(.*)$/);
+        return bucketMatch ? bucketMatch[2] : pathWithBucket;
+    } catch (e) {
+        return url;
+    }
 }

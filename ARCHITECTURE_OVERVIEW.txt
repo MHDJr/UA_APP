@@ -1,0 +1,65 @@
+================================================================================
+TECHNICAL ARCHITECTURE OVERVIEW: UA-Software Project
+Generated: 2026-05-26
+================================================================================
+
+1. PROJECT SUMMARY
+------------------
+This project is a modern, high-performance web application built with a JAMstack-inspired 
+architecture. It is designed for cross-platform deployment (web and mobile) using 
+Capacitor. The application leverages a React-based frontend and a robust 
+Backend-as-a-Service (BaaS) layer provided by Supabase.
+
+2. TECHNOLOGY STACK
+-------------------
+- Frontend Framework: Next.js (App Router, v13.5.6)
+- Language: TypeScript
+- Styling: Tailwind CSS, PostCSS, TailwindCSS-Animate
+- UI Components: Radix UI primitives, shadcn/ui library
+- State Management/Data Fetching: TanStack React Query (v5)
+- Animations: Framer Motion, GSAP
+- Backend/Database: Supabase (PostgreSQL), Supabase Auth
+- Realtime Features: Socket.io
+- Form Handling: React Hook Form + Zod (validation)
+- Authentication: Supabase Auth, WebAuthn (Passkeys)
+- Charts/Data: Recharts
+- Mobile Hybrid: Capacitor
+- Build/DevOps: Node.js, NPM, ESLint, Vercel/Netlify deployment targets
+
+3. FRONTEND ARCHITECTURE
+------------------------
+- Core App Structure: Utilizes the Next.js App Router (app/ directory).
+- Component Strategy: Component-driven development using modular components (components/)
+  and UI primitives (components/ui/) inspired by the shadcn/ui design pattern.
+- Theming: Managed via next-themes (supporting light/dark modes).
+- Responsive Design: Tailwind CSS utility-first approach with considerations for 
+  both desktop and mobile viewports.
+
+4. BACKEND & DATABASE ARCHITECTURE
+----------------------------------
+- Database: PostgreSQL, managed via Supabase.
+- Database Management: Migrations are handled via the `supabase/migrations/` 
+  directory, with additional manual maintenance scripts in the root directory 
+  (e.g., `*.sql`, `execute_schema_fix.js`).
+- Backend Logic: Primarily client-side orchestration via Supabase SDK + 
+  Edge Functions (in `supabase/functions/`).
+- Realtime Capabilities: Utilizes Socket.io for bi-directional communication 
+  and event-based updates.
+
+5. CROSS-PLATFORM CAPABILITIES
+------------------------------
+- The application is configured as a hybrid app using Capacitor (`capacitor.config.json`).
+- Platform-specific configurations are located in the `ios/` directory.
+
+6. KEY DEPENDENCIES & LIBRARIES
+-------------------------------
+- Charts: Recharts
+- Animations: GSAP, Framer Motion
+- UI Components: Radix UI, Lucide React (icons)
+- Utility: date-fns, clsx, tailwind-merge, zod
+- Network/Sync: TanStack React Query, Socket.io
+- Security: @simplewebauthn (browser/server)
+
+================================================================================
+End of Overview
+================================================================================

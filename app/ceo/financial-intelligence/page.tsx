@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import {
     Wallet,
@@ -645,8 +646,6 @@ const useCounterAnimation = (targetValue: number, duration: number = 2000) => {
 
 export default function CEOFinancialIntelligence() {
     const { profile } = useAuth();
-    const [loading, setLoading] = useState(true);
-    const [financialEntries, setFinancialEntries] = useState<any[]>([]);
     const [dailyMetrics, setDailyMetrics] = useState<DailyMetrics>({
         uloomxIncome: 0,
         usthadIncome: 0,
@@ -672,94 +671,67 @@ export default function CEOFinancialIntelligence() {
     const animatedMonthlyUsthad = useCounterAnimation(monthlyMetrics.usthadTotal, 3000);
     const animatedMonthlyExpense = useCounterAnimation(monthlyMetrics.totalExpense, 2600);
 
-    const [chartData, setChartData] = useState<ChartData[]>([]);
     const [currentDateTime, setCurrentDateTime] = useState<string>("");
+    const [chartData, setChartData] = useState<ChartData[]>([]);
 
-    // Fetch financial data from database with cleanup
+    // Fetch financial data using TanStack Query
+    const { data: financialEntries = [], isLoading: loading } = useQuery({
+        queryKey: ['financial-entries', profile?.id],
+        queryFn: async () => {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const { data, error } = await supabase
+                .from('financial_entries')
+                .select('*')
+                .gte('entry_date', thirtyDaysAgo.toISOString().split('T')[0])
+                .order('entry_date', { ascending: false });
+            
+            if (error) throw error;
+            return data || [];
+        },
+        enabled: !!profile,
+        refetchOnWindowFocus: true,
+        retry: 3,
+        staleTime: 60000,
+    });
+
     useEffect(() => {
-        let isMounted = true;
+        if (!financialEntries || financialEntries.length === 0) return;
+
+        // Calculate daily metrics (today's data)
+        const today = new Date().toISOString().split('T')[0];
+        const todayEntries = financialEntries.filter(entry => entry.entry_date === today);
         
-        const fetchFinancialData = async () => {
-            try {
-                setLoading(true);
-                
-                // Fetch financial entries for the last 30 days
-                const thirtyDaysAgo = new Date();
-                thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-                
-                const { data: entries, error } = await supabase
-                    .from('financial_entries')
-                    .select('*')
-                    .gte('entry_date', thirtyDaysAgo.toISOString().split('T')[0])
-                    .order('entry_date', { ascending: false });
-                
-                if (error) {
-                    console.error('Error fetching financial entries:', error);
-                    if (isMounted) setLoading(false);
-                    return;
-                }
-                
-                if (!isMounted) return;
-                
-                console.log('Fetched financial entries:', entries);
-                setFinancialEntries(entries || []);
-                
-                // Calculate daily metrics (today's data)
-                const today = new Date().toISOString().split('T')[0];
-                const todayEntries = (entries || []).filter(entry => 
-                    entry.entry_date === today
-                );
-                
-                const todayUloomx = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
-                const todayUsthad = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
-                const todayExpenses = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
-                
-                console.log('Daily metrics calculated:', { todayUloomx, todayUsthad, todayExpenses, todayEntries });
-                
-                setDailyMetrics({
-                    uloomxIncome: todayUloomx,
-                    usthadIncome: todayUsthad,
-                    combinedExpense: todayExpenses,
-                    netProfit: todayUloomx + todayUsthad - todayExpenses,
-                });
-                
-                // Calculate monthly metrics (current month)
-                const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
-                const monthEntries = (entries || []).filter(entry => 
-                    entry.entry_date.startsWith(currentMonth)
-                );
-                
-                const monthUloomx = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
-                const monthUsthad = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
-                const monthExpenses = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
-                
-                console.log('Monthly metrics calculated:', { monthUloomx, monthUsthad, monthExpenses, monthEntries, currentMonth });
-                
-                setMonthlyMetrics({
-                    uloomxTotal: monthUloomx,
-                    usthadTotal: monthUsthad,
-                    totalExpense: monthExpenses,
-                    balance: monthUloomx + monthUsthad - monthExpenses,
-                });
-                
-                // Generate chart data
-                setChartData(generateChartData(entries || []));
-                
-            } catch (error) {
-                console.error('Error fetching financial data:', error);
-            } finally {
-                if (isMounted) setLoading(false);
-            }
-        };
+        const todayUloomx = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
+        const todayUsthad = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
+        const todayExpenses = todayEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
         
-        if (profile) {
-            fetchFinancialData();
-        }
+        setDailyMetrics({
+            uloomxIncome: todayUloomx,
+            usthadIncome: todayUsthad,
+            combinedExpense: todayExpenses,
+            netProfit: todayUloomx + todayUsthad - todayExpenses,
+        });
         
-        return () => {
-            isMounted = false;
-        };
-    }, [profile]);
+        // Calculate monthly metrics (current month)
+        const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+        const monthEntries = financialEntries.filter(entry => entry.entry_date.startsWith(currentMonth));
+        
+        const monthUloomx = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.uloomx_income) || 0), 0);
+        const monthUsthad = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.usthad_income) || 0), 0);
+        const monthExpenses = monthEntries.reduce((sum, entry) => sum + (parseFloat(entry.total_expenses) || 0), 0);
+        
+        setMonthlyMetrics({
+            uloomxTotal: monthUloomx,
+            usthadTotal: monthUsthad,
+            totalExpense: monthExpenses,
+            balance: monthUloomx + monthUsthad - monthExpenses,
+        });
+        
+        // Generate chart data
+        setChartData(generateChartData(financialEntries));
+    }, [financialEntries]);
 
     // Update date/time
     useEffect(() => {

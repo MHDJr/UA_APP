@@ -932,7 +932,7 @@ export function ExecutiveSalesOverview() {
                                             <Users className="w-6 h-6 text-white/80" />
                                         </div>
                                         <p className="text-white/80 text-sm font-semibold tracking-wide">No student assignments yet</p>
-                                        <p className="text-white/40 text-xs mt-1">Assignments will appear here when managers assign tutors</p>
+                                        <p className="text-white/40 text-xs mt-1">Assignments will appear here when administrators assign tutors</p>
                                     </div>
                                 )}
                             </div>

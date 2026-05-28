@@ -107,7 +107,7 @@ export default function ExecutiveActions({
                     console.error("Failed to create directive:", directiveError);
                     toast.error("Broadcast sent but directive creation failed");
                 } else {
-                    toast.success("Directive assigned to MANAGER");
+                    toast.success("Directive assigned to ADMINISTRATOR");
                 }
             }
 

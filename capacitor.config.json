@@ -1,10 +1,6 @@
 {
-  "appId": "com.usthadacademy.command",
-  "appName": "UA Command",
+  "appId": "com.usthadacademy.app",
+  "appName": "UA CommandCenter",
   "webDir": "out",
-  "bundledWebRuntime": false,
-  "server": {
-    "url": "https://dashboard.usthadacademy.com",
-    "cleartext": true
-  }
+  "bundledWebRuntime": false
 }

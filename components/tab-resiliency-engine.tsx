@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useCallback } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
@@ -12,38 +13,30 @@ import { ShieldCheck } from "lucide-react";
  * caused by browser background throttling and stale socket connections.
  */
 export function TabResiliencyEngine({ children }: { children: React.ReactNode }) {
-  
+  const queryClient = useQueryClient();
+
   const performSystemReactivation = useCallback(async () => {
     console.log("TabResiliencyEngine: Reactivating system thread...");
     
-    // 1. SILENT BACKGROUND HEALTH CHECK
-    // Trigger a custom event that components can listen to for silent refreshes
-    const refreshEvent = new CustomEvent("academyos-system-refresh", {
-      detail: { timestamp: new Date().toISOString(), silent: true }
-    });
-    window.dispatchEvent(refreshEvent);
+    // 1. FORCE TANSTACK QUERY REFRESH
+    // Invalidate all queries to force a fresh data fetch
+    queryClient.invalidateQueries();
 
     // 2. FORCE-DISCONNECT DEAD CONNECTIONS
     // Immediately kill stale Supabase real-time subscriptions
     try {
       console.log("TabResiliencyEngine: Purging stale subscriptions...");
-      // Using removeAllChannels to clear out potentially throttled/stale connections
       await supabase.removeAllChannels();
     } catch (error) {
       console.error("TabResiliencyEngine: Subscription purge failed", error);
     }
 
-    // 3. CLEAR DEFECTIVE STATE QUEUES
-    // Force reset all loading states across the app via global event
-    const resetLoadingEvent = new CustomEvent("academyos-force-reset-loading");
-    window.dispatchEvent(resetLoadingEvent);
-
-    // 4. RE-ESTABLISH REAL-TIME SUBSCRIPTIONS
-    // Tell components to re-setup their listeners since we purged everything
+    // 3. RE-ESTABLISH REAL-TIME SUBSCRIPTIONS
+    // Trigger reconnection event for components to re-subscribe
     const reconnectEvent = new CustomEvent("academyos-reconnect-realtime");
     window.dispatchEvent(reconnectEvent);
 
-    // 5. SEAMLESS RE-SYNC
+    // 4. SEAMLESS RE-SYNC
     // Trigger a fresh data fetch for all major systems
     const resyncEvent = new CustomEvent("academyos-global-resync");
     window.dispatchEvent(resyncEvent);
@@ -53,12 +46,12 @@ export function TabResiliencyEngine({ children }: { children: React.ReactNode })
         <ShieldCheck className="w-4 h-4 text-emerald-500" />
         <div>
           <p className="font-semibold text-sm">Session Integrity Restored</p>
-          <p className="text-xs text-white/60">Data channels re-synchronized</p>
+          <p className="text-xs text-white/60">Data channels and queries re-synced</p>
         </div>
       </div>,
       { duration: 2500, id: "resiliency-toast" }
     );
-  }, []);
+  }, [queryClient]);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
