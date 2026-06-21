@@ -2,18 +2,14 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { LayoutDashboard, Users, Mail, ChevronRight, ChevronLeft, TrendingUp, LogOut, Wallet, Brain, Plus, Calendar, MessageSquare } from "lucide-react";
+import { LayoutDashboard, Users, Mail, ChevronRight, ChevronLeft, TrendingUp, LogOut, Wallet, Brain } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { cn, isValidAvatarUrl } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useBadgeCounts } from "@/hooks/use-badge-counts";
 import { supabase } from "@/lib/supabase";
 import { SystemSyncButton } from "./system-sync-button";
 import { useAuth } from "@/lib/auth-context";
 import { motion, AnimatePresence } from "framer-motion";
-import { useQueryClient } from "@tanstack/react-query";
-import { LeaveRequestModal } from "@/components/LeaveRequestModal";
-import { RequestModal } from "@/components/RequestModal";
-import { ProfileModal } from "@/components/ProfileModal";
 
 // Brand colors
 const BRAND_COLORS = {
@@ -63,20 +59,14 @@ interface CEOSidebarProps {
     activeView: string;
     onMinimizedChange?: (isMinimized: boolean) => void;
     onViewChange?: (view: string) => void;
-    unreadCommsCount?: number;
-    isCommsOpen?: boolean;
 }
 
-export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unreadCommsCount, isCommsOpen }: CEOSidebarProps) {
+export function CEOSidebar({ activeView, onMinimizedChange, onViewChange }: CEOSidebarProps) {
     const [isMinimized, setIsMinimized] = useState(true);
     const [hoveredItem, setHoveredItem] = useState<string | null>(null);
     const { badgeCounts } = useBadgeCounts();
     const { userRole, profile } = useAuth();
     const router = useRouter();
-    const queryClient = useQueryClient();
-    const [isLeaveModalOpen, setIsLeaveModalOpen] = useState(false);
-    const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
-    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
     const handleToggleMinimized = () => {
         const newState = !isMinimized;
@@ -85,23 +75,11 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
     };
 
     const handleNavigate = (id: string) => {
-        if (id === "financial-intelligence") {
-            router.push("/ceo/financial-intelligence");
-        } else if (id === "sales-intelligence") {
-            router.push("/ceo/sales");
-        } else if (id === "command-center") {
-            if (onViewChange) {
-                onViewChange(id);
-            } else {
-                router.push("/ceo");
-            }
-        } else {
-            if (onViewChange) {
-                onViewChange(id);
-            } else {
-                router.push(`/ceo?view=${id}`);
-            }
-        }
+        onViewChange?.(id);
+        if (id === "command-center") router.push("/ceo");
+        else if (id === "financial-intelligence") router.push("/ceo/financial-intelligence");
+        else if (id === "sales-intelligence") router.push("/ceo/sales");
+        else router.push(`/ceo?view=${id}`);
     };
 
     const handleLogout = async () => {
@@ -119,8 +97,7 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
         const Icon = item.icon;
 
         const badgeCount = (item.id === "staff-management") ? badgeCounts.pendingRequests : 
-                           (item.id === "inbox") ? badgeCounts.unreadNotifications : 
-                           (item.id === "comms") ? (unreadCommsCount ?? 0) : 0;
+                           (item.id === "inbox") ? badgeCounts.victories : 0;
 
         return (
             <li key={item.id}>
@@ -197,7 +174,7 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
             className={cn(
                 "fixed left-0 top-0 h-screen hidden md:flex flex-col z-50",
                 "sidebar-theme-transition",
-                "transition-all duration-700 ease-&lsqb;cubic-bezier(0.23,1,0.32,1)&rsqb;"
+                "transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)]"
             )}
             style={{ 
                 width: isMinimized ? 80 : 260,
@@ -220,7 +197,6 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
                         <div
                             className="w-10 h-10 rounded-[1.25rem] flex items-center justify-center bg-white shadow-[0_10px_30px_rgba(49,38,125,0.15)] group-hover:shadow-[0_15px_40px_rgba(49,38,125,0.25)] transition-all duration-500 border border-indigo-50/50 overflow-hidden ring-4 ring-indigo-500/5"
                         >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img 
                                 src="/images/usthadacademylogo2.svg" 
                                 alt="UA Logo" 
@@ -280,46 +256,6 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
                         </div>
                     )}
 
-                    {userRole !== "CEO" && (
-                        <div className="flex flex-col gap-2">
-                            {isMinimized ? (
-                                <div className="flex flex-col gap-2 items-center">
-                                    <button 
-                                        onClick={() => setIsLeaveModalOpen(true)}
-                                        className="w-8 h-8 rounded-full bg-[#31267D]/10 hover:bg-[#31267D]/20 text-[#31267D] flex items-center justify-center transition-all duration-300 hover:scale-105"
-                                        title="Request Leave"
-                                    >
-                                        <Calendar className="w-4 h-4" />
-                                    </button>
-                                    <button 
-                                        onClick={() => setIsRequestModalOpen(true)}
-                                        className="w-8 h-8 rounded-full bg-orange-500/10 hover:bg-orange-500/20 text-orange-500 flex items-center justify-center transition-all duration-300 hover:scale-105"
-                                        title="New Request"
-                                    >
-                                        <Plus className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            ) : (
-                                <div className="flex flex-col gap-2">
-                                    <button 
-                                        onClick={() => setIsLeaveModalOpen(true)}
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#31267D]/5 hover:bg-[#31267D]/10 text-[#31267D] text-[9px] font-black uppercase tracking-widest transition-all duration-300"
-                                    >
-                                        <Calendar className="w-3.5 h-3.5" />
-                                        Request Leave
-                                    </button>
-                                    <button 
-                                        onClick={() => setIsRequestModalOpen(true)}
-                                        className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-600 hover:to-orange-700 text-white text-[9px] font-black uppercase tracking-widest shadow-lg shadow-orange-500/20 transition-all duration-300"
-                                    >
-                                        <Plus className="w-3.5 h-3.5" />
-                                        New Request
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
                     <div className="space-y-2">
                         <button
                             onClick={handleLogout}
@@ -334,25 +270,14 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
                             )}
                         </button>
 
-                        <div 
-                            onClick={() => setIsProfileModalOpen(true)}
-                            className={cn(
-                                "flex items-center transition-all duration-700 cursor-pointer hover:bg-[#31267D]/5 dark:hover:bg-zinc-800/30",
-                                isMinimized ? "justify-center py-4" : "gap-3 p-2 bg-[#31267D]/[0.03] rounded-[1.75rem] border border-[#31267D]/5"
-                            )}
-                        >
+                        <div className={cn(
+                            "flex items-center transition-all duration-700",
+                            isMinimized ? "justify-center py-4" : "gap-3 p-2 bg-[#31267D]/[0.03] rounded-[1.75rem] border border-[#31267D]/5"
+                        )}>
                             <Avatar className="w-10 h-10 border-2 border-white shadow-xl flex-shrink-0 transition-transform duration-500 hover:scale-105">
-                                <AvatarImage src={
-                                    profile?.avatar_url && isValidAvatarUrl(profile.avatar_url)
-                                        ? profile.avatar_url
-                                        : (!profile?.avatar_url && userRole === 'CEO')
-                                            ? "/images/ceo.jpeg"
-                                            : undefined
-                                } />
+                                <AvatarImage src={userRole === 'CEO' ? "/images/ceo.jpeg" : undefined} />
                                 <AvatarFallback className="bg-[#31267D] text-white font-black text-xs">
-                                    {profile?.avatar_url && !isValidAvatarUrl(profile.avatar_url)
-                                        ? profile.avatar_url
-                                        : (profile?.full_name || 'U').split(' ').map(n => n[0]).join('')}
+                                    {(profile?.full_name || 'U').split(' ').map(n => n[0]).join('')}
                                 </AvatarFallback>
                             </Avatar>
                             {!isMinimized && (
@@ -365,26 +290,6 @@ export function CEOSidebar({ activeView, onMinimizedChange, onViewChange, unread
                     </div>
                 </div>
             </div>
-            
-            {userRole !== "CEO" && (
-                <>
-                    <LeaveRequestModal
-                        isOpen={isLeaveModalOpen}
-                        onClose={() => setIsLeaveModalOpen(false)}
-                        onSubmitSuccess={() => queryClient.invalidateQueries()}
-                    />
-                    <RequestModal
-                        isOpen={isRequestModalOpen}
-                        onClose={() => setIsRequestModalOpen(false)}
-                        onSubmitSuccess={() => queryClient.invalidateQueries()}
-                    />
-                </>
-            )}
-            
-            <ProfileModal
-                isOpen={isProfileModalOpen}
-                onClose={() => setIsProfileModalOpen(false)}
-            />
         </aside>
     );
 }
