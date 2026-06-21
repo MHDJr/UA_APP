@@ -15,32 +15,8 @@ import { ShieldCheck } from "lucide-react";
 export function TabResiliencyEngine({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
 
-  const performSystemReactivation = useCallback(async () => {
-    console.log("TabResiliencyEngine: Reactivating system thread...");
-    
-    // 1. FORCE TANSTACK QUERY REFRESH
-    // Invalidate all queries to force a fresh data fetch
-    queryClient.invalidateQueries();
-
-    // 2. FORCE-DISCONNECT DEAD CONNECTIONS
-    // Immediately kill stale Supabase real-time subscriptions
-    try {
-      console.log("TabResiliencyEngine: Purging stale subscriptions...");
-      await supabase.removeAllChannels();
-    } catch (error) {
-      console.error("TabResiliencyEngine: Subscription purge failed", error);
-    }
-
-    // 3. RE-ESTABLISH REAL-TIME SUBSCRIPTIONS
-    // Trigger reconnection event for components to re-subscribe
-    const reconnectEvent = new CustomEvent("academyos-reconnect-realtime");
-    window.dispatchEvent(reconnectEvent);
-
-    // 4. SEAMLESS RE-SYNC
-    // Trigger a fresh data fetch for all major systems
-    const resyncEvent = new CustomEvent("academyos-global-resync");
-    window.dispatchEvent(resyncEvent);
-
+  const handleSystemReactivationComplete = useCallback(() => {
+    console.log("TabResiliencyEngine: Resync complete, showing integrity toast.");
     toast.success(
       <div className="flex items-center gap-3">
         <ShieldCheck className="w-4 h-4 text-emerald-500" />
@@ -51,27 +27,16 @@ export function TabResiliencyEngine({ children }: { children: React.ReactNode })
       </div>,
       { duration: 2500, id: "resiliency-toast" }
     );
-  }, [queryClient]);
+  }, []);
 
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        console.log("TabResiliencyEngine: Visibility changed to visible");
-        performSystemReactivation();
-      }
-    };
-
-    // TAB RE-ACTIVATION DETECTION
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    
-    // Check for focus events as well (covers window switching)
-    window.addEventListener("focus", handleVisibilityChange);
+    // Listen to global resync events emitted by the throttled useWindowSync
+    window.addEventListener("academyos-global-resync", handleSystemReactivationComplete);
 
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleVisibilityChange);
+      window.removeEventListener("academyos-global-resync", handleSystemReactivationComplete);
     };
-  }, [performSystemReactivation]);
+  }, [handleSystemReactivationComplete]);
 
   return <>{children}</>;
 }

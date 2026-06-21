@@ -54,11 +54,9 @@ export function useBadgeCounts() {
       if (subscriptionsRef.current && subscriptionsRef.current.length > 0) {
         subscriptionsRef.current.forEach(s => {
           if (s) {
-            try {
-              supabase.removeChannel(s);
-            } catch (e) {
-              console.error("Failed to remove old badge channel reference:", e);
-            }
+            supabase.removeChannel(s).catch(e => {
+              console.warn("Failed to remove old badge channel reference:", e);
+            });
           }
         });
       }
@@ -117,11 +115,9 @@ export function useBadgeCounts() {
       if (subscriptionsRef.current && subscriptionsRef.current.length > 0) {
         subscriptionsRef.current.forEach(s => {
           if (s) {
-            try {
-              supabase.removeChannel(s);
-            } catch (e) {
-              console.error("Failed to clean up badge channel on unmount:", e);
-            }
+            supabase.removeChannel(s).catch(e => {
+              console.warn("Failed to clean up badge channel on unmount:", e);
+            });
           }
         });
       }

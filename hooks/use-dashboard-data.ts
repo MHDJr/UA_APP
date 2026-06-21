@@ -23,7 +23,7 @@ export function useTasks() {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from("tasks")
-                .select("*, assigned_to_user:profiles!assigned_to(full_name, department), creator:profiles!created_by(role, is_manager)")
+                .select("*, assigned_to_user:profiles!assigned_to(full_name, department), creator:profiles!created_by(full_name, role, is_manager)")
                 .not("status", "in", '("completed","deleted","COMPLETED")')
                 .order("updated_at", { ascending: false });
             if (error) throw error;
@@ -37,7 +37,7 @@ export function useTasks() {
         queryFn: async () => {
             const { data, error } = await supabase
                 .from("tasks")
-                .select("*, assigned_to_user:profiles!assigned_to(full_name, department), creator:profiles!created_by(role, is_manager)")
+                .select("*, assigned_to_user:profiles!assigned_to(full_name, department), creator:profiles!created_by(full_name, role, is_manager)")
                 .in("status", ["completed", "COMPLETED"])
                 .is("reviewed_at", null)
                 .order("updated_at", { ascending: false })
@@ -78,7 +78,9 @@ export function useStaff() {
 // ============================================
 // LEADS & DEMOS HOOK
 // ============================================
-export function useLeads() {
+export function useLeads(options: any = {}) {
+    const { user } = useAuth();
+
     const { data: leads = [], isLoading: isLoadingLeads } = useQuery({
         queryKey: ["leads"],
         queryFn: async () => {
@@ -95,7 +97,9 @@ export function useLeads() {
             console.log("Leads fetched:", data?.length, data);
             return data;
         },
-        ...DASHBOARD_QUERY_CONFIG
+        ...DASHBOARD_QUERY_CONFIG,
+        ...options,
+        enabled: !!user?.id && (options.enabled !== undefined ? options.enabled : true)
     });
 
     const { data: demoRequests = [], isLoading: isLoadingDemos } = useQuery({
@@ -109,7 +113,9 @@ export function useLeads() {
             if (error) throw error;
             return data;
         },
-        ...DASHBOARD_QUERY_CONFIG
+        ...DASHBOARD_QUERY_CONFIG,
+        ...options,
+        enabled: !!user?.id && (options.enabled !== undefined ? options.enabled : true)
     });
 
     return { leads, demoRequests, isLoading: isLoadingLeads || isLoadingDemos };

@@ -1,8 +1,36 @@
 "use client";
 
-import React, { useState, useEffect, useMemo, Fragment, useRef, useCallback } from "react";
+import React, {
+    useState,
+    useEffect,
+    useMemo,
+    Fragment,
+    useRef,
+    useCallback,
+} from "react";
 import { useRouter } from "next/navigation";
-import { supabase, Profile, Task, Request, Broadcast, Knock, ActivityFeed, Attendance, SignupRequest, Meeting, ExecutiveReport, AgentStatus, Lead, LeadStatus, DemoRequest, TutorAvailability, TutorNotification, Programme, Idea, SalesSignals } from "@/lib/supabase";
+import {
+    supabase,
+    Profile,
+    Task,
+    Request,
+    Broadcast,
+    Knock,
+    ActivityFeed,
+    Attendance,
+    SignupRequest,
+    Meeting,
+    ExecutiveReport,
+    AgentStatus,
+    Lead,
+    LeadStatus,
+    DemoRequest,
+    TutorAvailability,
+    TutorNotification,
+    Programme,
+    Idea,
+    SalesSignals,
+} from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { useAuth } from "@/lib/auth-context";
 import { useTheme } from "./theme-provider";
@@ -92,7 +120,7 @@ import { SkeletonCommandCenter } from "./skeleton-loader";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { 
+import {
     Select,
     SelectContent,
     SelectItem,
@@ -104,13 +132,13 @@ import { format, parseISO, isPast, isToday, isTomorrow } from "date-fns";
 import { useTabResiliency } from "./tab-resiliency-engine";
 import { useIdeas } from "@/hooks/use-ideas";
 import { useQueryClient } from "@tanstack/react-query";
-import { 
-    useTasks, 
-    useStaff, 
-    useLeads, 
-    useRequests, 
-    useMeetings, 
-    useCeoDirectives 
+import {
+    useTasks,
+    useStaff,
+    useLeads,
+    useRequests,
+    useMeetings,
+    useCeoDirectives,
 } from "@/hooks/use-dashboard-data";
 
 // ============================================
@@ -123,162 +151,211 @@ type SystemStatus = "STABLE" | "WARNING" | "CRITICAL";
 // UI COMPONENTS (MINIMAL & AUTHORITY FOCUSED)
 // ============================================
 
-const SectionHeader = React.memo(({
-    title,
-    color = "bg-theme-bg-white-20",
-    className = "mb-4"
-}: {
-    title: string;
-    color?: string;
-    className?: string;
-}) => (
-    <div className={cn("flex items-center gap-3", className)}>
-        <div className={cn("w-1.5 h-6 rounded-full shadow-sm", color)} />
-        <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100">
-            {title}
-        </h3>
-    </div>
-));
+const SectionHeader = React.memo(
+    ({
+        title,
+        color = "bg-theme-bg-white-20",
+        className = "mb-4",
+    }: {
+        title: string;
+        color?: string;
+        className?: string;
+    }) => (
+        <div className={cn("flex items-center gap-3", className)}>
+            <div className={cn("w-1.5 h-6 rounded-full shadow-sm", color)} />
+            <h3 className="text-[11px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100">
+                {title}
+            </h3>
+        </div>
+    ),
+);
 SectionHeader.displayName = "SectionHeader";
 
-const CommandCard = React.memo(({
-    children,
-    className = "",
-}: {
-    children: React.ReactNode;
-    className?: string;
-}) => {
-    return (
-        <div
-            className={cn(
-                "rounded-3xl p-6 relative overflow-hidden transition-all duration-300",
-                "bg-white/80 backdrop-blur-xl border border-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.03)]",
-                "dark:bg-zinc-900/60 dark:border-zinc-800/60 dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",
-                className
-            )}
-        >
-            {children}
-        </div>
-    );
-});
+const CommandCard = React.memo(
+    ({
+        children,
+        className = "",
+    }: {
+        children: React.ReactNode;
+        className?: string;
+    }) => {
+        return (
+            <div
+                className={cn(
+                    "rounded-3xl p-6 relative overflow-hidden transition-all duration-300",
+                    "bg-white/80 backdrop-blur-xl border border-slate-100 shadow-[0_12px_40px_rgba(0,0,0,0.03)]",
+                    "dark:bg-zinc-900/60 dark:border-zinc-800/60 dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",
+                    className,
+                )}
+            >
+                {children}
+            </div>
+        );
+    },
+);
 CommandCard.displayName = "CommandCard";
 
-const ExecutivePerformanceEngine = React.memo(({ tasks, completedTasks }: { tasks: Task[], completedTasks: Task[] }) => {
-    const { userRole } = useAuth();
-    
-    // 1. Operational Velocity Calculation
-    const activeTasksCount = tasks.length;
-    const completedTodayCount = completedTasks.filter(t => t.updated_at && isToday(parseISO(t.updated_at))).length;
-    const totalToday = activeTasksCount + completedTodayCount;
-    const velocity = totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 84;
+const ExecutivePerformanceEngine = React.memo(
+    ({ tasks, completedTasks }: { tasks: Task[]; completedTasks: Task[] }) => {
+        const { userRole } = useAuth();
 
-    // 2. Departmental Load Distribution
-    const departments = ["Administration", "Marketing", "Sales", "Accounts"];
-    const loadDist = departments.map(dept => {
-        const count = tasks.filter(t => {
-            const deptName = (t as any).assigned_to_user?.department?.toLowerCase() || "";
-            return deptName === dept.toLowerCase();
-        }).length;
-        return { name: dept, count };
-    });
-    const maxLoad = Math.max(...loadDist.map(d => d.count), 1);
+        // 1. Operational Velocity Calculation
+        const activeTasksCount = tasks.length;
+        const completedTodayCount = completedTasks.filter(
+            (t) => t.updated_at && isToday(parseISO(t.updated_at)),
+        ).length;
+        const totalToday = activeTasksCount + completedTodayCount;
+        const velocity =
+            totalToday > 0
+                ? Math.round((completedTodayCount / totalToday) * 100)
+                : 84;
 
-    return (
-        <CommandCard className="mt-2">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100 opacity-80">
-                        Performance Engine
-                    </h3>
-                    <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500">
-                            Optimized
+        // 2. Departmental Load Distribution
+        const departments = [
+            "Administration",
+            "Marketing",
+            "Sales",
+            "Accounts",
+        ];
+        const loadDist = departments.map((dept) => {
+            const count = tasks.filter((t) => {
+                const deptName =
+                    (t as any).assigned_to_user?.department?.toLowerCase() ||
+                    "";
+                return deptName === dept.toLowerCase();
+            }).length;
+            return { name: dept, count };
+        });
+        const maxLoad = Math.max(...loadDist.map((d) => d.count), 1);
+
+        return (
+            <CommandCard className="mt-2">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-6">
+                    <div className="flex items-center gap-3">
+                        <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-900 dark:text-zinc-100 opacity-80">
+                            Performance Engine
+                        </h3>
+                        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.1)]">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            <span className="text-[8px] font-black uppercase tracking-widest text-emerald-500">
+                                Optimized
+                            </span>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-1 cursor-pointer group">
+                        <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 transition-colors">
+                            Today
+                        </span>
+                        <ChevronDown className="w-3 h-3 text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 transition-colors" />
+                    </div>
+                </div>
+
+                {/* Operational Velocity Metric */}
+                <div className="mb-8 p-5 rounded-[2rem] bg-slate-50/50 dark:bg-zinc-800/30 border border-slate-100 dark:border-zinc-800/50 shadow-inner">
+                    <div className="flex items-center justify-between mb-4">
+                        <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-[0.15em]">
+                            Operational Velocity
+                        </span>
+                        <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
+                            {velocity}%
                         </span>
                     </div>
-                </div>
-                <div className="flex items-center gap-1 cursor-pointer group">
-                    <span className="text-[9px] font-black uppercase tracking-wider text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 transition-colors">Today</span>
-                    <ChevronDown className="w-3 h-3 text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 transition-colors" />
-                </div>
-            </div>
-
-            {/* Operational Velocity Metric */}
-            <div className="mb-8 p-5 rounded-[2rem] bg-slate-50/50 dark:bg-zinc-800/30 border border-slate-100 dark:border-zinc-800/50 shadow-inner">
-                <div className="flex items-center justify-between mb-4">
-                    <span className="text-[10px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-[0.15em]">Operational Velocity</span>
-                    <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">{velocity}%</span>
-                </div>
-                <div className="h-2.5 w-full bg-white dark:bg-zinc-900 rounded-full overflow-hidden flex p-0.5 border border-slate-100 dark:border-zinc-800 shadow-sm">
-                    <motion.div 
-                        initial={{ width: 0 }}
-                        animate={{ width: `${velocity}%` }}
-                        transition={{ duration: 1, ease: "easeOut" }}
-                        className="h-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-400 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.3)]"
-                    />
-                </div>
-                <div className="flex justify-between mt-3 px-1">
-                    <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
-                        <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-tight">{completedTodayCount} Completed</span>
+                    <div className="h-2.5 w-full bg-white dark:bg-zinc-900 rounded-full overflow-hidden flex p-0.5 border border-slate-100 dark:border-zinc-800 shadow-sm">
+                        <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${velocity}%` }}
+                            transition={{ duration: 1, ease: "easeOut" }}
+                            className="h-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-400 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.3)]"
+                        />
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-zinc-700" />
-                        <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-tight">{activeTasksCount} Pending</span>
+                    <div className="flex justify-between mt-3 px-1">
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]" />
+                            <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-tight">
+                                {completedTodayCount} Completed
+                            </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-slate-200 dark:bg-zinc-700" />
+                            <span className="text-[9px] font-black text-slate-400 dark:text-zinc-500 uppercase tracking-tight">
+                                {activeTasksCount} Pending
+                            </span>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            {/* Departmental Load Distribution */}
-            <div className="mb-2">
-                <div className="flex items-center gap-2 mb-5">
-                    <Activity className="w-3.5 h-3.5 text-indigo-500/60 dark:text-indigo-400/60" />
-                    <h4 className="text-[10px] font-black text-slate-900 dark:text-zinc-100 opacity-80 uppercase tracking-[0.2em]">Load Distribution</h4>
-                </div>
-                <div className="grid grid-cols-1 gap-3.5">
-                    {loadDist.map(dept => (
-                        <div key={dept.name} className="flex items-center justify-between group">
-                            <div className="flex items-center gap-3 flex-1">
-                                <span className={cn(
-                                    "w-1.5 h-4 rounded-full transition-all duration-500 shadow-sm",
-                                    dept.name === "Administration" ? "bg-slate-400 dark:bg-zinc-500" :
-                                    dept.name === "Marketing" ? "bg-purple-500 dark:bg-purple-600" :
-                                    dept.name === "Sales" ? "bg-orange-500 dark:bg-orange-600" : "bg-blue-500 dark:bg-blue-600"
-                                )} />
-                                <span className="text-[11px] font-black text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight">{dept.name}</span>
-                            </div>
-                            <div className="flex items-center gap-3 w-32">
-                                <div className="flex-1 h-1.5 bg-slate-50 dark:bg-zinc-800/50 rounded-full overflow-hidden shadow-inner border border-slate-100/50 dark:border-zinc-800/30">
-                                    <motion.div 
-                                        initial={{ width: 0 }}
-                                        animate={{ width: `${(dept.count / maxLoad) * 100}%` }}
+                {/* Departmental Load Distribution */}
+                <div className="mb-2">
+                    <div className="flex items-center gap-2 mb-5">
+                        <Activity className="w-3.5 h-3.5 text-indigo-500/60 dark:text-indigo-400/60" />
+                        <h4 className="text-[10px] font-black text-slate-900 dark:text-zinc-100 opacity-80 uppercase tracking-[0.2em]">
+                            Load Distribution
+                        </h4>
+                    </div>
+                    <div className="grid grid-cols-1 gap-3.5">
+                        {loadDist.map((dept) => (
+                            <div
+                                key={dept.name}
+                                className="flex items-center justify-between group"
+                            >
+                                <div className="flex items-center gap-3 flex-1">
+                                    <span
                                         className={cn(
-                                            "h-full rounded-full opacity-80 shadow-sm",
-                                            dept.name === "Administration" ? "bg-slate-400 dark:bg-zinc-500" :
-                                            dept.name === "Marketing" ? "bg-purple-500 dark:bg-purple-600" :
-                                            dept.name === "Sales" ? "bg-orange-500 dark:bg-orange-600" : "bg-blue-500 dark:bg-blue-600"
+                                            "w-1.5 h-4 rounded-full transition-all duration-500 shadow-sm",
+                                            dept.name === "Administration"
+                                                ? "bg-slate-400 dark:bg-zinc-500"
+                                                : dept.name === "Marketing"
+                                                  ? "bg-purple-500 dark:bg-purple-600"
+                                                  : dept.name === "Sales"
+                                                    ? "bg-orange-500 dark:bg-orange-600"
+                                                    : "bg-blue-500 dark:bg-blue-600",
                                         )}
                                     />
+                                    <span className="text-[11px] font-black text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight">
+                                        {dept.name}
+                                    </span>
                                 </div>
-                                <span className="text-[11px] font-black text-slate-900 dark:text-zinc-100 w-5 text-right tabular-nums">{dept.count}</span>
+                                <div className="flex items-center gap-3 w-32">
+                                    <div className="flex-1 h-1.5 bg-slate-50 dark:bg-zinc-800/50 rounded-full overflow-hidden shadow-inner border border-slate-100/50 dark:border-zinc-800/30">
+                                        <motion.div
+                                            initial={{ width: 0 }}
+                                            animate={{
+                                                width: `${(dept.count / maxLoad) * 100}%`,
+                                            }}
+                                            className={cn(
+                                                "h-full rounded-full opacity-80 shadow-sm",
+                                                dept.name === "Administration"
+                                                    ? "bg-slate-400 dark:bg-zinc-500"
+                                                    : dept.name === "Marketing"
+                                                      ? "bg-purple-500 dark:bg-purple-600"
+                                                      : dept.name === "Sales"
+                                                        ? "bg-orange-500 dark:bg-orange-600"
+                                                        : "bg-blue-500 dark:bg-blue-600",
+                                            )}
+                                        />
+                                    </div>
+                                    <span className="text-[11px] font-black text-slate-900 dark:text-zinc-100 w-5 text-right tabular-nums">
+                                        {dept.count}
+                                    </span>
+                                </div>
                             </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
-            </div>
-        </CommandCard>
-    );
-});
+            </CommandCard>
+        );
+    },
+);
 ExecutivePerformanceEngine.displayName = "ExecutivePerformanceEngine";
 
 const renderCEOTaskGauge = (t: Task) => {
     const s = (t.status || "PENDING").toUpperCase();
-    const progress = s === "COMPLETED" ? 100 : (t.progress || 0);
+    const progress = s === "COMPLETED" ? 100 : t.progress || 0;
     const radius = 14;
     const circumference = 2 * Math.PI * radius; // ~88
     const strokeDashoffset = circumference - (circumference * progress) / 100;
-    
+
     let strokeColor = "stroke-blue-500";
     if (s === "COMPLETED") {
         strokeColor = "stroke-emerald-500";
@@ -306,7 +383,10 @@ const renderCEOTaskGauge = (t: Task) => {
                         cx="16"
                         cy="16"
                         r={radius}
-                        className={cn("fill-none transition-all duration-500 ease-out", strokeColor)}
+                        className={cn(
+                            "fill-none transition-all duration-500 ease-out",
+                            strokeColor,
+                        )}
                         strokeWidth="2.5"
                         strokeDasharray={circumference}
                         strokeDashoffset={strokeDashoffset}
@@ -341,25 +421,38 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     // ============================================
     // 1. STATE DECLARATIONS (TOP-LEVEL)
     // ============================================
-    
+
     // TanStack Query Hooks (Primary Data Source)
-    const { activeTasks: tasks = [], completedTasks = [], isFetching: isTasksFetching } = useTasks();
+    const {
+        activeTasks: tasks = [],
+        completedTasks = [],
+        isFetching: isTasksFetching,
+    } = useTasks();
     const { data: staff = [], isFetching: isStaffFetching } = useStaff();
-    const { data: requests = [], isFetching: isRequestsFetching } = useRequests();
-    const { data: meetings = [], isFetching: isMeetingsFetching } = useMeetings();
-    const { data: ceoDirectives = [], isFetching: isCeoDirectivesFetching } = useCeoDirectives();
+    const { data: requests = [], isFetching: isRequestsFetching } =
+        useRequests();
+    const { data: meetings = [], isFetching: isMeetingsFetching } =
+        useMeetings();
+    const { data: ceoDirectives = [], isFetching: isCeoDirectivesFetching } =
+        useCeoDirectives();
     const { leads, demoRequests, isLoading: isLoadingLeads } = useLeads();
-    const { 
-        ideas, 
-        isFetching: isIdeasFetching, 
+    const {
+        ideas,
+        isFetching: isIdeasFetching,
         toggleIdea: toggleIdeaMutation,
-        disposeIdea: disposeIdeaMutation 
+        disposeIdea: disposeIdeaMutation,
     } = useIdeas();
 
     // UI & Filter States
-    const [taskTab, setTaskTab] = useState<"active" | "blocked" | "overdue" | "daily" | "completed">("active");
-    const [departmentFilter, setDepartmentFilter] = useState<"ceo" | "administration" | "marketing" | "sales" | "accounts">("ceo");
-    const [meetingFilter, setMeetingFilter] = useState<"upcoming" | "today" | "week">("upcoming");
+    const [taskTab, setTaskTab] = useState<
+        "active" | "blocked" | "overdue" | "daily" | "completed"
+    >("active");
+    const [departmentFilter, setDepartmentFilter] = useState<
+        "ceo" | "administration" | "marketing" | "sales" | "accounts"
+    >("ceo");
+    const [meetingFilter, setMeetingFilter] = useState<
+        "upcoming" | "today" | "week"
+    >("upcoming");
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [isRefreshing, setIsRefreshing] = useState(true);
     const [currentPage, setCurrentPage] = useState(1);
@@ -374,25 +467,45 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [isIdeasOpen, setIsIdeasOpen] = useState(false);
     const [isNewIdeaDialogOpen, setIsNewIdeaDialogOpen] = useState(false);
     const [isChatModalOpen, setIsChatModalOpen] = useState(false);
-    const [selectedStaffForChat, setSelectedStaffForChat] = useState<Profile | null>(null);
+    const [selectedStaffForChat, setSelectedStaffForChat] =
+        useState<Profile | null>(null);
     const [chatMessage, setChatMessage] = useState("");
-    
+
     // Global Announcement States
-    const [isAnnouncementDialogOpen, setIsAnnouncementDialogOpen] = useState(false);
-    const [announcementDefaultType, setAnnouncementDefaultType] = useState<MessageType>("announcement");
+    const [isAnnouncementDialogOpen, setIsAnnouncementDialogOpen] =
+        useState(false);
+    const [announcementDefaultType, setAnnouncementDefaultType] =
+        useState<MessageType>("announcement");
     const [announcementMessage, setAnnouncementMessage] = useState("");
-    const [isDeployingAnnouncement, setIsDeployingAnnouncement] = useState(false);
-    const [channelDestination, setChannelDestination] = useState<"CEO_BROADCAST" | "COMMUNITY_BOARD">("CEO_BROADCAST");
-    const [announcementType, setAnnouncementType] = useState<"MEETING" | "NOTICE" | "DEADLINE">("NOTICE");
-    
+    const [isDeployingAnnouncement, setIsDeployingAnnouncement] =
+        useState(false);
+    const [channelDestination, setChannelDestination] = useState<
+        "CEO_BROADCAST" | "COMMUNITY_BOARD"
+    >("CEO_BROADCAST");
+    const [announcementType, setAnnouncementType] = useState<
+        "MEETING" | "NOTICE" | "DEADLINE"
+    >("NOTICE");
+
     // Tracking Sets
-    const [completedIdeas, setCompletedIdeas] = useState<Set<string>>(new Set());
-    const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(new Set());
-    const [clearedNotifications, setClearedNotifications] = useState<Set<string>>(new Set());
+    const [completedIdeas, setCompletedIdeas] = useState<Set<string>>(
+        new Set(),
+    );
+    const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(
+        new Set(),
+    );
+    const [clearedNotifications, setClearedNotifications] = useState<
+        Set<string>
+    >(new Set());
 
     // Form States
-    const [newIdea, setNewIdea] = useState({ title: "", description: "", priority: "medium" });
-    const [selectedStaffForIdea, setSelectedStaffForIdea] = useState<string[]>([]);
+    const [newIdea, setNewIdea] = useState({
+        title: "",
+        description: "",
+        priority: "medium",
+    });
+    const [selectedStaffForIdea, setSelectedStaffForIdea] = useState<string[]>(
+        [],
+    );
     const [hoveredRequest, setHoveredRequest] = useState<any | null>(null);
 
     // Refs
@@ -428,7 +541,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         const oneHourAgo = new Date(currentTime - 60 * 60 * 1000);
         return ideas.filter((idea: any) => {
             if (!idea.completed) return true;
-            const completedAt = idea.completed_at ? new Date(idea.completed_at) : new Date(idea.updated_at);
+            const completedAt = idea.completed_at
+                ? new Date(idea.completed_at)
+                : new Date(idea.updated_at);
             return completedAt > oneHourAgo;
         });
     }, [ideas, currentTime]);
@@ -436,33 +551,43 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     // Optimize displayed tasks
     const displayedTasks = useMemo(() => {
         if (taskTab === "completed") return completedTasks;
-        
+
         return tasks.filter((t) => {
             if (deletingTaskIds.has(t.id)) return false;
-            
+
             const isOverdue = t.due_date && new Date(t.due_date) < new Date();
             const isDaily = t.is_daily_task === true || t.repeat_daily === true;
 
             // Department filtering
             if (departmentFilter !== "ceo") {
-                const assignee = staff.find(s => s.id === t.assigned_to);
+                const assignee = staff.find((s) => s.id === t.assigned_to);
                 if (!assignee) return false;
-                
+
                 const dept = assignee.department?.toLowerCase() || "";
                 switch (departmentFilter) {
-                    case "sales": return dept === "sales";
-                    case "marketing": return dept === "marketing";
-                    case "accounts": return dept === "accounts";
-                    case "administration": return dept === "administration" || dept === "admin" || dept === "hr";
-                    default: return false;
+                    case "sales":
+                        return dept === "sales";
+                    case "marketing":
+                        return dept === "marketing";
+                    case "accounts":
+                        return dept === "accounts";
+                    case "administration":
+                        return (
+                            dept === "administration" ||
+                            dept === "admin" ||
+                            dept === "hr"
+                        );
+                    default:
+                        return false;
                 }
             }
 
             // CEO/My Tasks filter
             if (departmentFilter === "ceo") {
-                if (userRole === 'MANAGER') {
-                    const currentMe = profile?.id || lastValidProfileIdRef.current;
-                    const isAssignedByCeo = (t as any).creator?.role === 'ceo';
+                if (userRole === "MANAGER") {
+                    const currentMe =
+                        profile?.id || lastValidProfileIdRef.current;
+                    const isAssignedByCeo = (t as any).creator?.role === "ceo";
                     const isAssignedToMe = t.assigned_to === currentMe;
                     if (!isAssignedByCeo || !isAssignedToMe) return false;
                 }
@@ -478,45 +603,76 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             if (taskTab === "blocked") return t.priority === "urgent";
             return !isOverdue && t.priority !== "urgent";
         });
-    }, [taskTab, tasks, completedTasks, deletingTaskIds, departmentFilter, staff, userRole, profile?.id]);
+    }, [
+        taskTab,
+        tasks,
+        completedTasks,
+        deletingTaskIds,
+        departmentFilter,
+        staff,
+        userRole,
+        profile?.id,
+    ]);
 
     // ============================================
     // 3. ACTIONS & LOGIC
     // ============================================
 
-    const fetchData = useCallback(async (force = false, silent = false) => {
-        if (!silent) setIsRefreshing(true);
-        try {
-            // High-speed parallel invalidation
-            await queryClient.invalidateQueries({
-                predicate: (query) => 
-                    query.queryKey[0] === 'tasks' || 
-                    query.queryKey[0] === 'staff' ||
-                    query.queryKey[0] === 'requests' ||
-                    query.queryKey[0] === 'ideas' ||
-                    query.queryKey[0] === 'meetings' ||
-                    query.queryKey[0] === 'ceo_directives'
-            });
-        } catch (e) {
-            console.error("Telemetry sync failed:", e);
-        } finally {
-            setIsRefreshing(false);
-        }
-    }, [queryClient]);
+    const fetchData = useCallback(
+        async (force = false, silent = false) => {
+            if (silent) {
+                console.log("[ExecutiveCommand] Silent background resync active. Refetches handled by query cache and throttled engine.");
+                return;
+            }
+            setIsRefreshing(true);
+            try {
+                // High-speed parallel invalidation for manual refreshes
+                await queryClient.invalidateQueries({
+                    predicate: (query) =>
+                        query.queryKey[0] === "tasks" ||
+                        query.queryKey[0] === "staff" ||
+                        query.queryKey[0] === "requests" ||
+                        query.queryKey[0] === "ideas" ||
+                        query.queryKey[0] === "meetings" ||
+                        query.queryKey[0] === "ceo_directives",
+                });
+            } catch (e) {
+                console.error("Telemetry sync failed:", e);
+            } finally {
+                setIsRefreshing(false);
+            }
+        },
+        [queryClient],
+    );
 
     const setupRealtime = useCallback(() => {
-        channelsRef.current.forEach(ch => supabase.removeChannel(ch));
-        
-        const taskChannel = supabase.channel("tasks-updates")
-            .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => queryClient.invalidateQueries({ queryKey: ["tasks"] }))
+        channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
+
+        const taskChannel = supabase
+            .channel("tasks-updates")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "tasks" },
+                () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+            )
             .subscribe();
 
-        const requestChannel = supabase.channel("requests-updates")
-            .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, () => queryClient.invalidateQueries({ queryKey: ["requests"] }))
+        const requestChannel = supabase
+            .channel("requests-updates")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "requests" },
+                () => queryClient.invalidateQueries({ queryKey: ["requests"] }),
+            )
             .subscribe();
 
-        const ideaChannel = supabase.channel("ideas-updates")
-            .on("postgres_changes", { event: "*", schema: "public", table: "ideas" }, () => queryClient.invalidateQueries({ queryKey: ["ideas"] }))
+        const ideaChannel = supabase
+            .channel("ideas-updates")
+            .on(
+                "postgres_changes",
+                { event: "*", schema: "public", table: "ideas" },
+                () => queryClient.invalidateQueries({ queryKey: ["ideas"] }),
+            )
             .subscribe();
 
         channelsRef.current = [taskChannel, requestChannel, ideaChannel];
@@ -524,29 +680,30 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     useEffect(() => {
         setupRealtime();
-        return () => channelsRef.current.forEach(ch => supabase.removeChannel(ch));
+        return () =>
+            channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
     }, [setupRealtime]);
 
     useTabResiliency(
         () => fetchData(true, true),
         isRefreshing,
         setIsRefreshing,
-        () => setupRealtime()
+        () => setupRealtime(),
     );
 
     // Toggle completion status
     const toggleIdeaCompletion = async (ideaId: string) => {
         // Find the current idea to get its completion status
-        const currentIdea = ideas.find(idea => idea.id === ideaId);
+        const currentIdea = ideas.find((idea) => idea.id === ideaId);
         if (!currentIdea) return;
-        
+
         toggleIdeaMutation({ ideaId, isCompleted: !!currentIdea.completed });
     };
 
     // Clear all completed directives
     const clearCompletedDirectives = async () => {
         const completedIds = Array.from(completedIdeas);
-        
+
         if (completedIds.length === 0) {
             toast.info("No completed directives to clear");
             return;
@@ -567,11 +724,13 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
             // Clear local state
             setCompletedIdeas(new Set());
-            
+
             // Refresh ideas data via useIdeas refetch if needed or just wait for invalidation
             // (Note: clearCompletedDirectives still uses manual Supabase call, we should ideally use a mutation)
-            
-            toast.success(`Cleared ${completedIds.length} completed directive${completedIds.length > 1 ? 's' : ''}`);
+
+            toast.success(
+                `Cleared ${completedIds.length} completed directive${completedIds.length > 1 ? "s" : ""}`,
+            );
         } catch (error) {
             console.error("Error clearing completed directives:", error);
             toast.error("Failed to clear completed directives");
@@ -591,7 +750,8 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     });
 
     const [isDelegationModalOpen, setIsDelegationModalOpen] = useState(false);
-    const [selectedIdeaForDelegation, setSelectedIdeaForDelegation] = useState<Idea | null>(null);
+    const [selectedIdeaForDelegation, setSelectedIdeaForDelegation] =
+        useState<Idea | null>(null);
     const [isDelegating, setIsDelegating] = useState(false);
 
     // Enhanced Task Form State
@@ -606,7 +766,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         const items: any[] = [
             // Escalations (Urgent Tasks)
             ...tasks
-                .filter((t) => t.priority === "urgent" && !(t as any).signal_cleared)
+                .filter(
+                    (t) =>
+                        t.priority === "urgent" && !(t as any).signal_cleared,
+                )
                 .map((t) => ({
                     id: `esc-${t.id}`,
                     category: "escalation",
@@ -642,7 +805,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             // Tasks (Normal/Pending) - Show all new assignments
             ...tasks
                 .filter(
-                    (t) => t.priority !== "urgent" && t.status === "pending" && !(t as any).signal_cleared,
+                    (t) =>
+                        t.priority !== "urgent" &&
+                        t.status === "pending" &&
+                        !(t as any).signal_cleared,
                 )
                 .map((t) => ({
                     id: `task-${t.id}`,
@@ -689,7 +855,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
             // Payments (Converted Leads)
             ...leads
-                .filter((l) => l.status === "converted" && !(l as any).signal_cleared)
+                .filter(
+                    (l) =>
+                        l.status === "converted" && !(l as any).signal_cleared,
+                )
                 .map((l) => ({
                     id: `pay-${l.id}`,
                     category: "payment",
@@ -733,31 +902,34 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 })),
 
             // Ideas
-            ...ideas.filter((i) => !(i as any).signal_cleared).map((i) => ({
-                id: `idea-${i.id}`,
-                category: "idea",
-                title: "Strategic Idea",
-                description: i.title || i.content?.slice(0, 40),
-                time: i.created_at,
-                icon: Lightbulb,
-                color: "#8b5cf6",
-                colorType: "purple",
-                priority: "medium",
-            })),
+            ...ideas
+                .filter((i) => !(i as any).signal_cleared)
+                .map((i) => ({
+                    id: `idea-${i.id}`,
+                    category: "idea",
+                    title: "Strategic Idea",
+                    description: i.title || i.content?.slice(0, 40),
+                    time: i.created_at,
+                    icon: Lightbulb,
+                    color: "#8b5cf6",
+                    colorType: "purple",
+                    priority: "medium",
+                })),
 
             // Demo Scheduling
-            ...demoRequests.filter((d) => !(d as any).signal_cleared).map((d) => ({
-                id: `demo-${d.id}`,
-                category: "task",
-                title: "Demo Scheduled",
-                description: `Session for ${d.lead?.lead_name || "Lead"}`,
-                time: d.created_at,
-                icon: PhoneCall,
-                color: "#3b82f6",
-                colorType: "blue",
-                priority: "medium",
-            })),
-
+            ...demoRequests
+                .filter((d) => !(d as any).signal_cleared)
+                .map((d) => ({
+                    id: `demo-${d.id}`,
+                    category: "task",
+                    title: "Demo Scheduled",
+                    description: `Session for ${d.lead?.lead_name || "Lead"}`,
+                    time: d.created_at,
+                    icon: PhoneCall,
+                    color: "#3b82f6",
+                    colorType: "blue",
+                    priority: "medium",
+                })),
         ];
 
         return items
@@ -765,71 +937,84 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             .sort((a, b) => {
                 // Sort by priority first, then by time
                 const priorityOrder = { high: 3, medium: 2, low: 1 };
-                const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] || 1;
-                const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] || 1;
-                
+                const aPriority =
+                    priorityOrder[a.priority as keyof typeof priorityOrder] ||
+                    1;
+                const bPriority =
+                    priorityOrder[b.priority as keyof typeof priorityOrder] ||
+                    1;
+
                 if (aPriority !== bPriority) {
                     return bPriority - aPriority;
                 }
-                
+
                 return new Date(b.time).getTime() - new Date(a.time).getTime();
             })
             .slice(0, 50); // Increased from 20 to 50
-    }, [tasks, ideas, requests, demoRequests, leads, staff, completedTasks, meetings, clearedNotifications]);
+    }, [
+        tasks,
+        ideas,
+        requests,
+        demoRequests,
+        leads,
+        staff,
+        completedTasks,
+        meetings,
+        clearedNotifications,
+    ]);
 
-    
     // Clear Signal Feed
     const clearSignalFeed = () => {
         // Immediately clear client-side for instant feedback
         const currentActivityIds = new Set(activities.map((act) => act.id));
         setClearedNotifications(currentActivityIds);
-        
+
         // Try database updates in background (fire and forget)
         activities.forEach((act) => {
-            const [prefix, id] = act.id.split('-');
-            
+            const [prefix, id] = act.id.split("-");
+
             switch (prefix) {
-                case 'esc': // Escalations (urgent tasks)
-                case 'task': // Regular tasks
-                case 'completed': // Completed tasks
+                case "esc": // Escalations (urgent tasks)
+                case "task": // Regular tasks
+                case "completed": // Completed tasks
                     supabase
                         .from("tasks")
                         .update({ signal_cleared: true })
                         .eq("id", id); // Fire and forget
                     break;
-                case 'pay': // Payments (converted leads)
-                case 'lead': // New leads
+                case "pay": // Payments (converted leads)
+                case "lead": // New leads
                     supabase
                         .from("leads")
                         .update({ signal_cleared: true })
                         .eq("id", id); // Fire and forget
                     break;
-                case 'leave': // Leave requests
-                case 'req': // Other requests
+                case "leave": // Leave requests
+                case "req": // Other requests
                     supabase
                         .from("requests")
                         .update({ signal_cleared: true })
                         .eq("id", id); // Fire and forget
                     break;
-                case 'idea': // Ideas
+                case "idea": // Ideas
                     supabase
                         .from("ideas")
                         .update({ signal_cleared: true })
                         .eq("id", id); // Fire and forget
                     break;
-                case 'demo': // Demo requests
+                case "demo": // Demo requests
                     supabase
                         .from("demo_requests")
                         .update({ signal_cleared: true })
                         .eq("id", id); // Fire and forget
                     break;
-                case 'staff': // New staff members
+                case "staff": // New staff members
                     supabase
                         .from("profiles")
                         .update({ signal_cleared: true })
                         .eq("id", id); // Fire and forget
                     break;
-                case 'meeting': // Upcoming meetings
+                case "meeting": // Upcoming meetings
                     supabase
                         .from("meetings")
                         .update({ signal_cleared: true })
@@ -837,7 +1022,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     break;
             }
         });
-        
+
         toast.success("Signal Feed Cleared");
     };
 
@@ -852,7 +1037,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 .single();
 
             if (error) {
-                console.error('Error checking table:', error);
+                console.error("Error checking table:", error);
                 return;
             }
 
@@ -863,14 +1048,21 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 .eq("status", "completed")
                 .limit(1);
 
-            if (testError && testError.message.includes('column "ceo_reviewed" does not exist')) {
-                console.log('ceo_reviewed column does not exist, tasks will be filtered by reviewed_at only');
+            if (
+                testError &&
+                testError.message.includes(
+                    'column "ceo_reviewed" does not exist',
+                )
+            ) {
+                console.log(
+                    "ceo_reviewed column does not exist, tasks will be filtered by reviewed_at only",
+                );
                 return;
             }
 
-            console.log('ceo_reviewed column exists');
+            console.log("ceo_reviewed column exists");
         } catch (error) {
-            console.error('Error ensuring ceo_reviewed column:', error);
+            console.error("Error ensuring ceo_reviewed column:", error);
         }
     };
 
@@ -883,7 +1075,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         const isVisible = currentView === "command-center" || !currentView;
         isVisibleRef.current = isVisible;
         if (isVisible) {
-            console.log('Executive view activated - syncing data');
+            console.log("Executive view activated - syncing data");
             fetchData(true, true);
         }
     }, [currentView]);
@@ -894,7 +1086,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
         const handleFocusResync = () => {
             if (!document.hidden && isMounted && isVisibleRef.current) {
-                console.log('Tab focused - triggering silent resync');
+                console.log("Tab focused - triggering silent resync");
                 fetchData(true, true);
                 setupRealtime();
             }
@@ -905,7 +1097,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             fetchData(false, false);
             setupRealtime();
         }
-        
+
         window.addEventListener("focus", handleFocusResync);
         document.addEventListener("visibilitychange", handleFocusResync);
 
@@ -939,7 +1131,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
         window.addEventListener("fab-action", handleFabAction as EventListener);
         return () => {
-            window.removeEventListener("fab-action", handleFabAction as EventListener);
+            window.removeEventListener(
+                "fab-action",
+                handleFabAction as EventListener,
+            );
         };
     }, []);
 
@@ -997,15 +1192,22 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         ).length;
 
         // Specialized Metrics for Manager
-        const activeBlockers = tasks.filter(t => t.priority === "urgent" && t.status !== "completed").length;
-        
+        const activeBlockers = tasks.filter(
+            (t) => t.priority === "urgent" && t.status !== "completed",
+        ).length;
+
         // Operational Velocity Calculation
-        const completedTodayCount = completedTasks.filter(t => {
-            const updatedDate = new Date(t.updated_at || t.created_at).toISOString().split("T")[0];
+        const completedTodayCount = completedTasks.filter((t) => {
+            const updatedDate = new Date(t.updated_at || t.created_at)
+                .toISOString()
+                .split("T")[0];
             return updatedDate === todayStr;
         }).length;
         const totalToday = tasks.length + completedTodayCount;
-        const operationalVelocity = totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 0;
+        const operationalVelocity =
+            totalToday > 0
+                ? Math.round((completedTodayCount / totalToday) * 100)
+                : 0;
 
         return {
             systemStatus,
@@ -1027,16 +1229,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     const disposeIdea = async (id: string) => {
         console.log("Dispose idea called with ID:", id);
-        
+
         if (
             !confirm(
                 "Dispose of this strategic directive? This action is permanent.",
             )
         )
             return;
-            
+
         console.log("User confirmed deletion, proceeding...");
-            
+
         disposeIdeaMutation(id);
     };
 
@@ -1058,10 +1260,13 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     };
 
     const assignTask = async (draft = false) => {
-        console.log('Assign task called with:', { newTask, draft });
-        
+        console.log("Assign task called with:", { newTask, draft });
+
         if (!newTask.title || !newTask.assignedTo) {
-            console.log('Validation failed:', { title: newTask.title, assignedTo: newTask.assignedTo });
+            console.log("Validation failed:", {
+                title: newTask.title,
+                assignedTo: newTask.assignedTo,
+            });
             return toast.error("Title and Assignee required");
         }
 
@@ -1069,7 +1274,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         let dueDateTime: string | null = null;
         if (newTask.due_date) {
             if (newTask.due_time) {
-                dueDateTime = new Date(`${newTask.due_date}T${newTask.due_time}`).toISOString();
+                dueDateTime = new Date(
+                    `${newTask.due_date}T${newTask.due_time}`,
+                ).toISOString();
             } else {
                 dueDateTime = new Date(newTask.due_date).toISOString();
             }
@@ -1092,7 +1299,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             insertPayload.task_description = taskDescription;
         }
 
-        console.log('Insert payload:', insertPayload);
+        console.log("Insert payload:", insertPayload);
 
         // Optimistically clear the form to prevent UI freeze
         setIsAssignTaskOpen(false);
@@ -1101,17 +1308,31 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
         try {
             const executeInsert = async () => {
-                const { error } = await supabase.from("tasks").insert(insertPayload);
+                const { error } = await supabase
+                    .from("tasks")
+                    .insert(insertPayload);
                 if (error) throw error;
             };
 
             await Promise.race([
                 executeInsert(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout: The server took too long to respond. The task is queued.")), 15000))
+                new Promise((_, reject) =>
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    "Network timeout: The server took too long to respond. The task is queued.",
+                                ),
+                            ),
+                        15000,
+                    ),
+                ),
             ]);
 
-            console.log('Task assigned successfully');
-            toast.success(draft ? "DRAFT SAVED" : "✓ Task assigned successfully");
+            console.log("Task assigned successfully");
+            toast.success(
+                draft ? "DRAFT SAVED" : "✓ Task assigned successfully",
+            );
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
             fetchData();
         } catch (error: any) {
@@ -1171,12 +1392,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         try {
             const { error } = await supabase
                 .from("ideas")
-                .update({ 
-                    status: 'delegated',
+                .update({
+                    status: "delegated",
                     assigned_to: staffMember.id,
                     assigned_to_name: staffMember.full_name,
-                    delegated_by_manager: profile?.full_name || 'Administrator',
-                    updated_at: new Date().toISOString()
+                    delegated_by_manager: profile?.full_name || "Administrator",
+                    updated_at: new Date().toISOString(),
                 } as any)
                 .eq("id", selectedIdeaForDelegation.id);
 
@@ -1234,30 +1455,33 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             console.log("Task deletion already in progress:", id);
             return;
         }
-        
+
         console.log("Attempting to delete task with ID:", id);
-        
+
         // Add to deleting set
-        setDeletingTaskIds(prev => new Set(prev).add(id));
-        
+        setDeletingTaskIds((prev) => new Set(prev).add(id));
+
         // Check current user session
-        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        const {
+            data: { session },
+            error: sessionError,
+        } = await supabase.auth.getSession();
         console.log("Current session:", { session, sessionError });
-        
+
         if (!session) {
             console.error("No active session found");
             toast.error("You must be logged in to delete tasks");
-            setDeletingTaskIds(prev => {
+            setDeletingTaskIds((prev) => {
                 const newSet = new Set(prev);
                 newSet.delete(id);
                 return newSet;
             });
             return;
         }
-        
+
         // First, remove task from local state immediately for better UX
         queryClient.invalidateQueries({ queryKey: ["tasks"] });
-        
+
         try {
             // First, let's check if the task actually exists before trying to delete it
             console.log("Checking if task exists before deletion...");
@@ -1266,75 +1490,112 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 .select("*")
                 .eq("id", id)
                 .single();
-            
+
             console.log("Task existence check:", { existingTask, checkError });
-            console.log("Existing task details:", JSON.stringify(existingTask, null, 2));
-            console.log("Check error details:", JSON.stringify(checkError, null, 2));
-            
+            console.log(
+                "Existing task details:",
+                JSON.stringify(existingTask, null, 2),
+            );
+            console.log(
+                "Check error details:",
+                JSON.stringify(checkError, null, 2),
+            );
+
             if (checkError) {
                 console.error("Error checking task existence:", checkError);
                 toast.error("Failed to verify task: " + checkError.message);
                 fetchData();
                 return;
             }
-            
+
             if (!existingTask) {
                 console.warn("Task does not exist in database:", id);
                 toast.error("Task not found in database");
                 fetchData();
                 return;
             }
-            
+
             // Delete attachment if it exists in storage
-            if (existingTask.attachment_url && existingTask.attachment_url.includes('/storage/v1/object/public/')) {
+            if (
+                existingTask.attachment_url &&
+                existingTask.attachment_url.includes(
+                    "/storage/v1/object/public/",
+                )
+            ) {
                 try {
-                    await deleteFile('attachments', existingTask.attachment_url);
+                    await deleteFile(
+                        "attachments",
+                        existingTask.attachment_url,
+                    );
                     console.log("Deleted task attachment from storage");
                 } catch (e) {
-                    console.warn("Failed to delete attachment from storage:", e);
-                    // Proceed with DB deletion even if file removal fails, 
+                    console.warn(
+                        "Failed to delete attachment from storage:",
+                        e,
+                    );
+                    // Proceed with DB deletion even if file removal fails,
                     // though strictly speaking we should perhaps abort or retry.
                 }
             }
-            
+
             // Now attempt the deletion - try multiple approaches
             console.log("Attempting to delete existing task:", existingTask);
-            
+
             // Approach 1: Simple deletion without .select()
             let { error: error1, count: count1 } = await supabase
                 .from("tasks")
-                .delete({ count: 'exact' })
+                .delete({ count: "exact" })
                 .eq("id", id);
-            
-            console.log("Approach 1 - Simple deletion result:", { error1, count1 });
+
+            console.log("Approach 1 - Simple deletion result:", {
+                error1,
+                count1,
+            });
             console.log("Error1 details:", JSON.stringify(error1, null, 2));
             console.log("Count1:", count1);
-            
+
             if (!error1 && count1 !== null && count1 > 0) {
                 console.log("Task successfully deleted with approach 1");
                 toast.success("TASK ANNULLED");
                 return;
             }
-            
+
             // Approach 2: Deletion with .select()
-            let { error: error2, data } = await supabase.from("tasks").delete().eq("id", id).select();
-            
-            console.log("Approach 2 - Deletion with select result:", { error2, data });
+            let { error: error2, data } = await supabase
+                .from("tasks")
+                .delete()
+                .eq("id", id)
+                .select();
+
+            console.log("Approach 2 - Deletion with select result:", {
+                error2,
+                data,
+            });
             console.log("Error2 details:", JSON.stringify(error2, null, 2));
             console.log("Data:", data);
-            
+
             // Combine errors from both approaches
             const hasError = error1 || error2;
-            const hasDeletion = (count1 && count1 > 0) || (data && data.length > 0);
-            
+            const hasDeletion =
+                (count1 && count1 > 0) || (data && data.length > 0);
+
             // If deletion fails due to permissions, try with service role (if available)
-            if (hasError && (error1?.code === '42501' || error2?.code === '42501' || 
-                error1?.message?.includes('permission') || error2?.message?.includes('permission'))) {
+            if (
+                hasError &&
+                (error1?.code === "42501" ||
+                    error2?.code === "42501" ||
+                    error1?.message?.includes("permission") ||
+                    error2?.message?.includes("permission"))
+            ) {
                 console.log("Trying service role deletion...");
-                const serviceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+                const serviceKey =
+                    process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
                 console.log("Service role key available:", !!serviceKey);
-                console.log("Service role key length:", serviceKey?.length || 0);
-                
+                console.log(
+                    "Service role key length:",
+                    serviceKey?.length || 0,
+                );
+
                 if (serviceKey) {
                     try {
                         const serviceClient = createClient(
@@ -1343,92 +1604,143 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             {
                                 auth: {
                                     autoRefreshToken: false,
-                                    persistSession: false
-                                }
-                            }
+                                    persistSession: false,
+                                },
+                            },
                         );
-                        
-                        const { error: serviceError, data: serviceData } = await serviceClient
-                            .from("tasks")
-                            .delete()
-                            .eq("id", id)
-                            .select();
-                        
-                        console.log("Service role deletion result:", { serviceError, serviceData });
-                        
-                        if (!serviceError && serviceData && serviceData.length > 0) {
-                            console.log("Task successfully deleted with service role:", serviceData);
+
+                        const { error: serviceError, data: serviceData } =
+                            await serviceClient
+                                .from("tasks")
+                                .delete()
+                                .eq("id", id)
+                                .select();
+
+                        console.log("Service role deletion result:", {
+                            serviceError,
+                            serviceData,
+                        });
+
+                        if (
+                            !serviceError &&
+                            serviceData &&
+                            serviceData.length > 0
+                        ) {
+                            console.log(
+                                "Task successfully deleted with service role:",
+                                serviceData,
+                            );
                             toast.success("TASK ANNULLED");
                             return;
                         }
                     } catch (serviceErr) {
-                        console.error("Service role deletion failed:", serviceErr);
+                        console.error(
+                            "Service role deletion failed:",
+                            serviceErr,
+                        );
                     }
                 }
             }
-            
+
             if (hasError) {
                 console.error("Delete task error:", { error1, error2 });
-                
+
                 // Restore task to local state if deletion failed
                 fetchData();
-                
+
                 // Check if it's an RLS policy error
-                if (error1?.code === '42501' || error2?.code === '42501' || 
-                    error1?.message?.includes('row-level security') || error2?.message?.includes('row-level security')) {
-                    toast.error("Permission denied: You don't have rights to delete this task");
+                if (
+                    error1?.code === "42501" ||
+                    error2?.code === "42501" ||
+                    error1?.message?.includes("row-level security") ||
+                    error2?.message?.includes("row-level security")
+                ) {
+                    toast.error(
+                        "Permission denied: You don't have rights to delete this task",
+                    );
                 } else {
-                    toast.error("Failed to delete task: " + (error1?.message || error2?.message));
+                    toast.error(
+                        "Failed to delete task: " +
+                            (error1?.message || error2?.message),
+                    );
                 }
             } else if (!hasDeletion) {
-                console.warn("No task was deleted with either approach - checking RLS policies");
+                console.warn(
+                    "No task was deleted with either approach - checking RLS policies",
+                );
                 // Try a different approach - check if we can at least update it
                 const { error: updateError } = await supabase
                     .from("tasks")
-                    .update({ status: 'deleted' })
+                    .update({ status: "deleted" })
                     .eq("id", id);
-                
+
                 console.log("Update fallback result:", { updateError });
-                console.log("Update error details:", JSON.stringify(updateError, null, 2));
-                
+                console.log(
+                    "Update error details:",
+                    JSON.stringify(updateError, null, 2),
+                );
+
                 if (updateError) {
                     console.error("Also failed to update task:", updateError);
-                    
+
                     // Final attempt - try service role for update
                     console.log("Trying service role for update...");
                     try {
-                        const serviceKey = process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
+                        const serviceKey =
+                            process.env.NEXT_PUBLIC_SUPABASE_SERVICE_ROLE_KEY;
                         if (serviceKey) {
                             const serviceClient = createClient(
                                 process.env.NEXT_PUBLIC_SUPABASE_URL!,
                                 serviceKey,
-                                { auth: { autoRefreshToken: false, persistSession: false } }
+                                {
+                                    auth: {
+                                        autoRefreshToken: false,
+                                        persistSession: false,
+                                    },
+                                },
                             );
-                            
-                            const { error: serviceUpdateError } = await serviceClient
-                                .from("tasks")
-                                .update({ status: 'deleted' })
-                                .eq("id", id);
-                            
-                            console.log("Service role update result:", { serviceUpdateError });
-                            
+
+                            const { error: serviceUpdateError } =
+                                await serviceClient
+                                    .from("tasks")
+                                    .update({ status: "deleted" })
+                                    .eq("id", id);
+
+                            console.log("Service role update result:", {
+                                serviceUpdateError,
+                            });
+
                             if (!serviceUpdateError) {
-                                console.log("Task marked as deleted with service role");
+                                console.log(
+                                    "Task marked as deleted with service role",
+                                );
                                 toast.success("Task marked as deleted");
                                 fetchData();
                             } else {
-                                console.error("Service role update also failed:", serviceUpdateError);
-                                toast.error("Cannot delete or modify task - check database permissions");
+                                console.error(
+                                    "Service role update also failed:",
+                                    serviceUpdateError,
+                                );
+                                toast.error(
+                                    "Cannot delete or modify task - check database permissions",
+                                );
                                 fetchData();
                             }
                         } else {
                             console.error("No service role key available");
-                            toast.error("Cannot delete or modify task - check database permissions");
+                            toast.error(
+                                "Cannot delete or modify task - check database permissions",
+                            );
                             fetchData();
                         }
                     } catch (serviceErr) {
-                        console.error("Service role update exception:", serviceErr);
-                        toast.error("Cannot delete or modify task - check database permissions");
+                        console.error(
+                            "Service role update exception:",
+                            serviceErr,
+                        );
+                        toast.error(
+                            "Cannot delete or modify task - check database permissions",
+                        );
                         fetchData();
                     }
                 } else {
@@ -1437,7 +1749,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     fetchData();
                 }
             } else {
-                console.log("Task successfully deleted with one of the approaches");
+                console.log(
+                    "Task successfully deleted with one of the approaches",
+                );
                 toast.success("TASK ANNULLED");
                 // fetchData() is not needed here since we already updated local state
             }
@@ -1448,7 +1762,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             toast.error("Something went wrong deleting task");
         } finally {
             // Remove from deleting set
-            setDeletingTaskIds(prev => {
+            setDeletingTaskIds((prev) => {
                 const newSet = new Set(prev);
                 newSet.delete(id);
                 return newSet;
@@ -1458,7 +1772,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     const removeTaskFromCEO = async (id: string) => {
         // Temporarily disable until database columns are added
-        toast.info("Remove from CEO view will be available after database update");
+        toast.info(
+            "Remove from CEO view will be available after database update",
+        );
         // await supabase
         //     .from("tasks")
         //     .update({ ceo_visible: false })
@@ -1469,45 +1785,65 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     const markTaskAsReviewed = async (id: string) => {
         try {
-            console.log('Marking task as reviewed:', id);
+            console.log("Marking task as reviewed:", id);
             const reviewedAt = new Date().toISOString();
-            
+
             // Always update reviewed_at - this is what the query uses to filter
             const updateData = { reviewed_at: reviewedAt };
-            
+
             // Try to also update ceo_reviewed if the column exists
             const { error: reviewedError, data: reviewedData } = await supabase
                 .from("tasks")
-                .update({ 
+                .update({
                     ...updateData,
-                    ceo_reviewed: true
+                    ceo_reviewed: true,
                 })
                 .eq("id", id)
                 .select();
 
             if (reviewedError) {
-                console.error("Mark as reviewed error (ceo_reviewed column):", reviewedError);
-                
+                console.error(
+                    "Mark as reviewed error (ceo_reviewed column):",
+                    reviewedError,
+                );
+
                 // If ceo_reviewed column doesn't exist, update just reviewed_at
-                const { error: fallbackError, data: fallbackData } = await supabase
-                    .from("tasks")
-                    .update(updateData)
-                    .eq("id", id)
-                    .select();
+                const { error: fallbackError, data: fallbackData } =
+                    await supabase
+                        .from("tasks")
+                        .update(updateData)
+                        .eq("id", id)
+                        .select();
 
                 if (fallbackError) {
-                    console.error("Fallback update also failed:", fallbackError);
-                    toast.error("Failed to mark task as reviewed: " + fallbackError.message);
+                    console.error(
+                        "Fallback update also failed:",
+                        fallbackError,
+                    );
+                    toast.error(
+                        "Failed to mark task as reviewed: " +
+                            fallbackError.message,
+                    );
                     return;
                 }
-                
-                console.log('Task marked as reviewed (fallback):', fallbackData);
-                toast.success("Task reviewed and permanently removed from CEO view");
+
+                console.log(
+                    "Task marked as reviewed (fallback):",
+                    fallbackData,
+                );
+                toast.success(
+                    "Task reviewed and permanently removed from CEO view",
+                );
             } else {
-                console.log('Task marked as reviewed successfully:', reviewedData);
-                toast.success("Task reviewed and permanently removed from CEO view");
+                console.log(
+                    "Task marked as reviewed successfully:",
+                    reviewedData,
+                );
+                toast.success(
+                    "Task reviewed and permanently removed from CEO view",
+                );
             }
-            
+
             // Also remove from local completed tasks immediately for better UX
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
             fetchData();
@@ -1519,28 +1855,30 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     const approveAndCloseTask = async (id: string) => {
         try {
-            console.log('Approve and close task:', id);
-            
+            console.log("Approve and close task:", id);
+
             const { error, data } = await supabase
                 .from("tasks")
-                .update({ 
+                .update({
                     status: "COMPLETED",
                     progress: 100,
                     updated_at: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
+                    updatedAt: new Date().toISOString(),
                 })
                 .eq("id", id)
                 .select();
 
             if (error) {
                 console.error("Approve and close error:", error);
-                toast.error("Failed to approve and close task: " + error.message);
+                toast.error(
+                    "Failed to approve and close task: " + error.message,
+                );
                 return;
             }
-            
-            console.log('Task approved and closed successfully:', data);
+
+            console.log("Task approved and closed successfully:", data);
             toast.success("Task approved and marked as completed!");
-            
+
             // Invalidate queries to trigger real-time refresh instantly
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
             fetchData();
@@ -1551,49 +1889,68 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     };
 
     const clearAllCompletedTasks = async () => {
-        if (!confirm("Mark all completed tasks as reviewed? This will permanently remove them from CEO view and make them visible to staff.")) return;
-        
+        if (
+            !confirm(
+                "Mark all completed tasks as reviewed? This will permanently remove them from CEO view and make them visible to staff.",
+            )
+        )
+            return;
+
         try {
             console.log("Clearing all completed tasks...");
             const reviewedAt = new Date().toISOString();
-            
+
             // First try with ceo_reviewed column
             const { error: error1 } = await supabase
                 .from("tasks")
-                .update({ 
-                    ceo_reviewed: true, 
-                    reviewed_at: reviewedAt
+                .update({
+                    ceo_reviewed: true,
+                    reviewed_at: reviewedAt,
                 })
                 .eq("status", "completed")
                 .is("reviewed_at", null);
-                
+
             if (error1) {
-                console.error("Clear all completed error (with ceo_reviewed):", error1);
-                
+                console.error(
+                    "Clear all completed error (with ceo_reviewed):",
+                    error1,
+                );
+
                 // Fallback: update only reviewed_at column
                 const { error: error2 } = await supabase
                     .from("tasks")
-                    .update({ 
-                        reviewed_at: reviewedAt
+                    .update({
+                        reviewed_at: reviewedAt,
                     })
                     .eq("status", "completed")
                     .is("reviewed_at", null);
-                
+
                 if (error2) {
-                    console.error("Clear all completed error (fallback):", error2);
-                    toast.error("Failed to clear completed tasks: " + error2.message);
+                    console.error(
+                        "Clear all completed error (fallback):",
+                        error2,
+                    );
+                    toast.error(
+                        "Failed to clear completed tasks: " + error2.message,
+                    );
                     return;
                 }
-                
-                console.log("All completed tasks marked as reviewed (fallback)");
+
+                console.log(
+                    "All completed tasks marked as reviewed (fallback)",
+                );
             } else {
-                console.log("All completed tasks marked as reviewed successfully");
+                console.log(
+                    "All completed tasks marked as reviewed successfully",
+                );
             }
-            
+
             // Clear local state immediately for better UX
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
-            
-            toast.success("All completed tasks marked as reviewed and removed from CEO view");
+
+            toast.success(
+                "All completed tasks marked as reviewed and removed from CEO view",
+            );
             fetchData();
         } catch (error) {
             console.error("Clear all completed exception:", error);
@@ -1643,48 +2000,54 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         setIsChatModalOpen(true);
     };
 
-    // Show skeleton loader while initial data is loading
-    if (staff.length === 0 && isRefreshing) {
-        return <SkeletonCommandCenter />;
-    }
-
     return (
-        <div className={cn(
-            "min-h-screen relative overflow-hidden font-sans selection:bg-cyber-blue/20 p-6 flex flex-col gap-6 transition-all duration-700 ease-cinematic",
-            "bg-[#F4F7FE] text-slate-900 dark:bg-transparent dark:text-white"
-        )}>
+        <div
+            className={cn(
+                "min-h-screen relative overflow-hidden font-sans selection:bg-cyber-blue/20 p-6 flex flex-col gap-6 transition-all duration-700 ease-cinematic",
+                "bg-[#F4F7FE] text-slate-900 dark:bg-transparent dark:text-white",
+            )}
+        >
             {/* Cinematic Mesh Gradient Background Layer */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
-                <div className={cn(
-                    "absolute top-[-10%] left-[-10%] rounded-full blur-[120px] animate-glow-pulse transition-all duration-1000",
-                    "w-[60%] h-[60%] bg-cyber-blue/10"
-                )} />
-                <div className={cn(
-                    "absolute bottom-[10%] right-[-5%] rounded-full blur-[100px] transition-all duration-1000",
-                    "w-[50%] h-[50%] bg-cyber-rose/5"
-                )} />
+                <div
+                    className={cn(
+                        "absolute top-[-10%] left-[-10%] rounded-full blur-[120px] animate-glow-pulse transition-all duration-1000",
+                        "w-[60%] h-[60%] bg-cyber-blue/10",
+                    )}
+                />
+                <div
+                    className={cn(
+                        "absolute bottom-[10%] right-[-5%] rounded-full blur-[100px] transition-all duration-1000",
+                        "w-[50%] h-[50%] bg-cyber-rose/5",
+                    )}
+                />
                 <div className="absolute top-[40%] left-[20%] w-[40%] h-[40%] rounded-full bg-cyber-blue/5 blur-[120px]" />
             </div>
 
             {/* FLOATING GLASSMORPHIC HEADER */}
-            <header className={cn(
-                "flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 p-4 md:px-8 md:py-5",
-                "bg-white/80 dark:bg-zinc-900/60 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 dark:border-zinc-800/60 shadow-[0_12px_40px_rgba(0,0,0,0.03)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",                "transition-all duration-500 ease-out"
-            )}>
+            <header
+                className={cn(
+                    "flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 p-4 md:px-8 md:py-5",
+                    "bg-white/80 dark:bg-zinc-900/60 backdrop-blur-xl rounded-[2.5rem] border border-slate-100 dark:border-zinc-800/60 shadow-[0_12px_40px_rgba(0,0,0,0.03)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.5)]",
+                    "transition-all duration-500 ease-out",
+                )}
+            >
                 <div className="flex items-center justify-between md:justify-start gap-6">
                     {/* Usthad Academy Logo - Hidden on mobile */}
                     <div
                         className={cn(
                             "hidden md:flex items-center gap-4 transition-all duration-500",
-                            theme === "dark" ? "opacity-90" : ""
+                            theme === "dark" ? "opacity-90" : "",
                         )}
                     >
-                        <div className={cn(
-                            "h-[48px] w-[48px] p-2 rounded-2xl shadow-sm border transition-all duration-500",
-                            userRole === 'CEO' 
-                                ? "bg-white dark:bg-zinc-800 border-amber-200/50 dark:border-amber-900/30 ring-4 ring-amber-500/5" 
-                                : "bg-white dark:bg-zinc-800 border-indigo-50/50 dark:border-zinc-700/30"
-                        )}>
+                        <div
+                            className={cn(
+                                "h-[48px] w-[48px] p-2 rounded-2xl shadow-sm border transition-all duration-500",
+                                userRole === "CEO"
+                                    ? "bg-white dark:bg-zinc-800 border-amber-200/50 dark:border-amber-900/30 ring-4 ring-amber-500/5"
+                                    : "bg-white dark:bg-zinc-800 border-indigo-50/50 dark:border-zinc-700/30",
+                            )}
+                        >
                             <img
                                 src="/images/usthadacademylogo2.svg"
                                 alt="UA"
@@ -1707,34 +2070,45 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     {/* Mobile Dashboard Title */}
                     <div className="md:hidden">
                         <h1 className="text-xl font-black text-slate-900 dark:text-zinc-100 uppercase tracking-tighter">
-                            {userRole === 'CEO' ? 'CEO HUB' : 'ADMINISTRATOR HUB'}
+                            {userRole === "CEO"
+                                ? "CEO HUB"
+                                : "ADMINISTRATOR HUB"}
                         </h1>
-                        <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">Academy Management</p>
+                        <p className="text-[10px] font-bold text-slate-400 dark:text-zinc-500 uppercase tracking-widest">
+                            Academy Management
+                        </p>
                     </div>
 
                     {/* System Health Indicator */}
                     <div
                         className={cn(
                             "flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all duration-500",
-                            stats.systemStatus === "STABLE" && stats.overdueCount === 0 
-                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400" 
-                                : "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400"
+                            stats.systemStatus === "STABLE" &&
+                                stats.overdueCount === 0
+                                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                                : "bg-red-500/10 border-red-500/20 text-red-600 dark:text-red-400",
                         )}
                     >
                         <div
                             className={cn(
                                 "w-2 h-2 rounded-full animate-pulse",
-                                stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "bg-emerald-500" : "bg-red-500"
+                                stats.systemStatus === "STABLE" &&
+                                    stats.overdueCount === 0
+                                    ? "bg-emerald-500"
+                                    : "bg-red-500",
                             )}
                         />
                         <span className="text-[9px] font-black uppercase tracking-widest">
-                            {stats.systemStatus === "STABLE" && stats.overdueCount === 0 ? "SYSTEM STABLE" : "ATTENTION REQUIRED"}
+                            {stats.systemStatus === "STABLE" &&
+                            stats.overdueCount === 0
+                                ? "SYSTEM STABLE"
+                                : "ATTENTION REQUIRED"}
                         </span>
                     </div>
                 </div>
 
                 <div className="flex items-center gap-2 md:gap-4 self-end md:self-auto">
-                    {userRole === 'CEO' ? (
+                    {userRole === "CEO" ? (
                         <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 rounded-full bg-amber-500/10 dark:bg-amber-500/20 border border-amber-500/30 shadow-sm animate-pulse">
                             <Crown className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-amber-600 dark:text-amber-400">
@@ -1752,12 +2126,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
                     <div className="hidden md:block">
                         <h1 className="text-sm font-black uppercase tracking-[0.3em] text-slate-900 dark:text-zinc-100 opacity-80">
-                            {userRole === 'CEO' ? 'CEO DASHBOARD' : 'ADMINISTRATOR DASHBOARD'}
+                            {userRole === "CEO"
+                                ? "CEO DASHBOARD"
+                                : "ADMINISTRATOR DASHBOARD"}
                         </h1>
                     </div>
 
                     <ThemeToggle />
-                    
+
                     <Button
                         variant="ghost"
                         size="sm"
@@ -1766,7 +2142,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         className="flex items-center gap-2 px-4 py-2 bg-white/50 dark:bg-zinc-800/50 border border-white/40 dark:border-zinc-700/50 hover:bg-white dark:hover:bg-zinc-800 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                     >
                         <RefreshCw
-                            className={cn("w-3 h-3", isRefreshing && "animate-spin")}
+                            className={cn(
+                                "w-3 h-3",
+                                isRefreshing && "animate-spin",
+                            )}
                         />
                         <span className="hidden sm:inline">Refresh</span>
                     </Button>
@@ -1786,13 +2165,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
             {/* 1. STREAMLINED PRIORITY METRIC GRID */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
                 {/* Card 1: STAFFS */}
-                <div className={cn(
-                    "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
-                    "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
-                    "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
-                    userRole === 'CEO' && "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]"
-                )}>
-                    {userRole === 'CEO' && (
+                <div
+                    className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                        "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                        userRole === "CEO" &&
+                            "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]",
+                    )}
+                >
+                    {userRole === "CEO" && (
                         <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
                     )}
                     <div className="flex items-center justify-between mb-4">
@@ -1801,19 +2183,26 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </div>
                         <div className="flex -space-x-2">
                             {[1, 2, 3].map((i) => (
-                                <div key={i} className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shadow-sm">
+                                <div
+                                    key={i}
+                                    className="w-5 h-5 rounded-full border-2 border-white dark:border-zinc-900 bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center shadow-sm"
+                                >
                                     <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]" />
                                 </div>
                             ))}
                         </div>
                     </div>
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Academy Staffs</p>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">
+                            Academy Staffs
+                        </p>
                         <div className="flex items-baseline gap-1">
                             <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
                                 {stats.staffOnline}
                             </h2>
-                            <span className="text-slate-300 dark:text-zinc-700 font-bold">/</span>
+                            <span className="text-slate-300 dark:text-zinc-700 font-bold">
+                                /
+                            </span>
                             <h2 className="text-xl font-black text-slate-400 dark:text-zinc-500 tracking-tighter">
                                 {stats.staffTotal}
                             </h2>
@@ -1822,13 +2211,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 </div>
 
                 {/* Card 2: TASKS */}
-                <div className={cn(
-                    "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
-                    "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
-                    "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
-                    userRole === 'CEO' && "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]"
-                )}>
-                    {userRole === 'CEO' && (
+                <div
+                    className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                        "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                        userRole === "CEO" &&
+                            "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]",
+                    )}
+                >
+                    {userRole === "CEO" && (
                         <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
                     )}
                     <div className="flex items-center justify-between mb-4">
@@ -1838,7 +2230,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         <TrendingUp className="w-3.5 h-3.5 text-indigo-300 dark:text-indigo-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Active Operations</p>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">
+                            Active Operations
+                        </p>
                         <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
                             {stats.tasksInProgress}
                         </h2>
@@ -1846,44 +2240,58 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 </div>
 
                 {/* Card 3: OVERDUE */}
-                <div className={cn(
-                    "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
-                    "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
-                    "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
-                    userRole === 'CEO' && "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]"
-                )}>
-                    {userRole === 'CEO' && (
+                <div
+                    className={cn(
+                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                        "bg-white/70 dark:bg-zinc-900/40 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 shadow-[0_12px_40px_rgba(0,0,0,0.02)] dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                        userRole === "CEO" &&
+                            "hover:border-amber-500/30 dark:hover:border-amber-500/30 shadow-[0_10px_40px_rgba(245,158,11,0.03)]",
+                    )}
+                >
+                    {userRole === "CEO" && (
                         <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
                     )}
                     <div className="flex items-center justify-between mb-4">
-                        <div className={cn(
-                            "p-2 rounded-xl transition-all shadow-sm",
-                            stats.overdueCount > 0 
-                                ? "bg-red-500/10 dark:bg-red-500/20 text-red-500 dark:text-red-400 animate-pulse" 
-                                : "bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500"
-                        )}>
+                        <div
+                            className={cn(
+                                "p-2 rounded-xl transition-all shadow-sm",
+                                stats.overdueCount > 0
+                                    ? "bg-red-500/10 dark:bg-red-500/20 text-red-500 dark:text-red-400 animate-pulse"
+                                    : "bg-slate-100 dark:bg-zinc-800 text-slate-400 dark:text-zinc-500",
+                            )}
+                        >
                             <AlertTriangle className="w-4 h-4" />
                         </div>
                     </div>
                     <div>
-                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Critical Delay</p>
-                        <h2 className={cn(
-                            "text-2xl font-black tracking-tighter",
-                            stats.overdueCount > 0 ? "text-red-600 dark:text-red-400" : "text-slate-900 dark:text-zinc-100"
-                        )}>
+                        <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">
+                            Critical Delay
+                        </p>
+                        <h2
+                            className={cn(
+                                "text-2xl font-black tracking-tighter",
+                                stats.overdueCount > 0
+                                    ? "text-red-600 dark:text-red-400"
+                                    : "text-slate-900 dark:text-zinc-100",
+                            )}
+                        >
                             {stats.overdueCount}
                         </h2>
                     </div>
                 </div>
 
                 {/* Card 4: Role-based (Income / Capacity) */}
-                {userRole === 'CEO' ? (
-                    <div className={cn(
-                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden shadow-lg shadow-emerald-500/5",
-                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
-                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md hover:border-emerald-500/30 dark:hover:border-emerald-500/30"
-                    )}>
-                        {userRole === 'CEO' && (
+                {userRole === "CEO" ? (
+                    <div
+                        className={cn(
+                            "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden shadow-lg shadow-emerald-500/5",
+                            "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                            "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                            "hover:-translate-y-1 hover:shadow-md hover:border-emerald-500/30 dark:hover:border-emerald-500/30",
+                        )}
+                    >
+                        {userRole === "CEO" && (
                             <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
                         )}
                         <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-emerald-500/10 transition-colors" />
@@ -1899,18 +2307,26 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </div>
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">Today's Revenue</p>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">
+                                Today's Revenue
+                            </p>
                             <h2 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
-                                ${(stats.paymentsReceivedToday * 250).toLocaleString()}
+                                $
+                                {(
+                                    stats.paymentsReceivedToday * 250
+                                ).toLocaleString()}
                             </h2>
                         </div>
                     </div>
                 ) : (
-                    <div className={cn(
-                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group",
-                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
-                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700"
-                    )}>
+                    <div
+                        className={cn(
+                            "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group",
+                            "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                            "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                            "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                        )}
+                    >
                         <div className="flex items-center justify-between mb-4">
                             <div className="p-2 bg-blue-500/10 dark:bg-blue-500/20 rounded-xl text-blue-600 dark:text-blue-400 shadow-sm">
                                 <Activity className="w-4 h-4" />
@@ -1920,7 +2336,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             </div>
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Operational Velocity</p>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">
+                                Operational Velocity
+                            </p>
                             <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
                                 {stats.operationalVelocity}%
                             </h2>
@@ -1929,13 +2347,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 )}
 
                 {/* Card 5: Role-based (Sales / Blockers) */}
-                {userRole === 'CEO' ? (
-                    <div className={cn(
-                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
-                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
-                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md hover:border-blue-500/30 dark:hover:border-blue-500/30"
-                    )}>
-                        {userRole === 'CEO' && (
+                {userRole === "CEO" ? (
+                    <div
+                        className={cn(
+                            "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group relative overflow-hidden",
+                            "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                            "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                            "hover:-translate-y-1 hover:shadow-md hover:border-blue-500/30 dark:hover:border-blue-500/30",
+                        )}
+                    >
+                        {userRole === "CEO" && (
                             <div className="absolute top-2 right-2 w-1.5 h-1.5 rounded-full bg-amber-500/40 shadow-[0_0_8px_rgba(245,158,11,0.5)] animate-pulse" />
                         )}
                         <div className="absolute top-0 right-0 w-24 h-24 bg-blue-500/5 rounded-full -mr-12 -mt-12 blur-2xl group-hover:bg-blue-500/10 transition-colors" />
@@ -1946,12 +2367,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             <Rocket className="w-4 h-4 text-blue-400 dark:text-blue-500 animate-pulse" />
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">Market Conversion</p>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">
+                                Market Conversion
+                            </p>
                             <div className="flex items-baseline gap-1">
                                 <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
                                     {stats.newLeadsToday}
                                 </h2>
-                                <span className="text-slate-300 dark:text-zinc-700 font-black">/</span>
+                                <span className="text-slate-300 dark:text-zinc-700 font-black">
+                                    /
+                                </span>
                                 <h2 className="text-xl font-black text-blue-600 dark:text-blue-400 tracking-tighter">
                                     {stats.paymentsReceivedToday}
                                 </h2>
@@ -1959,11 +2384,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </div>
                     </div>
                 ) : (
-                    <div className={cn(
-                        "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group",
-                        "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
-                        "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",                        "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700"
-                    )}>
+                    <div
+                        className={cn(
+                            "rounded-3xl p-6 flex flex-col justify-between transition-all duration-300 group",
+                            "bg-white/70 backdrop-blur-md border border-white/60 shadow-[0_12px_40px_rgba(0,0,0,0.02)]",
+                            "dark:bg-zinc-900/40 dark:backdrop-blur-md dark:border-zinc-800/50 dark:shadow-[0_12px_40px_rgba(0,0,0,0.4)]",
+                            "hover:-translate-y-1 hover:shadow-md dark:hover:border-zinc-700",
+                        )}
+                    >
                         <div className="flex items-center justify-between mb-4">
                             <div className="p-2 bg-red-500/10 dark:bg-red-500/20 rounded-xl text-red-600 dark:text-red-400 shadow-sm">
                                 <ShieldAlert className="w-4 h-4" />
@@ -1976,7 +2404,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             )}
                         </div>
                         <div>
-                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">Active Blockers</p>
+                            <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1">
+                                Active Blockers
+                            </p>
                             <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
                                 {stats.activeBlockers}
                             </h2>
@@ -2039,7 +2469,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                     <span className="flex h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    {userRole === 'CEO' && (
+                                    {userRole === "CEO" && (
                                         <button
                                             onClick={clearSignalFeed}
                                             className="p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors"
@@ -2049,13 +2479,18 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                             <Trash2
                                                 className={cn(
                                                     "w-3.5 h-3.5",
-                                                    activities.length === 0 ? "text-slate-300 dark:text-zinc-700" : "text-slate-400 dark:text-zinc-500 hover:text-red-500 transition-colors"
+                                                    activities.length === 0
+                                                        ? "text-slate-300 dark:text-zinc-700"
+                                                        : "text-slate-400 dark:text-zinc-500 hover:text-red-500 transition-colors",
                                                 )}
                                             />
                                         </button>
                                     )}
                                     <RefreshCw
-                                        className={cn("w-3.5 h-3.5 text-slate-400 dark:text-zinc-500", isRefreshing && "animate-spin")}
+                                        className={cn(
+                                            "w-3.5 h-3.5 text-slate-400 dark:text-zinc-500",
+                                            isRefreshing && "animate-spin",
+                                        )}
                                     />
                                 </div>
                             </div>
@@ -2079,15 +2514,28 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                     (act, index) => (
                                                         <motion.div
                                                             key={act.id}
-                                                            initial={{ opacity: 0, x: -5 }}
-                                                            animate={{ opacity: 1, x: 0 }}
-                                                            transition={{ delay: index * 0.05 }}
+                                                            initial={{
+                                                                opacity: 0,
+                                                                x: -5,
+                                                            }}
+                                                            animate={{
+                                                                opacity: 1,
+                                                                x: 0,
+                                                            }}
+                                                            transition={{
+                                                                delay:
+                                                                    index *
+                                                                    0.05,
+                                                            }}
                                                             className="relative group pr-1 transition-all duration-300 hover:bg-slate-50/50 dark:hover:bg-zinc-800/30 p-2 rounded-xl"
                                                         >
                                                             {/* Timeline Dot */}
                                                             <div
                                                                 className="absolute -left-[12.5px] top-3 h-2.5 w-2.5 rounded-full border-2 border-white dark:border-zinc-900 z-10 transition-transform group-hover:scale-125 shadow-sm ring-4 ring-offset-0 ring-indigo-500/10 dark:ring-indigo-500/20"
-                                                                style={{ backgroundColor: act.color }}
+                                                                style={{
+                                                                    backgroundColor:
+                                                                        act.color,
+                                                                }}
                                                             />
 
                                                             <div className="flex flex-col gap-1.5">
@@ -2095,18 +2543,30 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                                     <div className="flex items-center gap-2 overflow-hidden">
                                                                         <act.icon
                                                                             className="w-3 h-3 shrink-0 opacity-80"
-                                                                            style={{ color: act.color }}
+                                                                            style={{
+                                                                                color: act.color,
+                                                                            }}
                                                                         />
                                                                         <span className="text-[10px] font-black uppercase tracking-tight text-slate-900 dark:text-zinc-100 truncate">
-                                                                            {act.title}
+                                                                            {
+                                                                                act.title
+                                                                            }
                                                                         </span>
                                                                     </div>
                                                                     <span className="text-[8px] font-bold text-slate-400 dark:text-zinc-500 tabular-nums shrink-0 uppercase tracking-tighter">
-                                                                        {format(parseISO(act.time || new Date().toISOString()), "HH:mm")}
+                                                                        {format(
+                                                                            parseISO(
+                                                                                act.time ||
+                                                                                    new Date().toISOString(),
+                                                                            ),
+                                                                            "HH:mm",
+                                                                        )}
                                                                     </span>
                                                                 </div>
                                                                 <p className="text-[10px] text-slate-400 dark:text-zinc-500 leading-relaxed line-clamp-2 pl-5">
-                                                                    {act.description}
+                                                                    {
+                                                                        act.description
+                                                                    }
                                                                 </p>
                                                             </div>
                                                         </motion.div>
@@ -2170,11 +2630,13 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             >
                                 Completed
                                 {completedTasks.length > 0 && (
-                                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] inline-flex items-center justify-center font-black transition-all ${
-                                        taskTab === "completed" 
-                                            ? "bg-white/20 text-white" 
-                                            : "bg-blue-600/90 text-white shadow-sm"
-                                    }`}>
+                                    <span
+                                        className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] inline-flex items-center justify-center font-black transition-all ${
+                                            taskTab === "completed"
+                                                ? "bg-white/20 text-white"
+                                                : "bg-blue-600/90 text-white shadow-sm"
+                                        }`}
+                                    >
                                         {completedTasks.length}
                                     </span>
                                 )}
@@ -2202,10 +2664,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                     : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
-                            {userRole === 'CEO' ? 'All' : 'My Tasks'}
+                            {userRole === "CEO" ? "All" : "My Tasks"}
                         </button>
                         <button
-                            onClick={() => setDepartmentFilter("administration")}
+                            onClick={() =>
+                                setDepartmentFilter("administration")
+                            }
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
                                 departmentFilter === "administration"
                                     ? "bg-indigo-500 text-white shadow-lg shadow-indigo-500/20"
@@ -2260,202 +2724,320 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     <div className="flex-1 overflow-hidden">
                         <div className="h-full max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
                             <div className="flex flex-col gap-3">
-                            {displayedTasks.length === 0 ? (
-                                (() => {
-                                    if (isRefreshing && staff.length === 0) {
-                                        return <SkeletonCommandCenter />;
-                                    }
-                                    return (
-                                        <div className="h-48 border border-dashed border-indigo-500/20 dark:border-zinc-800 text-center text-slate-400 dark:text-zinc-500 text-[11px] uppercase font-black tracking-widest rounded-[2rem] bg-white/40 dark:bg-zinc-900/20 flex flex-col items-center justify-center gap-3 transition-all shadow-inner">
-                                            <div className="p-3 bg-white/50 dark:bg-zinc-800/50 rounded-full shadow-sm">
-                                                <CheckCircle className="w-6 h-6 text-indigo-500/60 dark:text-indigo-400/60" />
-                                            </div>
-                                            <span>
-                                                {taskTab === "completed" ? "Archive cleared" : 
-                                                 departmentFilter === "ceo" ? "No active operations identified" :
-                                                 departmentFilter === "sales" ? "Sales sector quiet" :
-                                                 departmentFilter === "marketing" ? "Marketing sector quiet" :
-                                                 departmentFilter === "accounts" ? "Accounts sector quiet" :
-                                                 departmentFilter === "administration" ? "Admin sector quiet" :
-                                                 "Awaiting task deployment..."}
-                                            </span>
-                                        </div>
-                                    );
-                                })()
-                            ) : (
-                                displayedTasks.map((t) => {
-                                    const assignee = staff.find(
-                                        (s) => s.id === t.assigned_to,
-                                    );
-                                    const isOverdue =
-                                        t.due_date &&
-                                        new Date(t.due_date) < new Date();
+                                {displayedTasks.length === 0
+                                    ? (() => {
+                                          if (
+                                              isRefreshing &&
+                                              staff.length === 0
+                                          ) {
+                                              return <SkeletonCommandCenter />;
+                                          }
+                                          return (
+                                              <div className="h-48 border border-dashed border-indigo-500/20 dark:border-zinc-800 text-center text-slate-400 dark:text-zinc-500 text-[11px] uppercase font-black tracking-widest rounded-[2rem] bg-white/40 dark:bg-zinc-900/20 flex flex-col items-center justify-center gap-3 transition-all shadow-inner">
+                                                  <div className="p-3 bg-white/50 dark:bg-zinc-800/50 rounded-full shadow-sm">
+                                                      <CheckCircle className="w-6 h-6 text-indigo-500/60 dark:text-indigo-400/60" />
+                                                  </div>
+                                                  <span>
+                                                      {taskTab === "completed"
+                                                          ? "Archive cleared"
+                                                          : departmentFilter ===
+                                                              "ceo"
+                                                            ? "No active operations identified"
+                                                            : departmentFilter ===
+                                                                "sales"
+                                                              ? "Sales sector quiet"
+                                                              : departmentFilter ===
+                                                                  "marketing"
+                                                                ? "Marketing sector quiet"
+                                                                : departmentFilter ===
+                                                                    "accounts"
+                                                                  ? "Accounts sector quiet"
+                                                                  : departmentFilter ===
+                                                                      "administration"
+                                                                    ? "Admin sector quiet"
+                                                                    : "Awaiting task deployment..."}
+                                                  </span>
+                                              </div>
+                                          );
+                                      })()
+                                    : displayedTasks.map((t) => {
+                                          const assignee = staff.find(
+                                              (s) => s.id === t.assigned_to,
+                                          );
+                                          const isOverdue =
+                                              t.due_date &&
+                                              new Date(t.due_date) < new Date();
 
-                                    return (
-                                        <div
-                                            key={t.id}
-                                            className={cn(
-                                                "group flex flex-col gap-2 p-5 rounded-3xl transition-all duration-500 shadow-sm border border-white/60 dark:border-zinc-800/50 border-l-4 relative overflow-hidden",
-                                                "bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md hover:-translate-y-0.5",
-                                                t.priority === "urgent"
-                                                    ? "border-l-red-500 dark:border-l-red-600"
-                                                    : t.status === "completed"
-                                                      ? "border-l-emerald-500 dark:border-l-emerald-600"
-                                                      : "border-l-indigo-500 dark:border-l-indigo-600",
-                                                isOverdue
-                                                    ? "border-r-red-500/10 border-y-red-500/10"
-                                                    : "border-white/40 dark:border-zinc-800/50"
-                                            )}
-                                        >
-                                        <div className="flex justify-between items-start gap-4">
-                                            <div className="flex-1 flex flex-col gap-1.5 min-w-0">
-                                                <div className="flex flex-wrap items-center gap-2">
-                                                    <h4 className="text-sm font-black text-slate-900 dark:text-zinc-100 leading-tight uppercase truncate max-w-[220px] sm:max-w-[320px]">
-                                                        {t.title}
-                                                    </h4>
-                                                    {(t as any).creator && (
-                                                        <Badge variant="outline" className={cn(
-                                                            "text-[9px] px-2.5 py-0 h-5 border-none font-black uppercase tracking-widest flex items-center gap-1.5",
-                                                            (t as any).creator.role === 'ceo' 
-                                                                ? "bg-amber-500/10 text-amber-600 dark:text-amber-400" 
-                                                                : "bg-slate-500/10 text-slate-600 dark:text-slate-400"
-                                                        )}>
-                                                            {(t as any).creator.role === 'ceo' ? (
-                                                                <>
-                                                                    <Crown className="w-2.5 h-2.5" />
-                                                                    Assigned by CEO
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    <Zap className="w-2.5 h-2.5" />
-                                                                    Assigned by Administrator
-                                                                </>
-                                                            )}
-                                                        </Badge>
-                                                    )}
-                                                </div>
-                                                <p className="text-[10px] text-slate-400 dark:text-zinc-400 font-medium tracking-wide line-clamp-2 leading-relaxed mt-1">
-                                                    {t.description ||
-                                                        "No operational description provided."}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-3 shrink-0">
-                                                {renderCEOTaskGauge(t)}
-                                                <Badge
-                                                    className={cn(
-                                                        "text-[8px] uppercase font-black px-2.5 py-1 flex items-center gap-1.5 border-none shadow-none shrink-0",
-                                                        isOverdue
-                                                            ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                                                            : (() => {
-                                                                const s = (t.status || "PENDING").toUpperCase();
-                                                                if (s === "PENDING") return "bg-orange-500/10 text-orange-600 dark:text-orange-400";
-                                                                if (s === "IN_PROGRESS") return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
-                                                                if (s === "UNDER_REVIEW" || s === "IN_REVIEW") return "bg-purple-500/10 text-purple-600 dark:text-purple-400 animate-pulse";
-                                                                if (s === "COMPLETED") return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
-                                                                return "bg-slate-500/10 text-slate-600 dark:text-slate-400";
-                                                            })()
-                                                    )}
-                                                >
-                                                {(isOverdue || t.priority === "urgent") && (
-                                                    <AlertTriangle className="w-2.5 h-2.5" />
-                                                )}
-                                                {(() => {
-                                                    if (isOverdue) return "OVERDUE";
-                                                    const s = (t.status || "PENDING").toUpperCase();
-                                                    if (s === "PENDING") return "PENDING";
-                                                    if (s === "IN_PROGRESS") return "IN PROGRESS";
-                                                    if (s === "UNDER_REVIEW" || s === "IN_REVIEW") return "UNDER REVIEW";
-                                                    if (s === "COMPLETED") return "COMPLETED";
-                                                    return s;
-                                                })()}
-                                            </Badge>
-                                            </div>
-                                        </div>
+                                          return (
+                                              <div
+                                                  key={t.id}
+                                                  className={cn(
+                                                      "group flex flex-col gap-2 p-5 rounded-3xl transition-all duration-500 shadow-sm border border-white/60 dark:border-zinc-800/50 border-l-4 relative overflow-hidden",
+                                                      "bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md hover:-translate-y-0.5",
+                                                      t.priority === "urgent"
+                                                          ? "border-l-red-500 dark:border-l-red-600"
+                                                          : t.status ===
+                                                              "completed"
+                                                            ? "border-l-emerald-500 dark:border-l-emerald-600"
+                                                            : "border-l-indigo-500 dark:border-l-indigo-600",
+                                                      isOverdue
+                                                          ? "border-r-red-500/10 border-y-red-500/10"
+                                                          : "border-white/40 dark:border-zinc-800/50",
+                                                  )}
+                                              >
+                                                  <div className="flex justify-between items-start gap-4">
+                                                      <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+                                                          <div className="flex flex-wrap items-center gap-2">
+                                                              <h4 className="text-sm font-black text-slate-900 dark:text-zinc-100 leading-tight uppercase truncate max-w-[220px] sm:max-w-[320px]">
+                                                                  {t.title}
+                                                              </h4>
+                                                              {(t as any)
+                                                                  .creator && (
+                                                                  <Badge
+                                                                      variant="outline"
+                                                                      className={cn(
+                                                                          "text-[9px] px-2.5 py-0 h-5 border-none font-black uppercase tracking-widest flex items-center gap-1.5",
+                                                                          (
+                                                                              t as any
+                                                                          )
+                                                                              .creator
+                                                                              .role ===
+                                                                              "ceo"
+                                                                              ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                                                                              : "bg-slate-500/10 text-slate-600 dark:text-slate-400",
+                                                                      )}
+                                                                  >
+                                                                      {(
+                                                                          t as any
+                                                                      ).creator
+                                                                          .role ===
+                                                                      "ceo" ? (
+                                                                          <>
+                                                                              <Crown className="w-2.5 h-2.5" />
+                                                                              Assigned
+                                                                              by
+                                                                              CEO
+                                                                          </>
+                                                                      ) : (
+                                                                          <>
+                                                                              <Zap className="w-2.5 h-2.5" />
+                                                                              Assigned
+                                                                              by
+                                                                              Administrator
+                                                                          </>
+                                                                      )}
+                                                                  </Badge>
+                                                              )}
+                                                          </div>
+                                                          <p className="text-[10px] text-slate-400 dark:text-zinc-400 font-medium tracking-wide line-clamp-2 leading-relaxed mt-1">
+                                                              {t.description ||
+                                                                  "No operational description provided."}
+                                                          </p>
+                                                      </div>
+                                                      <div className="flex items-center gap-3 shrink-0">
+                                                          {renderCEOTaskGauge(
+                                                              t,
+                                                          )}
+                                                          <Badge
+                                                              className={cn(
+                                                                  "text-[8px] uppercase font-black px-2.5 py-1 flex items-center gap-1.5 border-none shadow-none shrink-0",
+                                                                  isOverdue
+                                                                      ? "bg-red-500/10 text-red-600 dark:text-red-400"
+                                                                      : (() => {
+                                                                            const s =
+                                                                                (
+                                                                                    t.status ||
+                                                                                    "PENDING"
+                                                                                ).toUpperCase();
+                                                                            if (
+                                                                                s ===
+                                                                                "PENDING"
+                                                                            )
+                                                                                return "bg-orange-500/10 text-orange-600 dark:text-orange-400";
+                                                                            if (
+                                                                                s ===
+                                                                                "IN_PROGRESS"
+                                                                            )
+                                                                                return "bg-blue-500/10 text-blue-600 dark:text-blue-400";
+                                                                            if (
+                                                                                s ===
+                                                                                    "UNDER_REVIEW" ||
+                                                                                s ===
+                                                                                    "IN_REVIEW"
+                                                                            )
+                                                                                return "bg-purple-500/10 text-purple-600 dark:text-purple-400 animate-pulse";
+                                                                            if (
+                                                                                s ===
+                                                                                "COMPLETED"
+                                                                            )
+                                                                                return "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+                                                                            return "bg-slate-500/10 text-slate-600 dark:text-slate-400";
+                                                                        })(),
+                                                              )}
+                                                          >
+                                                              {(isOverdue ||
+                                                                  t.priority ===
+                                                                      "urgent") && (
+                                                                  <AlertTriangle className="w-2.5 h-2.5" />
+                                                              )}
+                                                              {(() => {
+                                                                  if (isOverdue)
+                                                                      return "OVERDUE";
+                                                                  const s = (
+                                                                      t.status ||
+                                                                      "PENDING"
+                                                                  ).toUpperCase();
+                                                                  if (
+                                                                      s ===
+                                                                      "PENDING"
+                                                                  )
+                                                                      return "PENDING";
+                                                                  if (
+                                                                      s ===
+                                                                      "IN_PROGRESS"
+                                                                  )
+                                                                      return "IN PROGRESS";
+                                                                  if (
+                                                                      s ===
+                                                                          "UNDER_REVIEW" ||
+                                                                      s ===
+                                                                          "IN_REVIEW"
+                                                                  )
+                                                                      return "UNDER REVIEW";
+                                                                  if (
+                                                                      s ===
+                                                                      "COMPLETED"
+                                                                  )
+                                                                      return "COMPLETED";
+                                                                  return s;
+                                                              })()}
+                                                          </Badge>
+                                                      </div>
+                                                  </div>
 
-                                        <div className="mt-2 pt-3 border-t border-theme-border-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                            <div className="flex items-center gap-3">
-                                                <button
-                                                    onClick={() => {
-                                                        openChatModal(
-                                                            assignee!,
-                                                        );
-                                                    }}
-                                                    disabled={!assignee}
-                                                    className="flex items-center gap-2 hover:bg-theme-bg-white-5 p-1 -ml-1 rounded transition-colors group/staff"
-                                                >
-                                                    <div className="w-5 h-5 rounded-full bg-theme-bg-white-10 border border-theme-border-20 flex items-center justify-center text-[8px] font-black text-theme-text-60 uppercase">
-                                                        {assignee?.full_name?.charAt(
-                                                            0,
-                                                        ) || "?"}
-                                                    </div>
-                                                    <span className="text-[10px] font-bold text-theme-text-60 group-hover/staff:text-theme-text transition-colors uppercase">
-                                                        {assignee?.full_name || "Unassigned"}
-                                                        {assignee?.department && (
-                                                            <span className="ml-1 opacity-50 font-medium">
-                                                                ({assignee.department})
-                                                            </span>
-                                                        )}
-                                                    </span>
-                                                </button>
-                                                {t.due_date && (
-                                                    <Fragment>
-                                                        <div className="w-[1px] h-3 bg-theme-bg-white-10" />
-                                                        <span
-                                                            className={`text-[9px] font-bold uppercase ${isOverdue ? "text-red-400" : "text-theme-text-40"}`}
-                                                        >
-                                                            Due:{" "}
-                                                            {format(
-                                                                parseISO(
-                                                                    t.due_date,
-                                                                ),
-                                                                "MMM d",
-                                                            )}
-                                                        </span>
-                                                    </Fragment>
-                                                )}
-                                            </div>
-                                            <div className="flex items-center gap-2">
-                                                {((t.status || "").toUpperCase() === "UNDER_REVIEW" || (t.status || "").toUpperCase() === "IN_REVIEW") && (
-                                                    <button
-                                                        onClick={() => approveAndCloseTask(t.id)}
-                                                        className="h-8 px-3 text-[9px] font-black uppercase bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-all border-none shadow-md shadow-emerald-500/25 flex items-center gap-1.5 hover:-translate-y-0.5"
-                                                        title="Approve and Close Task"
-                                                    >
-                                                        <Check className="w-3.5 h-3.5" strokeWidth={3} /> Approve & Close
-                                                    </button>
-                                                )}
-                                                {taskTab === "completed" ? (
-                                                    <button
-                                                        onClick={() => markTaskAsReviewed(t.id)}
-                                                        className="h-8 px-4 text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl transition-all border-none shadow-sm"
-                                                    >
-                                                        Mark Reviewed
-                                                    </button>
-                                                ) : (
-                                                    <button
-                                                        onClick={() => deleteTask(t.id)}
-                                                        disabled={deletingTaskIds.has(t.id)}
-                                                        className={cn(
-                                                            "p-2.5 rounded-xl transition-all duration-300 border-none flex items-center justify-center group/btn",
-                                                            deletingTaskIds.has(t.id)
-                                                                ? 'bg-slate-100 dark:bg-zinc-800 text-slate-400'
-                                                                : 'text-slate-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30'
-                                                        )}
-                                                        title="Terminate Operation"
-                                                    >
-                                                        {deletingTaskIds.has(t.id) ? (
-                                                            <Loader2 className="w-4 h-4 animate-spin" />
-                                                        ) : (
-                                                            <Trash2 className="w-4 h-4 transition-transform group-hover/btn:scale-110" />
-                                                        )}
-                                                    </button>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
+                                                  <div className="mt-2 pt-3 border-t border-theme-border-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                      <div className="flex items-center gap-3">
+                                                          <button
+                                                              onClick={() => {
+                                                                  openChatModal(
+                                                                      assignee!,
+                                                                  );
+                                                              }}
+                                                              disabled={
+                                                                  !assignee
+                                                              }
+                                                              className="flex items-center gap-2 hover:bg-theme-bg-white-5 p-1 -ml-1 rounded transition-colors group/staff"
+                                                          >
+                                                              <div className="w-5 h-5 rounded-full bg-theme-bg-white-10 border border-theme-border-20 flex items-center justify-center text-[8px] font-black text-theme-text-60 uppercase">
+                                                                  {assignee?.full_name?.charAt(
+                                                                      0,
+                                                                  ) || "?"}
+                                                              </div>
+                                                              <span className="text-[10px] font-bold text-theme-text-60 group-hover/staff:text-theme-text transition-colors uppercase">
+                                                                  {assignee?.full_name ||
+                                                                      "Unassigned"}
+                                                                  {assignee?.department && (
+                                                                      <span className="ml-1 opacity-50 font-medium">
+                                                                          (
+                                                                          {
+                                                                              assignee.department
+                                                                          }
+                                                                          )
+                                                                      </span>
+                                                                  )}
+                                                              </span>
+                                                          </button>
+                                                          {t.due_date && (
+                                                              <Fragment>
+                                                                  <div className="w-[1px] h-3 bg-theme-bg-white-10" />
+                                                                  <span
+                                                                      className={`text-[9px] font-bold uppercase ${isOverdue ? "text-red-400" : "text-theme-text-40"}`}
+                                                                  >
+                                                                      Due:{" "}
+                                                                      {format(
+                                                                          parseISO(
+                                                                              t.due_date,
+                                                                          ),
+                                                                          "MMM d",
+                                                                      )}
+                                                                  </span>
+                                                              </Fragment>
+                                                          )}
+                                                      </div>
+                                                      <div className="flex items-center gap-2">
+                                                          {((
+                                                              t.status || ""
+                                                          ).toUpperCase() ===
+                                                              "UNDER_REVIEW" ||
+                                                              (
+                                                                  t.status || ""
+                                                              ).toUpperCase() ===
+                                                                  "IN_REVIEW") && (
+                                                              <button
+                                                                  onClick={() =>
+                                                                      approveAndCloseTask(
+                                                                          t.id,
+                                                                      )
+                                                                  }
+                                                                  className="h-8 px-3 text-[9px] font-black uppercase bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-all border-none shadow-md shadow-emerald-500/25 flex items-center gap-1.5 hover:-translate-y-0.5"
+                                                                  title="Approve and Close Task"
+                                                              >
+                                                                  <Check
+                                                                      className="w-3.5 h-3.5"
+                                                                      strokeWidth={
+                                                                          3
+                                                                      }
+                                                                  />{" "}
+                                                                  Approve &
+                                                                  Close
+                                                              </button>
+                                                          )}
+                                                          {taskTab ===
+                                                          "completed" ? (
+                                                              <button
+                                                                  onClick={() =>
+                                                                      markTaskAsReviewed(
+                                                                          t.id,
+                                                                      )
+                                                                  }
+                                                                  className="h-8 px-4 text-[9px] font-black uppercase bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-600 hover:text-white rounded-xl transition-all border-none shadow-sm"
+                                                              >
+                                                                  Mark Reviewed
+                                                              </button>
+                                                          ) : (
+                                                              <button
+                                                                  onClick={() =>
+                                                                      deleteTask(
+                                                                          t.id,
+                                                                      )
+                                                                  }
+                                                                  disabled={deletingTaskIds.has(
+                                                                      t.id,
+                                                                  )}
+                                                                  className={cn(
+                                                                      "p-2.5 rounded-xl transition-all duration-300 border-none flex items-center justify-center group/btn",
+                                                                      deletingTaskIds.has(
+                                                                          t.id,
+                                                                      )
+                                                                          ? "bg-slate-100 dark:bg-zinc-800 text-slate-400"
+                                                                          : "text-slate-300 dark:text-zinc-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30",
+                                                                  )}
+                                                                  title="Terminate Operation"
+                                                              >
+                                                                  {deletingTaskIds.has(
+                                                                      t.id,
+                                                                  ) ? (
+                                                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                                                  ) : (
+                                                                      <Trash2 className="w-4 h-4 transition-transform group-hover/btn:scale-110" />
+                                                                  )}
+                                                              </button>
+                                                          )}
+                                                      </div>
+                                                  </div>
+                                              </div>
+                                          );
+                                      })}
                             </div>
                         </div>
                     </div>
@@ -2468,7 +3050,11 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
                                 <SectionHeader
-                                    title={userRole === 'CEO' ? "CEO Directives" : "Administrator Directives"}
+                                    title={
+                                        userRole === "CEO"
+                                            ? "CEO Directives"
+                                            : "Administrator Directives"
+                                    }
                                     color="bg-orange-500"
                                     className="mb-0"
                                 />
@@ -2477,7 +3063,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                 </div>
                             </div>
                         </div>
-                        
+
                         {ceoDirectives.length > 0 && (
                             <div className="flex flex-col gap-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
                                 {ceoDirectives.slice(0, 5).map((directive) => (
@@ -2490,17 +3076,29 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                 <Crown className="w-4 h-4 text-white" />
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className="text-sm font-black text-slate-900 dark:text-zinc-100 line-clamp-1">{directive.title}</p>
-                                                <p className="text-[10px] text-slate-400 dark:text-zinc-500 line-clamp-2 mt-1 leading-relaxed font-medium">{directive.message}</p>
+                                                <p className="text-sm font-black text-slate-900 dark:text-zinc-100 line-clamp-1">
+                                                    {directive.title}
+                                                </p>
+                                                <p className="text-[10px] text-slate-400 dark:text-zinc-500 line-clamp-2 mt-1 leading-relaxed font-medium">
+                                                    {directive.message}
+                                                </p>
                                             </div>
                                         </div>
-                                        
+
                                         <div className="flex items-center justify-between mt-3">
-                                            <Badge variant="outline" className="text-[8px] font-black uppercase tracking-widest bg-orange-500/10 text-orange-600 border-none px-2 py-0.5">
-                                                {directive.priority || 'Normal'}
+                                            <Badge
+                                                variant="outline"
+                                                className="text-[8px] font-black uppercase tracking-widest bg-orange-500/10 text-orange-600 border-none px-2 py-0.5"
+                                            >
+                                                {directive.priority || "Normal"}
                                             </Badge>
                                             <p className="text-[8px] font-bold text-slate-300 dark:text-zinc-600 uppercase tracking-tighter">
-                                                {format(new Date(directive.created_at), 'MMM d, h:mm a')}
+                                                {format(
+                                                    new Date(
+                                                        directive.created_at,
+                                                    ),
+                                                    "MMM d, h:mm a",
+                                                )}
                                             </p>
                                         </div>
                                     </div>
@@ -2510,71 +3108,115 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
                         <div className="flex flex-col gap-4 pt-6 border-t border-slate-100 dark:border-zinc-800/50">
                             {/* Thought Capture Glassmorphic Input - ROLE BASED */}
-                            <ThoughtCapture 
-                                onCapture={() => fetchData()} 
+                            <ThoughtCapture
+                                onCapture={() => fetchData()}
                                 compact={true}
-                                placeholder={userRole === 'CEO' ? "Capture a Strategic CEO Directive..." : "Log an administrator task update..."}
+                                placeholder={
+                                    userRole === "CEO"
+                                        ? "Capture a Strategic CEO Directive..."
+                                        : "Log an administrator task update..."
+                                }
                             />
-                            
+
                             {visibleIdeas.length > 0 && (
                                 <div className="flex flex-col gap-3">
-                                    {visibleIdeas.slice().sort((a, b) => {
-                                        const aDone = completedIdeas.has(a.id);
-                                        const bDone = completedIdeas.has(b.id);
-                                        return aDone === bDone ? 0 : aDone ? 1 : -1;
-                                    }).map((idea) => {
-                                        const isCompleted = completedIdeas.has(idea.id);
-                                        return (
-                                            <div
-                                                key={idea.id}
-                                                className={cn(
-                                                    "group flex flex-col gap-3 p-4 rounded-2xl transition-all duration-500 border relative overflow-hidden",
-                                                    isCompleted
-                                                        ? "bg-slate-50 dark:bg-zinc-800/20 border-slate-100 dark:border-zinc-800 opacity-60 shadow-inner"
-                                                        : "bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md shadow-sm"
-                                                )}
-                                            >
-                                                <div className={cn(
-                                                    "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
-                                                    isCompleted ? "bg-emerald-500/50" : (
-                                                        idea.priority === 'urgent' ? "bg-red-500" : 
-                                                        idea.priority === 'high' ? "bg-orange-500" : "bg-indigo-400"
-                                                    )
-                                                )} />
-
-                                                <div className="flex justify-between items-start gap-4 relative z-10 pl-1">
-                                                    <div className="flex-1 min-w-0">
-                                                        <h4 className={cn(
-                                                            "text-[11px] font-black uppercase tracking-widest truncate",
-                                                            isCompleted ? "text-slate-400 dark:text-zinc-500 line-through" : "text-slate-900 dark:text-zinc-100"
-                                                        )}>
-                                                            {idea.title || 'Untitled Directive'}
-                                                        </h4>
-                                                        <p className={cn(
-                                                            "text-[10px] font-medium leading-relaxed mt-1",
-                                                            isCompleted ? "text-slate-300 dark:text-zinc-600 line-through italic" : "text-slate-400 dark:text-zinc-500"
-                                                        )}>
-                                                            {idea.content}
-                                                        </p>
-                                                    </div>
-                                                    <button
-                                                        onClick={() => toggleIdeaCompletion(idea.id)}
+                                    {visibleIdeas
+                                        .slice()
+                                        .sort((a, b) => {
+                                            const aDone = completedIdeas.has(
+                                                a.id,
+                                            );
+                                            const bDone = completedIdeas.has(
+                                                b.id,
+                                            );
+                                            return aDone === bDone
+                                                ? 0
+                                                : aDone
+                                                  ? 1
+                                                  : -1;
+                                        })
+                                        .map((idea) => {
+                                            const isCompleted =
+                                                completedIdeas.has(idea.id);
+                                            return (
+                                                <div
+                                                    key={idea.id}
+                                                    className={cn(
+                                                        "group flex flex-col gap-3 p-4 rounded-2xl transition-all duration-500 border relative overflow-hidden",
+                                                        isCompleted
+                                                            ? "bg-slate-50 dark:bg-zinc-800/20 border-slate-100 dark:border-zinc-800 opacity-60 shadow-inner"
+                                                            : "bg-white/40 dark:bg-zinc-900/20 backdrop-blur-md border border-white/60 dark:border-zinc-800/50 hover:bg-white/60 dark:hover:bg-zinc-900/40 hover:shadow-md shadow-sm",
+                                                    )}
+                                                >
+                                                    <div
                                                         className={cn(
-                                                            "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300",
-                                                            isCompleted ? "bg-emerald-500 text-white" : "bg-slate-50 dark:bg-zinc-800 text-slate-300 hover:text-emerald-500"
+                                                            "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
+                                                            isCompleted
+                                                                ? "bg-emerald-500/50"
+                                                                : idea.priority ===
+                                                                    "urgent"
+                                                                  ? "bg-red-500"
+                                                                  : idea.priority ===
+                                                                      "high"
+                                                                    ? "bg-orange-500"
+                                                                    : "bg-indigo-400",
                                                         )}
-                                                    >
-                                                        <Check className="w-4 h-4" strokeWidth={3} />
-                                                    </button>
+                                                    />
+
+                                                    <div className="flex justify-between items-start gap-4 relative z-10 pl-1">
+                                                        <div className="flex-1 min-w-0">
+                                                            <h4
+                                                                className={cn(
+                                                                    "text-[11px] font-black uppercase tracking-widest truncate",
+                                                                    isCompleted
+                                                                        ? "text-slate-400 dark:text-zinc-500 line-through"
+                                                                        : "text-slate-900 dark:text-zinc-100",
+                                                                )}
+                                                            >
+                                                                {idea.title ||
+                                                                    "Untitled Directive"}
+                                                            </h4>
+                                                            <p
+                                                                className={cn(
+                                                                    "text-[10px] font-medium leading-relaxed mt-1",
+                                                                    isCompleted
+                                                                        ? "text-slate-300 dark:text-zinc-600 line-through italic"
+                                                                        : "text-slate-400 dark:text-zinc-500",
+                                                                )}
+                                                            >
+                                                                {idea.content}
+                                                            </p>
+                                                        </div>
+                                                        <button
+                                                            onClick={() =>
+                                                                toggleIdeaCompletion(
+                                                                    idea.id,
+                                                                )
+                                                            }
+                                                            className={cn(
+                                                                "shrink-0 w-8 h-8 rounded-xl flex items-center justify-center transition-all duration-300",
+                                                                isCompleted
+                                                                    ? "bg-emerald-500 text-white"
+                                                                    : "bg-slate-50 dark:bg-zinc-800 text-slate-300 hover:text-emerald-500",
+                                                            )}
+                                                        >
+                                                            <Check
+                                                                className="w-4 h-4"
+                                                                strokeWidth={3}
+                                                            />
+                                                        </button>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        );
-                                    })}
+                                            );
+                                        })}
                                 </div>
                             )}
                         </div>
                     </CommandCard>
-                    <ExecutivePerformanceEngine tasks={tasks} completedTasks={completedTasks} />
+                    <ExecutivePerformanceEngine
+                        tasks={tasks}
+                        completedTasks={completedTasks}
+                    />
                 </aside>
             </main>
 
@@ -2901,7 +3543,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         <button
                             type="button"
                             onClick={() => {
-                                console.log('Assign task button clicked');
+                                console.log("Assign task button clicked");
                                 assignTask(false);
                             }}
                             disabled={!newTask.title || !newTask.assignedTo}
@@ -3394,18 +4036,21 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 </DialogContent>
             </Dialog>
             {/* Delegation Modal */}
-            <Dialog open={isDelegationModalOpen} onOpenChange={setIsDelegationModalOpen}>
+            <Dialog
+                open={isDelegationModalOpen}
+                onOpenChange={setIsDelegationModalOpen}
+            >
                 <DialogContent className="bg-white/95 backdrop-blur-2xl border-slate-200 text-slate-900 max-w-lg rounded-3xl shadow-2xl p-6 overflow-hidden">
                     {/* Top gradient accent bar */}
                     <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600" />
-                    
+
                     <DialogHeader className="pt-2">
                         <DialogTitle className="text-xl font-black uppercase tracking-[0.2em] text-indigo-950 flex items-center gap-2">
                             <Users className="w-5 h-5 text-indigo-600" />
                             Operative Allocation
                         </DialogTitle>
                     </DialogHeader>
-                    
+
                     <div className="mt-6 space-y-6">
                         <div className="p-4 rounded-2xl bg-slate-50/50 border border-slate-100 backdrop-blur-sm relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-2 opacity-5 group-hover:opacity-10 transition-opacity">
@@ -3429,24 +4074,40 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                     {staff.length} Active Operatives
                                 </span>
                             </div>
-                            
+
                             <ScrollArea className="h-[320px] pr-4 -mr-4">
                                 <div className="space-y-2.5 pb-4">
                                     {staff.map((member) => {
-                                        const activeTasksCount = tasks.filter(t => t.assigned_to === member.id && t.status !== 'completed').length;
+                                        const activeTasksCount = tasks.filter(
+                                            (t) =>
+                                                t.assigned_to === member.id &&
+                                                t.status !== "completed",
+                                        ).length;
                                         return (
                                             <button
                                                 key={member.id}
-                                                onClick={() => handleDelegation(member)}
+                                                onClick={() =>
+                                                    handleDelegation(member)
+                                                }
                                                 disabled={isDelegating}
                                                 className="w-full flex items-center justify-between p-3.5 rounded-2xl border border-slate-100 bg-white hover:border-indigo-500/50 hover:shadow-md hover:shadow-indigo-500/5 transition-all duration-300 group relative overflow-hidden"
                                             >
                                                 <div className="flex items-center gap-3.5 relative z-10">
                                                     <div className="relative">
                                                         <Avatar className="w-11 h-11 border-2 border-white shadow-sm ring-1 ring-slate-100">
-                                                            <AvatarImage src={member.avatar_url} />
+                                                            <AvatarImage
+                                                                src={
+                                                                    member.avatar_url
+                                                                }
+                                                            />
                                                             <AvatarFallback className="bg-gradient-to-br from-indigo-50 to-slate-100 text-indigo-700 font-bold text-sm">
-                                                                {member.full_name?.split(' ').map(n => n[0]).join('')}
+                                                                {member.full_name
+                                                                    ?.split(" ")
+                                                                    .map(
+                                                                        (n) =>
+                                                                            n[0],
+                                                                    )
+                                                                    .join("")}
                                                             </AvatarFallback>
                                                         </Avatar>
                                                         <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm" />
@@ -3456,18 +4117,22 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                             {member.full_name}
                                                         </p>
                                                         <p className="text-[10px] text-slate-500 uppercase font-bold tracking-widest mt-0.5">
-                                                            {member.department || 'Operations'}
+                                                            {member.department ||
+                                                                "Operations"}
                                                         </p>
                                                     </div>
                                                 </div>
                                                 <div className="flex flex-col items-end gap-1.5 relative z-10">
-                                                    <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
-                                                        activeTasksCount > 3 
-                                                            ? 'bg-amber-50 border-amber-100 text-amber-600' 
-                                                            : 'bg-indigo-50 border-indigo-100 text-indigo-600'
-                                                    }`}>
+                                                    <div
+                                                        className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full border ${
+                                                            activeTasksCount > 3
+                                                                ? "bg-amber-50 border-amber-100 text-amber-600"
+                                                                : "bg-indigo-50 border-indigo-100 text-indigo-600"
+                                                        }`}
+                                                    >
                                                         <span className="text-[9px] font-black uppercase tracking-tight">
-                                                            {activeTasksCount} Load
+                                                            {activeTasksCount}{" "}
+                                                            Load
                                                         </span>
                                                     </div>
                                                     <div className="w-8 h-8 rounded-full bg-slate-50 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all duration-300">

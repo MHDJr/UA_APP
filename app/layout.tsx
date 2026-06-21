@@ -35,8 +35,9 @@ export default function RootLayout({
     children: React.ReactNode;
 }) {
     return (
-        <html lang="en" suppressHydrationWarning>
+        <html lang="en" suppressHydrationWarning className="h-full overflow-hidden">
             <head>
+                <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
                 <script
                     dangerouslySetInnerHTML={{
                         __html: `
@@ -53,11 +54,7 @@ export default function RootLayout({
                 />
             </head>
             <body 
-                className="font-sans min-h-screen w-full max-w-full overflow-x-hidden bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground"
-                style={{
-                    paddingTop: 'env(safe-area-inset-top, 20px)',
-                    paddingBottom: 'env(safe-area-inset-bottom, 20px)'
-                }}
+                className="font-sans h-full max-h-full w-full max-w-full overflow-hidden bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary-foreground"
             >
                 <ErrorBoundary>
                     <NetworkStatusProvider>
