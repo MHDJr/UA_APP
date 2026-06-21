@@ -46,7 +46,6 @@ export const FocusProvider: React.FC<{ children: ReactNode }> = ({
         document.addEventListener("visibilitychange", handleVisibility);
         return () =>
             document.removeEventListener("visibilitychange", handleVisibility);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLockdownActive]);
 
     const playBinauralBeat = (frequency: number) => {
@@ -109,14 +108,10 @@ export const FocusProvider: React.FC<{ children: ReactNode }> = ({
         }
     };
 
-    const value = React.useMemo(() => ({
-        isLockdownActive,
-        startLockdown,
-        endLockdown
-    }), [isLockdownActive]);
-
     return (
-        <FocusContext.Provider value={value}>
+        <FocusContext.Provider
+            value={{ isLockdownActive, startLockdown, endLockdown }}
+        >
             {children}
         </FocusContext.Provider>
     );

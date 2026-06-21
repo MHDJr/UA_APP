@@ -6,7 +6,6 @@ import {
     useEffect,
     useState,
     useCallback,
-    useMemo,
 } from "react";
 
 type Theme = "light" | "dark";
@@ -95,13 +94,13 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         setThemeState(t);
     }, []);
 
-    const value = useMemo(() => ({
+    const value = {
         theme,
         setTheme,
         triggerTransition,
         isTransitioning,
         transitionCoordinates,
-    }), [theme, setTheme, triggerTransition, isTransitioning, transitionCoordinates]);
+    };
 
     return (
         <ThemeProviderContext.Provider value={value}>

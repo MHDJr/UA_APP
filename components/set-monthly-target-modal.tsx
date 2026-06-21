@@ -48,7 +48,6 @@ export function SetMonthlyTargetModal({
         if (isOpen && profile) {
             loadCurrentTarget();
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, profile, department]);
 
     const loadCurrentTarget = async () => {

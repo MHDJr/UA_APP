@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode, useRef } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, ReactNode } from "react";
 import { toast } from "sonner";
 import { Wifi, WifiOff, RefreshCw } from "lucide-react";
 
@@ -43,17 +43,6 @@ export function NetworkStatusProvider({ children }: { children: ReactNode }) {
       return navigator.onLine;
     }
   }, []);
-
-  const isOnlineRef = useRef(isOnline);
-  const hasShownOfflineToastRef = useRef(hasShownOfflineToast);
-
-  useEffect(() => {
-    isOnlineRef.current = isOnline;
-  }, [isOnline]);
-
-  useEffect(() => {
-    hasShownOfflineToastRef.current = hasShownOfflineToast;
-  }, [hasShownOfflineToast]);
 
   useEffect(() => {
     let reconnectTimeout: NodeJS.Timeout | null = null;
@@ -113,7 +102,7 @@ export function NetworkStatusProvider({ children }: { children: ReactNode }) {
         clearTimeout(reconnectTimeout);
       }
 
-      if (!hasShownOfflineToastRef.current) {
+      if (!hasShownOfflineToast) {
         setHasShownOfflineToast(true);
         toast.error(
           React.createElement('div', { className: 'flex items-center gap-3' },
@@ -131,11 +120,8 @@ export function NetworkStatusProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    // Set initial state only if needed
-    const currentOnLine = navigator.onLine;
-    if (isOnlineRef.current !== currentOnLine) {
-        setIsOnline(currentOnLine);
-    }
+    // Set initial state
+    setIsOnline(navigator.onLine);
 
     // Add event listeners
     window.addEventListener('online', handleOnline);
@@ -143,7 +129,7 @@ export function NetworkStatusProvider({ children }: { children: ReactNode }) {
 
     // Also listen for visibility change to check connection when tab becomes visible
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !isOnlineRef.current) {
+      if (document.visibilityState === 'visible' && !isOnline) {
         handleOnline();
       }
     };
@@ -158,13 +144,13 @@ export function NetworkStatusProvider({ children }: { children: ReactNode }) {
         clearTimeout(reconnectTimeout);
       }
     };
-  }, [checkConnection]);
+  }, [checkConnection, isOnline, hasShownOfflineToast]);
 
-  const value = React.useMemo(() => ({
+  const value = {
     isOnline,
     isReconnecting,
     lastOnline,
-  }), [isOnline, isReconnecting, lastOnline]);
+  };
 
   return (
     React.createElement(NetworkStatusContext.Provider, { value }, children)

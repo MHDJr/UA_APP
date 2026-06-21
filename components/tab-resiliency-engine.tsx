@@ -3,7 +3,6 @@
 import React, { useEffect, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { useWindowSync } from "@/hooks/use-window-sync";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
 
@@ -15,9 +14,6 @@ import { ShieldCheck } from "lucide-react";
  */
 export function TabResiliencyEngine({ children }: { children: React.ReactNode }) {
   const queryClient = useQueryClient();
-  
-  // Activate the global throttled sync engine
-  useWindowSync();
 
   const handleSystemReactivationComplete = useCallback(() => {
     console.log("TabResiliencyEngine: Resync complete, showing integrity toast.");

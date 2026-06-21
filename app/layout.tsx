@@ -61,8 +61,8 @@ export default function RootLayout({
                         <ThemeProvider>
                             <FocusProvider>
                                 <QueryProvider>
-                                    <AuthProvider>
-                                        <SyncWrapper>
+                                    <SyncWrapper>
+                                        <AuthProvider>
                                             <TabResiliencyEngine>
                                                 {children}
                                                 <MobileBottomNav />
@@ -75,8 +75,8 @@ export default function RootLayout({
                                                         "border-primary/20 bg-card/80 backdrop-blur-md text-foreground",
                                                 }}
                                             />
-                                        </SyncWrapper>
-                                    </AuthProvider>
+                                        </AuthProvider>
+                                    </SyncWrapper>
                                 </QueryProvider>
                             </FocusProvider>
                         </ThemeProvider>
