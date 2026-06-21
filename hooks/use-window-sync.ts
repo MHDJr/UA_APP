@@ -3,10 +3,10 @@
 import { useEffect, useRef } from "react";
 import { focusManager, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { App } from "@capacitor/app";
+import { useAuth } from "@/lib/auth-context";
 
-// Throttling duration: 30 seconds cooldown between automatic focus syncs
-const SYNC_THROTTLE_MS = 30000;
+// Throttling duration: 10 seconds cooldown between automatic focus syncs
+const SYNC_THROTTLE_MS = 10000;
 
 /**
  * Hook to synchronize application state with the backend when the window/app
@@ -14,11 +14,16 @@ const SYNC_THROTTLE_MS = 30000;
  */
 export const useWindowSync = () => {
     const queryClient = useQueryClient();
+    const { user } = useAuth();
     const lockRef = useRef(false);
     const lastSyncTimeRef = useRef<number>(0);
 
     useEffect(() => {
         const handleSync = async () => {
+            if (!user) {
+                console.log("[Sync Engine] Skipping synchronization: No active user session.");
+                return;
+            }
             const now = Date.now();
             
             // Check throttle cooldown
@@ -33,7 +38,62 @@ export const useWindowSync = () => {
             try {
                 console.log("[Sync Engine] Tab focused or active. Reactivating system thread...");
                 
-                // Alert TanStack Query that the app is focused
+                // 1. Force-wake the Supabase Auth Client
+                // This ensures the auth token is valid and the client is ready for mutations
+                try {
+                    const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+                    
+                    if (sessionError || !session) {
+                        console.warn("[Sync Engine] Session stale or missing. Attempting a silent refresh...");
+                        const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+                        if (refreshError) throw refreshError;
+                        console.log("[Sync Engine] Session successfully refreshed.");
+                    } else {
+                        console.log("[Sync Engine] Supabase session verified.");
+                    }
+                } catch (authErr: any) {
+                    const errMsg = authErr?.message || String(authErr);
+                    const errName = authErr?.name;
+                    if (
+                        errName === "AbortError" ||
+                        errMsg.includes("AbortError") ||
+                        errMsg.includes("aborted") ||
+                        errMsg.includes("signal is aborted")
+                    ) {
+                        console.warn("[Sync Engine] Auth verification aborted.");
+                    } else {
+                        console.error("[Sync Engine] Auth verification failed:", authErr);
+                    }
+                }
+
+                // 2. Heartbeat check: Ensure the REST API is responsive
+                // This "pokes" the backend to ensure the connection isn't "stuck"
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+                    
+                    try {
+                        const { error } = await supabase
+                            .from("profiles")
+                            .select("id")
+                            .limit(1)
+                            .abortSignal(controller.signal);
+                        
+                        if (error) throw error;
+                        console.log("[Sync Engine] Backend heartbeat OK.");
+                    } finally {
+                        clearTimeout(timeoutId);
+                    }
+                } catch (heartbeatErr: any) {
+                    if (heartbeatErr?.name === "AbortError") {
+                        console.warn("[Sync Engine] Backend heartbeat timed out (3s limit reached). Connection may be stuck.");
+                    } else {
+                        console.warn("[Sync Engine] Backend heartbeat failed or timed out. Connection may be stuck:", heartbeatErr);
+                    }
+                    // No action needed other than logging, refetchQueries will handle the retry
+                }
+
+                // 3. Alert TanStack Query that the app is focused
                 focusManager.setFocused(true);
                 
                 // Smart active query refetch. This gracefully cancels previous fetches and gets new data
@@ -45,38 +105,24 @@ export const useWindowSync = () => {
                 // Update the last sync timestamp
                 lastSyncTimeRef.current = Date.now();
 
-                // WebSocket Health check: Ensure socket is connected
-                if (supabase.realtime) {
-                    if (!supabase.realtime.isConnected()) {
-                        console.log("Supabase Realtime socket is disconnected. Reconnecting...");
-                        supabase.realtime.connect();
-                    } else {
-                        console.log("Supabase Realtime socket is connected.");
-                    }
-                }
-
-                // Check for explicitly errored or closed channels to recover them
+                // WebSocket Health check: Attempt to resurrect rather than blind teardown
                 const channels = supabase.getChannels();
-                const erroredChannels = channels.filter(ch => ch.state === "errored" || ch.state === "closed");
+                const hasChokedChannel = channels.some(ch => ch.state !== "joined");
                 
-                if (erroredChannels.length > 0 || channels.length === 0) {
-                    console.log(`[Sync Engine] Removing ${erroredChannels.length} stalled or missing channels...`);
-                    for (const ch of erroredChannels) {
-                        try {
-                            await supabase.removeChannel(ch);
-                        } catch (e) {
-                            console.warn("Failed to remove stalled channel:", e);
-                        }
-                    }
-                    if (channels.length === 0) {
-                        await supabase.removeAllChannels().catch(() => {});
-                    }
+                if (hasChokedChannel || channels.length === 0) {
+                    console.log("Removing stalled or missing Supabase channels...");
+                    await supabase.removeAllChannels();
                     if (typeof window !== "undefined") {
-                        console.log("Emitting global supabase-channels-reset event...");
+                        console.log("Emitting global academyos-reconnect-realtime event...");
                         window.dispatchEvent(new Event("supabase-channels-reset"));
+                        window.dispatchEvent(new CustomEvent("academyos-reconnect-realtime"));
                     }
                 } else {
-                    console.log("All Supabase channels are healthy. Skipping re-initialization.");
+                    console.log("All Supabase channels are healthy and 'joined'. Ensuring socket is connected...");
+                    // Fast check to ensure the websocket is active
+                    if (supabase.realtime && !supabase.realtime.isConnected()) {
+                        supabase.realtime.connect();
+                    }
                 }
 
                 // Seamless global resync event for other tab-resilient components
@@ -101,32 +147,47 @@ export const useWindowSync = () => {
 
         const handleFocus = () => {
             if (document.visibilityState === "visible") {
+                // ALWAYS ensure the real-time socket is connected on every focus
+                // regardless of the sync throttle
+                if (supabase.realtime && !supabase.realtime.isConnected()) {
+                    console.log("[Sync Engine] Reconnecting real-time socket...");
+                    supabase.realtime.connect();
+                }
                 handleSync();
+            }
+        };
+
+        const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+            const reason = event.reason;
+            const errMsg = reason?.message || String(reason);
+            const errName = reason?.name;
+            if (
+                errName === "AbortError" || 
+                errMsg.includes("AbortError") || 
+                errMsg.includes("aborted") ||
+                errMsg.includes("signal is aborted")
+            ) {
+                console.warn("[Sync Engine] Unhandled abort promise rejection captured and suppressed:", reason);
+                event.preventDefault(); // Prevents the default browser error output in console
             }
         };
 
         window.addEventListener("visibilitychange", handleVisibilityChange);
         window.addEventListener("focus", handleFocus);
+        window.addEventListener("unhandledrejection", handleUnhandledRejection);
 
-        // --- Capacitor (Native) Events ---
-        let appStateListener: any;
-        const initCapacitor = async () => {
-            if (typeof window !== "undefined" && (window as any).Capacitor) {
-                appStateListener = await App.addListener("appStateChange", ({ isActive }) => {
-                    if (isActive) {
-                        handleSync();
-                    }
-                });
-            }
-        };
-        initCapacitor();
+        // --- Periodic Heartbeat (Every 30 seconds) ---
+        // Ensures the connection stays active even without tab switching
+        const heartbeatInterval = setInterval(() => {
+            console.log("[Sync Engine] Periodic background heartbeat...");
+            handleSync();
+        }, 30000);
 
         return () => {
             window.removeEventListener("visibilitychange", handleVisibilityChange);
             window.removeEventListener("focus", handleFocus);
-            if (appStateListener) {
-                appStateListener.remove();
-            }
+            window.removeEventListener("unhandledrejection", handleUnhandledRejection);
+            clearInterval(heartbeatInterval);
         };
-    }, [queryClient]);
+    }, [queryClient, user]);
 };

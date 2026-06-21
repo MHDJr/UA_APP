@@ -32,6 +32,7 @@ import {
     ShieldCheck,
 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
+import { useStaffPerformanceSummary } from "@/hooks/use-dashboard-data";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
@@ -132,10 +133,30 @@ interface ManagerOperationsCommandProps {
 
 export function ManagerOperationsCommand({ className }: ManagerOperationsCommandProps) {
     const { profile, user } = useAuth();
+    const { data: performanceSummary = [], isLoading: isPerformanceLoading } = useStaffPerformanceSummary();
+
     const [activeTab, setActiveTab] = useState("overview");
     const [searchTerm, setSearchTerm] = useState("");
     const [selectedStaff, setSelectedStaff] = useState<any>(null);
-    const [staffData, setStaffData] = useState(mockStaffData);
+
+    const staffData = React.useMemo(() => {
+        if (isPerformanceLoading || !performanceSummary || performanceSummary.length === 0) {
+            return mockStaffData;
+        }
+        return performanceSummary.map((item: any) => ({
+            id: item.id,
+            name: item.full_name,
+            role: item.designation || item.role || "Staff",
+            department: item.role === "sales" ? "Sales" : item.role === "tutor" ? "Education" : "Operations",
+            email: item.username ? `${item.username.toLowerCase()}@ua.academy` : "",
+            phone: "+1234567890",
+            status: "active",
+            performance: item.completion_rate !== null && item.completion_rate !== undefined ? Math.round(item.completion_rate) : 0,
+            joinDate: "2024-01-15",
+            lastActive: "Online",
+        }));
+    }, [performanceSummary, isPerformanceLoading]);
+
     const [tasksData, setTasksData] = useState(mockTasksData);
     const [conversionsData, setConversionsData] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -155,6 +176,7 @@ export function ManagerOperationsCommand({ className }: ManagerOperationsCommand
     useEffect(() => {
         calculateStats();
         fetchConversions();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [staffData, tasksData]);
 
     const fetchConversions = async () => {
@@ -213,18 +235,8 @@ export function ManagerOperationsCommand({ className }: ManagerOperationsCommand
             const updateData: any = {
                 assigned_tutor: tutorName.trim(),
                 assigned_at: new Date().toISOString(),
+                status: "assigned",
             };
-            
-            // Only include status if the field exists
-            const { data: testField, error: testError } = await supabase
-                .from("conversions")
-                .select("status")
-                .limit(1)
-                .single();
-                
-            if (!testError && testField) {
-                updateData.status = "assigned";
-            }
 
             const { error } = await supabase
                 .from("conversions")

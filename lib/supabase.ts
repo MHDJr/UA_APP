@@ -57,11 +57,25 @@ export type Task = {
     overdue_notified?: boolean;
     is_new?: boolean;
     task_tags?: string[];
+    is_staff_seen?: boolean;
+    staff_seen_at?: string;
     task_description?: string;
     subtasks?: any;
     attachment_url?: string;
     is_draft?: boolean;
     signal_cleared?: boolean;
+    reviewed_at?: string | null;
+    reviewed_by_info?: string | null;
+    is_escalated?: boolean;
+    escalated_at?: string;
+    assigned_to_user?: {
+        full_name: string;
+        department: string;
+    };
+    creator?: {
+        role: "ceo" | "staff" | "sales" | "accounts" | "manager" | "tutor";
+        is_manager: boolean;
+    };
 };
 
 export type Request = {

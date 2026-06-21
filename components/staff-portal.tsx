@@ -1,12 +1,16 @@
 "use client";
 
+/* eslint-disable @next/next/no-img-element */
+
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, Task, Profile } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { useTabResiliency } from "./tab-resiliency-engine";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { cn, isValidAvatarUrl } from "@/lib/utils";
+import { UAMessengerDrawer } from "@/components/ua-messenger-drawer";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
     Clock,
@@ -23,7 +27,6 @@ import {
     MessageSquare,
     ArrowRight,
     Zap,
-    ShieldAlert,
     Plus,
     Timer,
     LayoutDashboard,
@@ -54,16 +57,22 @@ import {
     User,
     Wallet,
     Circle,
+    Crown,
+    Loader2,
 } from "lucide-react";
+import { MessageDialog } from "@/components/message-dialog";
 import Link from "next/link";
 import { toast } from "sonner";
 import { compressImage } from "@/lib/image-utils";
 import { uploadPublicFile, deleteFile } from "@/lib/storage";
 import MobileNavigation from "@/components/mobile-navigation";
+import { usePushSubscription } from "@/hooks/use-push-subscription";
 import { motion, AnimatePresence } from "framer-motion";
 import { format, differenceInMinutes } from "date-fns";
 import { RequestModal } from "@/components/RequestModal";
 import { LeaveRequestModal } from "@/components/LeaveRequestModal";
+import { MobileSyncCard } from "@/components/MobileSyncCard";
+import { StaffTaskCard } from "@/components/StaffTaskCard";
 import {
     Dialog,
     DialogContent,
@@ -576,6 +585,8 @@ const renderDigitalGauge = (task: Task, showCompleted: boolean) => {
 export default function StaffPortal() {
     const { user, refreshProfile } = useAuth();
     const router = useRouter();
+    usePushSubscription();
+    const isV2Enabled = process.env.NEXT_PUBLIC_ENABLE_V2_FEATURES === "true" || (typeof window !== "undefined" && window.localStorage.getItem("ENABLE_V2_FEATURES") === "true");
     const [profile, setProfile] = useState<Profile | null>(null);
     const [time, setTime] = useState("");
     const [vibe, setVibe] = useState("Focused");
@@ -596,6 +607,140 @@ export default function StaffPortal() {
     const [requests, setRequests] = useState<any[]>([]);
     const [notifications, setNotifications] = useState<any[]>([]);
     const [profiles, setProfiles] = useState<Profile[]>([]);
+
+    // Message Actions and Reply States
+    const [replyingToNotification, setReplyingToNotification] = useState<any | null>(null);
+    const [replyMessage, setReplyMessage] = useState("");
+    const [isSendingReply, setIsSendingReply] = useState(false);
+    const [activeReplyId, setActiveReplyId] = useState<string | null>(null);
+    const [isMessageDialogOpen, setIsMessageDialogOpen] = useState(false);
+    const [isBellOpen, setIsBellOpen] = useState(false);
+
+    const parseMessagePayload = (msgText: string) => {
+        if (!msgText) return { senderId: null, cleanText: "" };
+        const match = msgText.match(/^\[sender_id:([\w-]+)\](.*)/s);
+        return {
+            senderId: match ? match[1] : null,
+            cleanText: match ? match[2].trim() : msgText
+        };
+    };
+
+    const handleSendReply = async () => {
+        if (!replyingToNotification || !replyMessage.trim()) return;
+        setIsSendingReply(true);
+        try {
+            const { senderId } = parseMessagePayload(replyingToNotification.message);
+            let recipientId = senderId;
+            
+            // Fallback: If no sender_id is parsed, find the CEO id
+            if (!recipientId) {
+                recipientId = profiles.find(p => p.role === "ceo")?.id || null;
+            }
+            
+            if (!recipientId) {
+                throw new Error("Could not determine reply recipient. No sender ID found and no CEO profile available.");
+            }
+            
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            
+            const response = await fetch("/api/send-message", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                    user_id: recipientId,
+                    title: `REPLY FROM ${profile?.full_name?.toUpperCase() || "STAFF"}`,
+                    message: `[sender_id:${profile?.id || ""}] ${replyMessage.trim()}`,
+                    type: "direct"
+                })
+            });
+            
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || "Failed to send reply");
+            }
+            
+            toast.success("Reply dispatched successfully");
+            setReplyMessage("");
+            setReplyingToNotification(null);
+            fetchData(); // Sync live feed
+        } catch (err: any) {
+            console.error("Reply error:", err);
+            toast.error(err.message || "Failed to send reply");
+        } finally {
+            setIsSendingReply(false);
+        }
+    };
+
+    const handleSendInlineReply = async (notif: any) => {
+        if (!replyMessage.trim()) return;
+        setIsSendingReply(true);
+        try {
+            const { senderId } = parseMessagePayload(notif.message);
+            let recipientId = senderId;
+            
+            // Fallback: If no sender_id is parsed, find the CEO id
+            if (!recipientId) {
+                recipientId = profiles.find(p => p.role === "ceo")?.id || null;
+            }
+            
+            if (!recipientId) {
+                throw new Error("Could not determine reply recipient. No sender ID found and no CEO profile available.");
+            }
+            
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
+            
+            const response = await fetch("/api/send-message", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                    user_id: recipientId,
+                    title: `REPLY FROM ${profile?.full_name?.toUpperCase() || "STAFF"}`,
+                    message: `[sender_id:${profile?.id || ""}] ${replyMessage.trim()}`,
+                    type: "direct"
+                })
+            });
+            
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.error || "Failed to send reply");
+            }
+            
+            toast.success("Reply dispatched successfully");
+            setReplyMessage("");
+            setActiveReplyId(null);
+            fetchData(); // Sync live feed
+        } catch (err: any) {
+            console.error("Reply error:", err);
+            toast.error(err.message || "Failed to send reply");
+        } finally {
+            setIsSendingReply(false);
+        }
+    };
+
+    const handleMarkAsRead = async (notifId: string) => {
+        try {
+            const { error } = await supabase
+                .from("notifications")
+                .update({ read: true })
+                .eq("id", notifId);
+            if (error) throw error;
+            
+            // Update local state directly for instant feedback
+            setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, read: true } : n));
+            toast.success("Message marked as read");
+        } catch (err: any) {
+            console.error("Mark as read error:", err);
+            toast.error("Failed to mark as read: " + err.message);
+        }
+    };
     // Add state to track user interactions
     const [isUserInteracting, setIsUserInteracting] = useState(false);
     const [isInitialLoading, setIsInitialLoading] = useState(true);
@@ -613,6 +758,111 @@ export default function StaffPortal() {
     // Task filter tabs state
     const [activeTab, setActiveTab] = useState("ALL");
     const [showCompleted, setShowCompleted] = useState(false);
+
+    const handleResync = useCallback(() => {
+        console.log(
+            "[StaffPortal] Throttled resync event received. Refreshing data...",
+        );
+        fetchData();
+    }, []);
+
+    useEffect(() => {
+        const handleToggle = () => setIsBellOpen(prev => !prev);
+        window.addEventListener("toggle-hq-messenger", handleToggle);
+        return () => window.removeEventListener("toggle-hq-messenger", handleToggle);
+    }, []);
+
+    useTabResiliency(handleResync, isRefreshing, setIsRefreshing);
+
+    useEffect(() => {
+        if (typeof window !== "undefined" && isV2Enabled) {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get("escalated") === "true") {
+                if (navigator.vibrate) {
+                    navigator.vibrate([100, 50, 100]);
+                }
+                try {
+                    const cleanUrl = window.location.pathname;
+                    window.history.replaceState({}, document.title, cleanUrl);
+                } catch (e) {
+                    console.error("Url query param clean failed:", e);
+                }
+            }
+        }
+    }, [isV2Enabled]);
+
+    // Manager task assignment state
+    const [isAssignTaskOpen, setIsAssignTaskOpen] = useState(false);
+    const [newTaskTitle, setNewTaskTitle] = useState("");
+    const [newTaskDesc, setNewTaskDesc] = useState("");
+    const [newTaskPriority, setNewTaskPriority] = useState<"urgent" | "daily" | "routine">("daily");
+    const [newTaskAssignee, setNewTaskAssignee] = useState("");
+    const [isDeployingTask, setIsDeployingTask] = useState(false);
+
+    const handleAssignTask = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!newTaskTitle.trim()) {
+            toast.error("Please enter a task title");
+            return;
+        }
+        if (!newTaskAssignee) {
+            toast.error("Please select a staff member");
+            return;
+        }
+        if (!profile) return;
+
+        setIsDeployingTask(true);
+        try {
+            const { error } = await supabase
+                .from('tasks')
+                .insert({
+                    assigned_to: newTaskAssignee,
+                    title: newTaskTitle.trim(),
+                    description: newTaskDesc.trim() || newTaskTitle.trim(),
+                    priority: newTaskPriority === 'urgent' ? 'urgent' : newTaskPriority === 'daily' ? 'medium' : 'low',
+                    priority_level: newTaskPriority,
+                    task_type: 'assignment',
+                    created_by: profile.id,
+                    status: 'pending'
+                });
+
+            if (error) {
+                console.error("Error creating task:", error);
+                toast.error("Failed to assign task: " + error.message);
+            } else {
+                const assignedUser = profiles.find(p => p.id === newTaskAssignee);
+                toast.success(`Task successfully assigned to ${assignedUser?.full_name || 'staff'}`);
+                
+                // Notify assignee of the new task assignment via OneSignal push notification
+                if (newTaskAssignee !== profile.id) {
+                    fetch("/api/messenger/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            recipientId: newTaskAssignee,
+                            messageText: `Assigned new task: "${newTaskTitle.trim()}".`,
+                            senderName: "UA Command Link"
+                        })
+                    }).catch(err => console.error("OneSignal push notification dispatch failed:", err));
+                }
+
+                // Reset form
+                setNewTaskTitle("");
+                setNewTaskDesc("");
+                setNewTaskPriority("daily");
+                setNewTaskAssignee("");
+                setIsAssignTaskOpen(false);
+
+                // Refresh data
+                fetchData();
+            }
+        } catch (error) {
+            console.error("Error in handleAssignTask:", error);
+            toast.error("Failed to assign task");
+        } finally {
+            setIsDeployingTask(false);
+        }
+    };
     // Mobile bottom nav state
     const [mobileNavTab, setMobileNavTab] = useState("home");
 
@@ -811,12 +1061,11 @@ export default function StaffPortal() {
     const checkTodayAttendance = async () => {
         if (!profile) return;
 
-        // Load presence status
         const { data: presenceData } = await supabase
             .from("staff_presence")
             .select("*")
             .eq("user_id", profile.id)
-            .single();
+            .maybeSingle();
         if (presenceData) {
             setUserStatus(
                 presenceData.status === "online" ? "on_mission" : "off_duty",
@@ -852,13 +1101,39 @@ export default function StaffPortal() {
 
             // Create CEO notification
             if (!attendanceError && !presenceError) {
-                await supabase.from("notifications").insert({
-                    user_id: "ceo-profile-id",
-                    title: "Mission Start Alert",
-                    message: `${profile.full_name || profile.email} is now ON MISSION`,
-                    type: "alert",
-                    created_at: new Date().toISOString(),
-                });
+                let targetCeoId = profiles.find(p => p.role === "ceo")?.id;
+                if (!targetCeoId) {
+                    const { data: ceoProfile } = await supabase
+                        .from("profiles")
+                        .select("id")
+                        .eq("role", "ceo")
+                        .limit(1)
+                        .maybeSingle();
+                    if (ceoProfile) targetCeoId = ceoProfile.id;
+                }
+
+                if (targetCeoId) {
+                    try {
+                        const { data: { session } } = await supabase.auth.getSession();
+                        const token = session?.access_token;
+                        
+                        await fetch("/api/send-message", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                            },
+                            body: JSON.stringify({
+                                user_id: targetCeoId,
+                                title: "Mission Start Alert",
+                                message: `${profile.full_name || profile.email} is now ON MISSION`,
+                                type: "alert"
+                            })
+                        });
+                    } catch (err) {
+                        console.error("Failed to notify CEO of mission start:", err);
+                    }
+                }
 
                 setUserStatus("on_mission");
                 setSessionStart(new Date());
@@ -932,8 +1207,9 @@ export default function StaffPortal() {
         const interval = setInterval(fetchData, 15000);
 
         // Zero-Lag Real-Time Pipeline for Broadcasts & Notifications
+        const instanceId = Math.random().toString(36).substring(7);
         const channel = supabase
-            .channel("broadcasts-realtime")
+            .channel(`broadcasts-realtime-${instanceId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "broadcasts" },
@@ -952,10 +1228,18 @@ export default function StaffPortal() {
             )
             .subscribe();
 
+        const handleHqUpdated = () => {
+            console.log("HQ Messenger Update Detected!");
+            fetchData();
+        };
+        window.addEventListener("hq-messenger-updated", handleHqUpdated);
+
         return () => {
             clearInterval(interval);
             supabase.removeChannel(channel);
+            window.removeEventListener("hq-messenger-updated", handleHqUpdated);
         };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [profile?.id, fetchData]);
 
 
@@ -969,6 +1253,58 @@ export default function StaffPortal() {
             return () => clearInterval(interval);
         }
     }, [sessionStart]);
+
+    // UAAE V2: Automatically mark all tasks as read when they are loaded in the Staff Portal
+    useEffect(() => {
+        if (!isV2Enabled) return;
+        
+        const unreadTasks = tasks.filter((t) => (t as any).delivery_status !== "read");
+        const unreadCompleted = completedTasks.filter((t) => (t as any).delivery_status !== "read");
+        
+        if (unreadTasks.length > 0 || unreadCompleted.length > 0) {
+            const allUnreadIds = [
+                ...unreadTasks.map((t) => t.id),
+                ...unreadCompleted.map((t) => t.id)
+            ];
+            
+            console.log("UAAE V2: Auto-marking tasks as read upon visibility:", allUnreadIds);
+            
+            const nowIso = new Date().toISOString();
+            if (unreadTasks.length > 0) {
+                setTasks((prev) =>
+                    prev.map((t) =>
+                        (t as any).delivery_status !== "read"
+                            ? { ...t, delivery_status: "read", read_at: nowIso }
+                            : t
+                    )
+                );
+            }
+            if (unreadCompleted.length > 0) {
+                setCompletedTasks((prev) =>
+                    prev.map((t) =>
+                        (t as any).delivery_status !== "read"
+                            ? { ...t, delivery_status: "read", read_at: nowIso }
+                            : t
+                    )
+                );
+            }
+            
+            supabase
+                .from("tasks")
+                .update({
+                    delivery_status: "read",
+                    read_at: nowIso
+                })
+                .in("id", allUnreadIds)
+                .then(({ error }) => {
+                    if (error) {
+                        console.error("Failed to auto-update task read state in database:", error);
+                    } else {
+                        console.log("Successfully auto-marked tasks as read in database");
+                    }
+                });
+        }
+    }, [tasks, completedTasks, isV2Enabled]);
 
     // Filter tasks based on active tab
     const filteredTasks = useMemo(() => {
@@ -1089,22 +1425,49 @@ export default function StaffPortal() {
     const updateTaskProgress = async (taskId: string, progressVal: number) => {
         try {
             console.log(`Updating task ${taskId} progress to:`, progressVal);
+            const isCompleted = progressVal === 100;
+            const targetTask = tasks.find(t => t.id === taskId);
+            
+            // Cache current state for rollback on error
+            const previousTasks = [...tasks];
+            const previousCompleted = [...completedTasks];
+
             // Update local state immediately for instant visual response
-            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, progress: progressVal } : t));
+            if (isCompleted && targetTask) {
+                const updated: Task = { ...targetTask, progress: 100, status: "COMPLETED" as any };
+                setTasks(prev => prev.filter(t => t.id !== taskId));
+                setCompletedTasks(prev => [updated, ...prev]);
+            } else {
+                setTasks(prev => prev.map(t => t.id === taskId ? { 
+                    ...t, 
+                    progress: progressVal,
+                } : t));
+            }
+
+            const updatePayload: any = {
+                progress: progressVal,
+                updated_at: new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            };
+            if (isCompleted) {
+                updatePayload.status = "COMPLETED";
+            }
 
             const { error } = await supabase
                 .from("tasks")
-                .update({ 
-                    progress: progressVal,
-                    updated_at: new Date().toISOString(),
-                    updatedAt: new Date().toISOString()
-                })
+                .update(updatePayload)
                 .eq("id", taskId);
                 
             if (error) {
                 console.error("Update progress error:", error);
                 toast.error("Failed to update progress in database");
+                // Rollback on error
+                setTasks(previousTasks);
+                setCompletedTasks(previousCompleted);
                 return;
+            }
+            if (isCompleted) {
+                toast.success("Mission complete! Moved to completed tab.");
             }
         } catch (err) {
             console.error("Update progress exception:", err);
@@ -1112,13 +1475,90 @@ export default function StaffPortal() {
         }
     };
 
+    const handleTaskClick = async (task: Task) => {
+        const isOpening = expandedTask !== task.id;
+        setExpandedTask(isOpening ? task.id : null);
+
+        // UAAE V2 Read Receipt Logic Gated Tightly
+        if (isOpening && isV2Enabled) {
+            if ((task as any).delivery_status !== "read") {
+                try {
+                    // Update state locally for instant UI response
+                    setTasks((prev) =>
+                        prev.map((t) =>
+                            t.id === task.id
+                                ? { ...t, delivery_status: "read", read_at: new Date().toISOString() }
+                                : t
+                        )
+                    );
+                    setCompletedTasks((prev) =>
+                        prev.map((t) =>
+                            t.id === task.id
+                                ? { ...t, delivery_status: "read", read_at: new Date().toISOString() }
+                                : t
+                        )
+                    );
+
+                    // Update Supabase ledger
+                    const { error } = await supabase
+                        .from("tasks")
+                        .update({
+                            delivery_status: "read",
+                            read_at: new Date().toISOString()
+                        })
+                        .eq("id", task.id);
+                        
+                    if (error) {
+                        console.error("Failed to update task read state:", error);
+                        toast.error(`Read status update failed: ${error.message}`);
+                    } else {
+                        console.log("Successfully marked task as read in database");
+                    }
+                } catch (err: any) {
+                    console.error("Failed to update task read state:", err);
+                    toast.error(`Failed to update task read state: ${err.message}`);
+                }
+            }
+        }
+    };
+
+    const handleMarkSeenLocal = useCallback((taskId: string) => {
+        setTasks((prev) =>
+            prev.map((t) =>
+                t.id === taskId
+                    ? { ...t, is_staff_seen: true, staff_seen_at: new Date().toISOString() }
+                    : t
+            )
+        );
+        setCompletedTasks((prev) =>
+            prev.map((t) =>
+                t.id === taskId
+                    ? { ...t, is_staff_seen: true, staff_seen_at: new Date().toISOString() }
+                    : t
+            )
+        );
+    }, []);
+
     const submitForReview = async (taskId: string) => {
         try {
             console.log('Submitting task for review:', taskId);
+            
+            // Cache current state for rollback on error
+            const previousTasks = [...tasks];
+            const previousCompleted = [...completedTasks];
+
+            // Optimistic move
+            const targetTask = tasks.find(t => t.id === taskId);
+            if (targetTask) {
+                const updated: Task = { ...targetTask, progress: 100, status: "COMPLETED" as any };
+                setTasks(prev => prev.filter(t => t.id !== taskId));
+                setCompletedTasks(prev => [updated, ...prev]);
+            }
+
             const { error } = await supabase
                 .from("tasks")
                 .update({ 
-                    status: "UNDER_REVIEW",
+                    status: "COMPLETED",
                     progress: 100,
                     updated_at: new Date().toISOString(),
                     updatedAt: new Date().toISOString()
@@ -1128,11 +1568,13 @@ export default function StaffPortal() {
             if (error) {
                 console.error("Submit for review error:", error);
                 toast.error("Failed to submit task for review: " + error.message);
+                // Rollback
+                setTasks(previousTasks);
+                setCompletedTasks(previousCompleted);
                 return;
             }
             
-            toast.success("Task submitted for administrator review!");
-            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "UNDER_REVIEW", progress: 100 } : t));
+            toast.success("Task completed! Moved to completed section.");
         } catch (err) {
             console.error("Submit for review exception:", err);
             toast.error("Something went wrong submitting task for review");
@@ -1142,6 +1584,19 @@ export default function StaffPortal() {
     const markAsCompleted = async (taskId: string) => {
         try {
             console.log('Marking task as completed:', taskId);
+            
+            // Cache current state for rollback on error
+            const previousTasks = [...tasks];
+            const previousCompleted = [...completedTasks];
+
+            // Optimistic move
+            const targetTask = tasks.find(t => t.id === taskId);
+            if (targetTask) {
+                const updated: Task = { ...targetTask, progress: 100, status: "COMPLETED" as any };
+                setTasks(prev => prev.filter(t => t.id !== taskId));
+                setCompletedTasks(prev => [updated, ...prev]);
+            }
+
             const { error } = await supabase
                 .from("tasks")
                 .update({ 
@@ -1155,13 +1610,13 @@ export default function StaffPortal() {
             if (error) {
                 console.error("Mark as completed error:", error);
                 toast.error("Failed to mark task as completed: " + error.message);
+                // Rollback
+                setTasks(previousTasks);
+                setCompletedTasks(previousCompleted);
                 return;
             }
             
             toast.success("Task marked as completed!");
-            setTasks(prev => prev.map(t => t.id === taskId ? { ...t, status: "COMPLETED", progress: 100 } : t));
-            // Fetch updated data to reflect in completed section
-            fetchData();
         } catch (err) {
             console.error("Mark as completed exception:", err);
             toast.error("Something went wrong marking task as completed");
@@ -1201,6 +1656,179 @@ export default function StaffPortal() {
             : 0;
     }, [tasks]);
 
+    const canSendMessage = useMemo(() => {
+        if (!profile) return false;
+        const role = profile.role?.toLowerCase();
+        const dept = profile.department?.toLowerCase();
+        return role === "ceo" || role === "manager" || profile.is_manager || dept === "administration" || dept === "admin";
+    }, [profile]);
+
+    const isHigherOfficial = (senderProfile: Profile | null, title?: string) => {
+        if (senderProfile) {
+            const role = senderProfile.role?.toLowerCase();
+            const dept = senderProfile.department?.toLowerCase();
+            return role === "ceo" || role === "manager" || senderProfile.is_manager || dept === "administration" || dept === "admin";
+        }
+        const t = title?.toLowerCase() || "";
+        return t.includes("ceo") || t.includes("manager") || t.includes("administrator");
+    };
+
+    const renderLiveFeedItem = (notif: any, isMobile: boolean = false) => {
+        const isUrgent = notif.type === "alert";
+        const { senderId, cleanText } = parseMessagePayload(notif.message);
+        const senderProfile = profiles.find(p => p.id === senderId);
+        const isFromHigher = isHigherOfficial(senderProfile || null, notif.title);
+        const isUnread = !notif.read;
+
+        const senderName = senderProfile 
+            ? senderProfile.full_name 
+            : (notif.title?.toUpperCase().includes("CEO") ? "SALIM PA (CEO)" : (notif.title || "USTHAD ACADEMY"));
+            
+        const senderDesignation = senderProfile 
+            ? (senderProfile.role === "ceo" ? "CEO" : senderProfile.is_manager ? `${senderProfile.department} Manager` : senderProfile.role?.toUpperCase()) 
+            : (notif.title?.toUpperCase().includes("CEO") ? "CEO" : "");
+
+        const cardId = notif.id;
+
+        return (
+            <motion.div
+                key={notif.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className={cn(
+                    "p-4 border transition-all duration-300 relative overflow-hidden flex flex-col gap-2 group hover:scale-[1.02] bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10 text-left",
+                    isMobile ? "rounded-xl" : "rounded-2xl",
+                    isUrgent && "bg-red-500/10 border-red-500/30 ring-1 ring-red-500/20 hover:border-red-500/50 hover:bg-red-500/15 cursor-pointer",
+                    isUnread && isFromHigher && "border-amber-500/40 shadow-[0_0_15px_rgba(245,158,11,0.12)] animate-[pulse_3s_infinite]"
+                )}
+                onClick={() => {
+                    if (isV2Enabled && isUrgent && navigator.vibrate) {
+                        navigator.vibrate([100, 50, 100]);
+                    }
+                }}
+            >
+                {/* High Priority Accent Bar */}
+                {isUnread && isFromHigher && (
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-yellow-500 via-amber-500 to-yellow-600 shadow-[0_0_12px_#f59e0b] rounded-l-2xl animate-pulse" />
+                )}
+
+                {/* Card Header */}
+                <div className="flex justify-between items-start gap-2">
+                    <div className="flex flex-col gap-0.5 min-w-0">
+                        <span className={cn(
+                            "text-xs font-black tracking-wide flex items-center gap-1.5 truncate",
+                            isFromHigher ? "text-amber-400 font-extrabold" : "text-white"
+                        )}>
+                            {senderName}
+                            {senderDesignation && (
+                                <span className="text-[8px] font-black tracking-widest text-[#F15A24] bg-[#F15A24]/10 px-1.5 py-0.5 rounded uppercase flex-shrink-0">
+                                    {senderDesignation}
+                                </span>
+                            )}
+                        </span>
+                        <span className="text-[8px] text-white/35 font-bold uppercase tracking-wider">
+                            {format(new Date(notif.created_at), 'MMM d, h:mm a')}
+                        </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        {isUnread && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                        )}
+                        <Badge 
+                            className={cn(
+                                "text-[7px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border-none",
+                                isUrgent 
+                                    ? "bg-red-500 text-white animate-pulse" 
+                                    : "bg-indigo-500/20 text-indigo-300"
+                            )}
+                        >
+                            {notif.title || (isUrgent ? "URGENT ALERT" : "MESSAGE")}
+                        </Badge>
+                    </div>
+                </div>
+
+                {/* Message Body */}
+                <p className="text-xs font-medium leading-relaxed text-slate-100 tracking-wide break-words mt-1">
+                    {cleanText}
+                </p>
+
+                {/* Glassmorphic Action Footer */}
+                <div className="flex items-center justify-between border-t border-white/5 pt-2 mt-2">
+                    {isUnread ? (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                handleMarkAsRead(notif.id);
+                            }}
+                            className="flex items-center gap-1.5 text-[8px] font-bold uppercase tracking-wider text-emerald-400 hover:text-emerald-350 bg-emerald-500/10 hover:bg-emerald-500/20 px-2 py-1 rounded-lg transition-all"
+                        >
+                            <Check className="w-2.5 h-2.5" /> Read
+                        </button>
+                    ) : (
+                        <span className="text-[8px] text-white/30 font-bold uppercase tracking-wider">✓ Read</span>
+                    )}
+
+                    {senderId && (
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveReplyId(prev => prev === cardId ? null : cardId);
+                                setReplyMessage("");
+                            }}
+                            className="flex items-center gap-1 text-[8px] font-bold uppercase tracking-wider text-indigo-300 hover:text-white bg-indigo-500/20 hover:bg-indigo-655/30 px-2 py-1 rounded-lg transition-all"
+                        >
+                            <MessageSquare className="w-2.5 h-2.5" /> {activeReplyId === cardId ? "Cancel" : "Reply"}
+                        </button>
+                    )}
+                </div>
+
+                {/* Inline Reply Form with Framer Motion */}
+                <AnimatePresence>
+                    {activeReplyId === cardId && (
+                        <motion.div
+                            initial={{ height: 0, opacity: 0, marginTop: 0 }}
+                            animate={{ height: "auto", opacity: 1, marginTop: 8 }}
+                            exit={{ height: 0, opacity: 0, marginTop: 0 }}
+                            transition={{ duration: 0.2, ease: "easeInOut" }}
+                            className="overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <form 
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handleSendInlineReply(notif);
+                                }}
+                                className="relative flex items-center bg-white/5 border border-white/10 rounded-xl p-1 focus-within:border-amber-500/50 transition-colors"
+                            >
+                                <input
+                                    type="text"
+                                    value={replyMessage}
+                                    onChange={(e) => setReplyMessage(e.target.value)}
+                                    placeholder={`Reply to ${senderName}...`}
+                                    className="w-full bg-transparent text-xs text-white placeholder-white/35 px-3 py-2 focus:outline-none pr-10"
+                                    disabled={isSendingReply}
+                                    autoFocus
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={isSendingReply || !replyMessage.trim()}
+                                    className="absolute right-1 w-8 h-8 rounded-lg bg-indigo-650 hover:bg-indigo-550 text-white flex items-center justify-center transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSendingReply ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                        <Send className="w-3.5 h-3.5" />
+                                    )}
+                                </button>
+                            </form>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </motion.div>
+        );
+    };
+
     if (isInitialLoading) {
         return (
             <div className="min-h-screen bg-[#F4F7FE] flex items-center justify-center">
@@ -1215,6 +1843,7 @@ export default function StaffPortal() {
             <div className="hidden md:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between sticky top-0 z-40">
                 <div className="flex items-center gap-2">
                     <div className="relative h-8 w-8">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             src="/images/usthadacademylogo2.svg"
                             alt="UA Logo"
@@ -1252,6 +1881,7 @@ export default function StaffPortal() {
                         {/* Logo with new image */}
                         <div className="relative">
                             <div className="relative h-12 w-12">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                     src="/images/usthadacademylogo2.svg"
                                     alt="UA Logo"
@@ -1260,6 +1890,7 @@ export default function StaffPortal() {
                             </div>
                         </div>
                         <div className="hidden md:block h-12 relative w-48">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src="/images/verticallogo.svg"
                                 alt="Usthad Academy"
@@ -1269,11 +1900,20 @@ export default function StaffPortal() {
                                 }}
                             />
                         </div>
-                        <div className="hidden md:flex items-center px-3 py-1.5 bg-[#2F1E73]/10 rounded-lg">
-                            <span className="text-sm font-semibold text-[#2F1E73] uppercase tracking-wider">
-                                STAFF HUB | COMMAND CENTER
-                            </span>
-                        </div>
+                        {profile?.is_manager ? (
+                            <div className="hidden md:flex items-center px-3 py-1.5 bg-[#F15A29]/10 rounded-lg border border-[#F15A29]/20 animate-pulse">
+                                <span className="text-sm font-bold text-[#F15A29] uppercase tracking-wider flex items-center gap-1.5">
+                                    <Crown className="w-4 h-4 text-[#F15A29]" />
+                                    {profile?.department?.toUpperCase()} MANAGER CONTROL CENTER
+                                </span>
+                            </div>
+                        ) : (
+                            <div className="hidden md:flex items-center px-3 py-1.5 bg-[#2F1E73]/10 rounded-lg">
+                                <span className="text-sm font-semibold text-[#2F1E73] uppercase tracking-wider">
+                                    STAFF HUB | COMMAND CENTER
+                                </span>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -1354,6 +1994,62 @@ export default function StaffPortal() {
                         </a>
                     )}
 
+                    {canSendMessage && (
+                        <Button
+                            onClick={() => setIsMessageDialogOpen(true)}
+                            className="hidden md:flex items-center gap-2 px-4 py-2.5 bg-[#2F1E73] hover:bg-[#201552] text-white rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest border border-indigo-500/20"
+                        >
+                            <Send className="w-3 h-3 text-white" />
+                            Send Message
+                        </Button>
+                    )}
+
+                    {/* Header Bell Icon / UA Messenger Toggle */}
+                    <div className="relative">
+                        {(() => {
+                            const count = notifications.filter(n => n.type === "direct" && !n.read).length;
+
+                            return (
+                                <>
+                                    <style>{`
+                                        @keyframes bell-shake {
+                                            0%, 100% { transform: rotate(0deg); }
+                                            15% { transform: rotate(-12deg); }
+                                            30% { transform: rotate(10deg); }
+                                            45% { transform: rotate(-8deg); }
+                                            60% { transform: rotate(6deg); }
+                                            75% { transform: rotate(-4deg); }
+                                            90% { transform: rotate(2deg); }
+                                        }
+                                        .animate-bell-shake {
+                                            animation: bell-shake 0.8s ease-in-out infinite;
+                                            transform-origin: top center;
+                                        }
+                                    `}</style>
+                                    <button
+                                        onClick={() => setIsBellOpen(prev => !prev)}
+                                        className={cn(
+                                            "relative p-2.5 rounded-2xl transition-all duration-300 shadow-sm shrink-0 border",
+                                            isBellOpen
+                                                ? "bg-gradient-to-br from-[#31267D] to-[#4f3fbf] text-white border-[#31267D] shadow-[#31267D]/30"
+                                                : count > 0 
+                                                    ? "bg-orange-50 hover:bg-orange-100 text-orange-600 border-orange-200 ring-4 ring-orange-500/20 shadow-[0_0_15px_rgba(241,90,36,0.35)] animate-bell-shake" 
+                                                    : "bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-600"
+                                        )}
+                                        title="UA Messenger"
+                                    >
+                                        <Bell className="w-3.5 h-3.5" />
+                                        {count > 0 && (
+                                            <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[8px] font-black text-white shadow-lg animate-pulse">
+                                                {count}
+                                            </span>
+                                        )}
+                                    </button>
+                                </>
+                            );
+                        })()}
+                    </div>
+
                     <button
                         onClick={handleLogout}
                         className="hidden md:flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 hover:border-red-300 hover:bg-red-100 rounded-full transition-all duration-300 shadow-sm text-[10px] font-black uppercase tracking-widest text-red-600 hover:text-red-800"
@@ -1368,8 +2064,10 @@ export default function StaffPortal() {
                         style={{ backgroundColor: brand.navy }}
                         className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold shadow-md cursor-pointer hover:scale-105 transition-all duration-300 relative overflow-hidden shrink-0"
                     >
-                        {profile?.avatar_url ? (
+                        {profile?.avatar_url && isValidAvatarUrl(profile.avatar_url) ? (
                             <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                        ) : profile?.avatar_url ? (
+                            <span className="text-lg">{profile.avatar_url}</span>
                         ) : (
                             profile?.full_name?.[0] || profile?.email?.[0] || "U"
                         )}
@@ -1386,19 +2084,36 @@ export default function StaffPortal() {
                                 {React.cloneElement(getGreeting().icon as React.ReactElement, { className: "w-5 h-5 md:w-8 md:h-8 text-orange-400" })}
                             </div>
                             <div className="min-w-0 flex-1">
-                                <h2 className="text-lg md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-tight">
-                                    {getGreeting().text},{" "}
-                                    <span style={{ color: brand.navy }}>
-                                        {profile?.full_name
-                                            ?.split(" ")[0]
-                                            ?.toUpperCase() || "USER"}
-                                    </span>
-                                </h2>
-                                <p className="hidden md:flex text-slate-400 font-bold text-sm mt-2 items-center gap-2 italic">
-                                    &quot;Your focus is the academy&apos;s greatest asset
-                                    today.&quot;{" "}
-                                    <Sparkles className="w-4 h-4 text-orange-400" />
-                                </p>
+                                {profile?.is_manager ? (
+                                    <>
+                                        <h2 className="text-lg md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-tight flex items-center gap-2 md:gap-3 flex-wrap">
+                                            <span className="bg-gradient-to-r from-[#2F1E73] to-[#F15A29] bg-clip-text text-transparent flex items-center gap-2">
+                                                <Crown className="w-5 h-5 md:w-8 md:h-8 text-[#F15A29] animate-bounce" />
+                                                {profile?.department || "DEPARTMENT"} MANAGER COMMAND
+                                            </span>
+                                        </h2>
+                                        <p className="hidden md:flex text-slate-400 font-bold text-sm mt-2 items-center gap-2 italic">
+                                            &quot;Oversight, alignment, and velocity command console.&quot;{" "}
+                                            <Sparkles className="w-4 h-4 text-orange-500 animate-pulse" />
+                                        </p>
+                                    </>
+                                ) : (
+                                    <>
+                                        <h2 className="text-lg md:text-3xl font-black text-slate-900 tracking-tighter uppercase leading-tight">
+                                            {getGreeting().text},{" "}
+                                            <span style={{ color: brand.navy }}>
+                                                {profile?.full_name
+                                                    ?.split(" ")[0]
+                                                    ?.toUpperCase() || "USER"}
+                                            </span>
+                                        </h2>
+                                        <p className="hidden md:flex text-slate-400 font-bold text-sm mt-2 items-center gap-2 italic">
+                                            &quot;Your focus is the academy&apos;s greatest asset
+                                            today.&quot;{" "}
+                                            <Sparkles className="w-4 h-4 text-orange-400" />
+                                        </p>
+                                    </>
+                                )}
                             </div>
                         </div>
 
@@ -1503,146 +2218,11 @@ export default function StaffPortal() {
                     </div>
                 </div>
 
-                {/* Mobile: Live Feed at Top */}
-                <div className="col-span-12 lg:hidden order-first">
-                    <div
-                        style={{ backgroundColor: brand.navy }}
-                        className="rounded-2xl md:rounded-[2.5rem] p-5 text-white shadow-2xl relative overflow-hidden"
-                    >
-                        <div className="relative z-10">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-2">
-                                    <Activity className="w-4 h-4 text-orange-400 animate-pulse" />
-                                    <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
-                                        Live Feed
-                                        <span className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                                        </span>
-                                    </span>
-                                </div>
-                                <div className="w-2 h-2 rounded-full bg-orange-400 animate-ping"></div>
-                            </div>
-                            
-                            <div className="max-h-[220px] overflow-y-auto pr-1 space-y-2.5 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                {notifications.length > 0 ? (
-                                    notifications.map((notif) => {
-                                        const isUrgent = notif.type === "alert";
-                                        return (
-                                            <motion.div
-                                                key={notif.id}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className={cn(
-                                                    "p-3 rounded-xl border transition-all duration-300 relative overflow-hidden flex flex-col gap-1.5 group hover:scale-[1.01]",
-                                                    isUrgent 
-                                                        ? "bg-red-500/10 border-red-500/30 ring-1 ring-red-500/20 hover:border-red-500/50 hover:bg-red-500/15" 
-                                                        : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10"
-                                                )}
-                                            >
-                                                <div className="flex justify-between items-center gap-2">
-                                                    <Badge 
-                                                        className={cn(
-                                                            "text-[7px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border-none",
-                                                            isUrgent 
-                                                                ? "bg-red-500 text-white animate-pulse" 
-                                                                : "bg-indigo-500/20 text-indigo-300"
-                                                        )}
-                                                    >
-                                                        {notif.title || (isUrgent ? "URGENT ALERT" : "MESSAGE")}
-                                                    </Badge>
-                                                    <span className="text-[7px] text-white/30 font-bold uppercase tracking-wider">
-                                                        {format(new Date(notif.created_at), 'MMM d, h:mm a')}
-                                                    </span>
-                                                </div>
-                                                <p className="text-[10px] font-medium leading-relaxed text-white/90">
-                                                    {notif.message}
-                                                </p>
-                                            </motion.div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-center py-8 text-white/30 flex flex-col items-center justify-center gap-2">
-                                        <Bell className="w-6 h-6 opacity-20" />
-                                        <p className="text-[10px] font-black uppercase tracking-widest">
-                                            No messages or alerts
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                {/* Mobile: Live Feed at Top (Removed - Migrated to Header Bell Popover) */}
 
                 {/* Left Column - Hidden on mobile (moved to bottom or inside Mission Control flow) */}
                 <div className="col-span-12 lg:col-span-3 space-y-6 hidden lg:block">
-                    <div
-                        style={{ backgroundColor: brand.navy }}
-                        className="rounded-[2.5rem] p-7 text-white shadow-[0_12px_40px_rgba(0,0,0,0.03)] border border-white/20 dark:border-zinc-800/30 relative overflow-hidden"
-                    >
-                        <div className="relative z-10">
-                            <div className="flex items-center justify-between mb-5">
-                                <div className="flex items-center gap-2">
-                                    <Activity className="w-4 h-4 text-orange-400 animate-pulse" />
-                                    <span className="text-[10px] font-black tracking-widest uppercase flex items-center gap-2">
-                                        Live Feed
-                                        <span className="relative flex h-2 w-2">
-                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
-                                            <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500"></span>
-                                        </span>
-                                    </span>
-                                </div>
-                                <div className="w-2 h-2 rounded-full bg-orange-405 animate-ping"></div>
-                            </div>
-                            
-                            <div className="max-h-[360px] overflow-y-auto pr-1 space-y-3 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-                                {notifications.length > 0 ? (
-                                    notifications.map((notif) => {
-                                        const isUrgent = notif.type === "alert";
-                                        return (
-                                            <motion.div
-                                                key={notif.id}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className={cn(
-                                                    "p-3 rounded-2xl border transition-all duration-300 relative overflow-hidden flex flex-col gap-1.5 group hover:scale-[1.02]",
-                                                    isUrgent 
-                                                        ? "bg-red-500/10 border-red-500/30 ring-1 ring-red-500/20 hover:border-red-500/50 hover:bg-red-500/15" 
-                                                        : "bg-white/5 border-white/10 hover:border-white/20 hover:bg-white/10"
-                                                )}
-                                            >
-                                                <div className="flex justify-between items-center gap-2">
-                                                    <Badge 
-                                                        className={cn(
-                                                            "text-[7px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full border-none",
-                                                            isUrgent 
-                                                                ? "bg-red-500 text-white animate-pulse" 
-                                                                : "bg-indigo-500/20 text-indigo-300"
-                                                        )}
-                                                    >
-                                                        {notif.title || (isUrgent ? "URGENT ALERT" : "MESSAGE")}
-                                                    </Badge>
-                                                    <span className="text-[7px] text-white/30 font-bold uppercase tracking-wider">
-                                                        {format(new Date(notif.created_at), 'MMM d, h:mm a')}
-                                                    </span>
-                                                </div>
-                                                <p className="text-[10px] font-medium leading-relaxed text-white/90">
-                                                    {notif.message}
-                                                </p>
-                                            </motion.div>
-                                        );
-                                    })
-                                ) : (
-                                    <div className="text-center py-12 text-white/30 flex flex-col items-center justify-center gap-2">
-                                        <Bell className="w-8 h-8 opacity-20" />
-                                        <p className="text-[10px] font-black uppercase tracking-widest">
-                                            No messages or alerts
-                                        </p>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                    {/* Live Feed Sidebar Card (Removed - Migrated to Header Bell Popover) */}
 
                     {/* New Share Idea Card */}
                     <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-xl rounded-[2rem] p-7 shadow-[0_12px_40px_rgba(0,0,0,0.02)] border border-white/60 dark:border-zinc-800/50 group hover:border-orange-200 transition-all duration-300">
@@ -1763,6 +2343,78 @@ export default function StaffPortal() {
 
                 {/* Middle Column - MISSION CONTROL */}
                 <div className="col-span-12 lg:col-span-6 space-y-4 md:space-y-6 order-2 lg:order-none">
+                    {profile?.is_manager && (
+                        <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-100 shadow-[0_10px_30px_rgba(44,33,113,0.04)] relative overflow-hidden">
+                            {/* Decorative elements */}
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-[#F15A29]/10 to-transparent rounded-full pointer-events-none"></div>
+                            <div className="absolute -bottom-10 -left-10 w-24 h-24 bg-[#2C2171]/5 rounded-full pointer-events-none"></div>
+                            
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-6">
+                                <div>
+                                    <h3 className="text-sm font-black uppercase tracking-widest text-[#2C2171] flex items-center gap-2">
+                                        <Crown className="w-4 h-4 text-[#F15A29]" />
+                                        Manager Control Room
+                                    </h3>
+                                    <p className="text-[11px] text-slate-400 font-semibold uppercase mt-0.5 tracking-wide">
+                                        Department: {profile.department}
+                                    </p>
+                                </div>
+                                <button
+                                    onClick={() => setIsAssignTaskOpen(true)}
+                                    className="h-10 px-5 text-[10px] font-black uppercase tracking-widest text-white rounded-2xl flex items-center gap-2 bg-gradient-to-r from-[#2C2171] to-[#3F348C] hover:from-[#3F348C] hover:to-[#2C2171] shadow-lg shadow-[#2C2171]/25 hover:shadow-xl transition-all duration-300 transform active:scale-95"
+                                >
+                                    <Plus className="w-4 h-4 text-orange-400" /> Assign Department Task
+                                </button>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                {/* Department Intelligence Access Link */}
+                                <Link
+                                    href={profile.department === "Finance" ? "/ceo/financial-intelligence" : "/ceo/sales"}
+                                    className="group relative rounded-2xl p-5 border border-slate-100 hover:border-orange-200 bg-gradient-to-br from-slate-50/50 to-white hover:from-white hover:to-white transition-all duration-300 flex items-start gap-4 shadow-sm hover:shadow-md cursor-pointer overflow-hidden"
+                                >
+                                    {/* Glowing hover state */}
+                                    <div className="absolute inset-0 bg-gradient-to-r from-orange-500/0 via-orange-500/5 to-orange-500/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000 ease-out"></div>
+                                    
+                                    <div className="w-10 h-10 rounded-xl bg-orange-50 flex items-center justify-center text-orange-500 shrink-0 shadow-inner group-hover:scale-110 transition-transform duration-300">
+                                        <TrendingUp className="w-5 h-5" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide group-hover:text-[#2C2171] transition-colors">
+                                            Access {profile.department === "Finance" ? "Finance" : "Sales"} Intelligence
+                                        </h4>
+                                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-1">
+                                            Review strategic metrics, active daily signals, conversions, and departmental analytics.
+                                        </p>
+                                    </div>
+                                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-orange-500 group-hover:translate-x-1 transition-all self-center shrink-0" />
+                                </Link>
+
+                                {/* Department Staff List Overview Link or Summary */}
+                                <div className="rounded-2xl p-5 border border-slate-100 bg-gradient-to-br from-slate-50/50 to-white flex items-start gap-4 shadow-sm relative overflow-hidden">
+                                    <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shrink-0 shadow-inner">
+                                        <Users className="w-5 h-5" />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                        <h4 className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                                            Department Workforce
+                                        </h4>
+                                        <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-1">
+                                            Total personnel under your command:{" "}
+                                            <span className="font-bold text-slate-800">
+                                                {profiles.filter(p => p.department === profile.department && !p.is_manager && p.role !== 'ceo').length}
+                                            </span>
+                                        </p>
+                                        <p className="text-[9px] text-emerald-600 font-bold uppercase tracking-wider mt-1.5 flex items-center gap-1">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping"></span>
+                                            All systems operational
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="bg-white rounded-2xl md:rounded-[2.5rem] p-4 md:p-0 border border-slate-100 md:border-0 md:bg-transparent shadow-sm md:shadow-none">
                         <div className="flex flex-col gap-3 md:px-2">
                             <div>
@@ -1839,261 +2491,24 @@ export default function StaffPortal() {
                             </div>
                         ) : (
                             (showCompleted ? completedTasks : filteredTasks).map((task) => (
-                            <div
-                                key={task.id}
-                                className={cn(
-                                    "bg-white/95 dark:bg-zinc-950/95 border border-slate-200/50 dark:border-white/10 backdrop-blur-xl shadow-[0_8px_30px_rgba(0,0,0,0.03)] dark:shadow-2xl rounded-2xl overflow-hidden transition-all duration-300 ease-out hover:border-slate-300 dark:hover:border-white/20 translate-gpu hover:scale-[1.01] border-l-[6px]",
-                                    showCompleted 
-                                        ? "border-l-emerald-500" 
-                                        : (task.status || "PENDING").toUpperCase() === "IN_PROGRESS"
-                                            ? "border-l-blue-500"
-                                            : ((task.status || "PENDING").toUpperCase() === "UNDER_REVIEW" || (task.status || "PENDING").toUpperCase() === "IN_REVIEW")
-                                                ? "border-l-purple-500"
-                                                : task.priority === "urgent" || task.priority === "high"
-                                                    ? "border-l-rose-500"
-                                                    : task.priority === "medium"
-                                                        ? "border-l-amber-500"
-                                                        : "border-l-zinc-700"
-                                )}
-                            >
-                                <div
-                                    className="p-5 md:p-6 cursor-pointer flex items-center justify-between min-h-[56px]"
-                                    onClick={() =>
-                                        setExpandedTask(
-                                            expandedTask &&
-                                                expandedTask === task.id
-                                                ? null
-                                                : task.id,
-                                        )
-                                    }
-                                >
-                                    <div className="flex items-center gap-3 md:gap-5 flex-1 min-w-0">
-                                        <div
-                                            className={cn(
-                                                "w-11 h-11 md:w-14 md:h-14 rounded-xl md:rounded-2xl bg-slate-50 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 flex items-center justify-center relative shrink-0",
-                                                showCompleted
-                                                    ? "text-emerald-600 dark:text-emerald-400"
-                                                    : (task.priority === "urgent" || (task as any).category === "URGENT")
-                                                        ? "text-rose-600 dark:text-red-400"
-                                                        : "text-slate-500 dark:text-zinc-400"
-                                            )}
-                                        >
-                                            {showCompleted ? (
-                                                <CheckCircle2 className="w-5 h-5 md:w-6 md:h-6" />
-                                            ) : task.priority === "urgent" ? (
-                                                <AlertTriangle className="w-5 h-5 md:w-6 md:h-6" />
-                                            ) : (
-                                                <LayoutDashboard className="w-5 h-5 md:w-6 md:h-6" />
-                                            )}
-                                            {task.is_daily_task && !showCompleted && (
-                                                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-orange-500 rounded-lg border-2 border-white dark:border-zinc-950 flex items-center justify-center shadow-md">
-                                                    <Target className="w-2.5 h-2.5 text-white" />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                                <span
-                                                    className={cn(
-                                                        "px-2 py-0.5 rounded text-[9px] font-black tracking-widest uppercase border",
-                                                        showCompleted
-                                                            ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
-                                                            : task.priority === "urgent" || task.priority === "high"
-                                                                ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/20"
-                                                                : "bg-slate-100 dark:bg-zinc-850 text-slate-600 dark:text-zinc-400 border-slate-200 dark:border-zinc-700/80"
-                                                    )}
-                                                >
-                                                    {showCompleted ? "COMPLETED" : task.priority?.toUpperCase()}
-                                                </span>
-                                                {task.is_daily_task && !showCompleted && (
-                                                    <span className="flex items-center gap-1 text-[9px] font-black text-orange-600 dark:text-orange-400 bg-orange-500/10 px-2 py-0.5 rounded border border-orange-500/20 uppercase tracking-widest">
-                                                        <Sparkles className="w-2 h-2" />{" "}
-                                                        Daily
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <h3 className="text-base md:text-xl font-black text-slate-900 dark:text-white leading-tight">
-                                                {task.title}
-                                            </h3>
-                                            {task.due_date && (
-                                                <div className="flex items-center gap-1.5 mt-1.5 text-rose-600 dark:text-rose-400/90">
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    <span className="text-[9px] font-black uppercase tracking-widest">
-                                                        Due: {new Date(task.due_date).toLocaleDateString()}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            {taskCreators[task.created_by] && (
-                                                <div className="flex items-center gap-1.5 mt-2 text-slate-500 dark:text-zinc-400 text-[9px] font-black tracking-widest uppercase">
-                                                    <User className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
-                                                    <span>
-                                                        Assigned by: <span className="text-slate-800 dark:text-zinc-200 font-extrabold">{
-                                                            taskCreators[task.created_by].role === 'ceo' 
-                                                                ? 'CEO' 
-                                                                : (taskCreators[task.created_by].is_manager || taskCreators[task.created_by].role === 'manager')
-                                                                    ? 'Administrator'
-                                                                    : taskCreators[task.created_by].full_name || 'System'
-                                                        }</span>
-                                                    </span>
-                                                </div>
-                                            )}                                        </div>
-                                    </div>
-                                    <div className="flex items-center gap-4 shrink-0 ml-3">
-                                        {renderDigitalGauge(task, showCompleted)}
-                                        <ChevronDown
-                                            className={`w-5 h-5 text-slate-400 dark:text-zinc-500 transition-transform duration-300 ${expandedTask && expandedTask === task.id ? "rotate-180 text-orange-500" : ""}`}
-                                        />
-                                    </div>
-                                </div>
-                                {expandedTask && expandedTask === task.id && (
-                                    <div className="px-5 md:px-6 pb-6 space-y-5">
-                                        <div className="p-4 bg-slate-50 dark:bg-white/[0.02] border border-slate-100 dark:border-white/5 rounded-xl italic text-sm text-slate-600 dark:text-zinc-400 flex items-start gap-3">
-                                            <Info className="w-4 h-4 text-slate-400 dark:text-zinc-500 mt-0.5 flex-shrink-0" />
-                                            &quot;{task.description}&quot;
-                                        </div>
-                                        <div className="flex gap-3">
-                                            {showCompleted ? (
-                                                <>
-                                                    <button
-                                                        onClick={() => removeCompletedTask(task.id)}
-                                                        className="flex-1 py-3.5 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30 rounded-2xl font-black uppercase text-[10px] tracking-widest flex items-center justify-center gap-2 transition-all"
-                                                    >
-                                                        <X className="w-4 h-4" />{" "}
-                                                        Delete Permanently
-                                                    </button>
-                                                    {(task as any).ceo_reviewed && (
-                                                        <div className="px-3 py-2 bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-2xl text-[9px] font-black uppercase border border-blue-500/20 flex items-center gap-2 animate-pulse">
-                                                            <Check className="w-3 h-3" />
-                                                            CEO Reviewed
-                                                        </div>
-                                                    )}
-                                                </>
-                                            ) : (
-                                                <div className="w-full space-y-4">
-                                                    {(() => {
-                                                        const s = (task.status || "PENDING").toUpperCase();
-                                                        if (s === "PENDING") {
-                                                            return (
-                                                                <button
-                                                                    onClick={() => startMission(task.id)}
-                                                                    className="w-full py-3.5 bg-gradient-to-r from-orange-600 to-amber-600 hover:from-orange-500 hover:to-amber-500 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-orange-500/10 flex items-center justify-center gap-2 transition-all duration-300 border border-transparent dark:border-white/10"
-                                                                >
-                                                                    <Zap className="w-4 h-4 fill-white" /> Start Mission
-                                                                </button>
-                                                            );
-                                                        }
-                                                        if (s === "IN_PROGRESS") {
-                                                            return (
-                                                                <div className="space-y-4 p-4 md:p-6 rounded-2xl bg-slate-50 dark:bg-zinc-950/40 border border-slate-200/60 dark:border-white/5 backdrop-blur-md">
-                                                                    <div className="flex items-center justify-between">
-                                                                        <span className="text-xs font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest">
-                                                                            Operational Progress: {task.progress || 10}%
-                                                                        </span>
-                                                                    </div>
-                                                                    
-                                                                    {/* Premium Glassmorphic Slider Track */}
-                                                                    <div className="relative flex items-center select-none">
-                                                                        <input 
-                                                                            type="range"
-                                                                            min="0"
-                                                                            max="100"
-                                                                            value={task.progress || 10}
-                                                                            onChange={(e) => {
-                                                                                const val = parseInt(e.target.value);
-                                                                                // Update locally for instant fluid drag response
-                                                                                setTasks(prev => prev.map(t => t.id === task.id ? { ...t, progress: val } : t));
-                                                                            }}
-                                                                            onMouseUp={(e: any) => {
-                                                                                updateTaskProgress(task.id, parseInt(e.target.value));
-                                                                            }}
-                                                                            onTouchEnd={(e: any) => {
-                                                                                updateTaskProgress(task.id, parseInt(e.target.value));
-                                                                            }}
-                                                                            className="w-full h-2 bg-slate-200 dark:bg-zinc-800 border border-slate-300 dark:border-white/5 rounded-lg appearance-none cursor-pointer accent-blue-500 focus:outline-none"
-                                                                        />
-                                                                    </div>
-                                                                    
-                                                                    {/* Quick Percentage Tabs */}
-                                                                    <div className="grid grid-cols-4 gap-2">
-                                                                        {[25, 50, 75, 100].map((pct) => {
-                                                                            const isSelected = (task.progress || 10) === pct;
-                                                                            return (
-                                                                                <button
-                                                                                    key={pct}
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        updateTaskProgress(task.id, pct);
-                                                                                    }}
-                                                                                    className={cn(
-                                                                                        "py-2 rounded-xl text-[10px] font-black transition-all border",
-                                                                                        isSelected
-                                                                                            ? "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/50 shadow-[0_0_12px_rgba(59,130,246,0.15)] scale-105"
-                                                                                            : "bg-slate-100 dark:bg-white/[0.02] border-slate-200 dark:border-white/5 hover:bg-slate-200 dark:hover:bg-white/[0.05] text-slate-600 dark:text-zinc-400"
-                                                                                    )}
-                                                                                >
-                                                                                    {pct === 100 ? "Complete" : `${pct}%`}
-                                                                                </button>
-                                                                            );
-                                                                        })}
-                                                                    </div>
-                                                                    
-                                                                    {/* Action Submit Button */}
-                                                                    <div className="flex flex-col sm:flex-row gap-2">
-                                                                        {profile?.is_manager && (
-                                                                            <button
-                                                                                onClick={() => markAsCompleted(task.id)}
-                                                                                className="flex-1 py-3.5 bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 active:scale-95 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-emerald-500/10 flex items-center justify-center gap-2 transition-all duration-300 border border-transparent dark:border-white/10"
-                                                                            >
-                                                                                <CheckCircle2 className="w-3.5 h-3.5" /> Mark Completed
-                                                                            </button>
-                                                                        )}
-                                                                        <button
-                                                                            onClick={() => submitForReview(task.id)}
-                                                                            className={cn(
-                                                                                "py-3.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-600 hover:to-indigo-500 active:scale-95 text-white rounded-2xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-500/10 flex items-center justify-center gap-2 transition-all duration-300 border border-transparent dark:border-white/10 disabled:opacity-50 disabled:pointer-events-none disabled:scale-100",
-                                                                                profile?.is_manager ? "flex-1" : "w-full"
-                                                                            )}
-                                                                        >
-                                                                            <Send className="w-3.5 h-3.5" /> Submit for Review
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            );
-                                                        }
-                                                        if (s === "UNDER_REVIEW" || s === "IN_REVIEW") {
-                                                            return (
-                                                                <div className="w-full p-6 rounded-2xl bg-purple-500/5 border border-purple-500/20 flex flex-col items-center justify-center gap-3 text-center animate-pulse">
-                                                                    <div className="w-10 h-10 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-400 shadow-sm shadow-purple-500/10">
-                                                                        <Clock className="w-5 h-5 animate-spin" style={{ animationDuration: '4s' }} />
-                                                                    </div>
-                                                                    <div className="space-y-1">
-                                                                        <span className="text-xs font-black text-purple-400 uppercase tracking-widest">
-                                                                            Awaiting Verification
-                                                                        </span>
-                                                                        <p className="text-[10px] text-purple-400/70 font-medium">
-                                                                            Lock enabled. A CEO/Administrator is reviewing your completion.
-                                                                        </p>
-                                                                    </div>
-                                                                    {profile?.is_manager && (
-                                                                        <button
-                                                                            onClick={() => markAsCompleted(task.id)}
-                                                                            className="mt-2 w-full py-3 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 rounded-xl font-bold uppercase text-[9px] tracking-widest border border-emerald-500/20 transition-all flex items-center justify-center gap-2"
-                                                                        >
-                                                                            <CheckCircle2 className="w-3.5 h-3.5" /> Approve & Complete (Admin)
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            );
-                                                        }
-                                                        return null;
-                                                    })()}
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        ))
+                                <StaffTaskCard
+                                    key={task.id}
+                                    task={task}
+                                    showCompleted={showCompleted}
+                                    handleTaskClick={handleTaskClick}
+                                    expandedTask={expandedTask}
+                                    taskCreators={taskCreators}
+                                    removeCompletedTask={removeCompletedTask}
+                                    startMission={startMission}
+                                    updateTaskProgress={updateTaskProgress}
+                                    setTasks={setTasks}
+                                    markAsCompleted={markAsCompleted}
+                                    submitForReview={submitForReview}
+                                    profile={profile}
+                                    isV2Enabled={isV2Enabled}
+                                    onMarkSeenLocal={handleMarkSeenLocal}
+                                />
+                            ))
                         )}
                         </div>
                     </div>
@@ -2398,6 +2813,125 @@ export default function StaffPortal() {
                 </div>
             </main>
 
+            {/* Manager Task Assignment Modal */}
+            <Dialog open={isAssignTaskOpen} onOpenChange={setIsAssignTaskOpen}>
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-gray-100 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col max-h-[85vh]">
+                    <div className="px-6 pt-7 pb-4 flex items-start justify-between flex-shrink-0 border-b dark:border-zinc-800">
+                        <div>
+                            <DialogTitle className="text-lg font-black tracking-tight text-[#2C2171] dark:text-white flex items-center gap-2">
+                                <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-zinc-800 flex items-center justify-center">
+                                    <Target className="w-4 h-4 text-orange-500" />
+                                </div>
+                                Deploy Department Task
+                            </DialogTitle>
+                            <p className="text-[11px] text-gray-400 dark:text-white/40 font-semibold mt-1 ml-10 uppercase tracking-widest">
+                                Assign objectives to your department team
+                            </p>
+                        </div>
+                    </div>
+
+                    <form onSubmit={handleAssignTask} className="flex-1 flex flex-col overflow-hidden">
+                        <ScrollArea className="flex-1 px-6 py-4 custom-scrollbar">
+                            <div className="space-y-5 pb-6">
+                                {/* Task Title */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Task Title
+                                    </label>
+                                    <input
+                                        placeholder="e.g. Follow up on morning conversions"
+                                        value={newTaskTitle}
+                                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                                        className="w-full h-12 px-4 rounded-xl border border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all"
+                                        required
+                                    />
+                                </div>
+
+                                {/* Description */}
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                        Objective / Description
+                                    </label>
+                                    <textarea
+                                        placeholder="Detail the instructions or specific milestones..."
+                                        value={newTaskDesc}
+                                        onChange={(e) => setNewTaskDesc(e.target.value)}
+                                        rows={3}
+                                        className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all resize-none leading-relaxed"
+                                    />
+                                </div>
+
+                                {/* Assignee & Priority */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {/* Select Staff assignee (filtered by department) */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                            Assign Staff
+                                        </label>
+                                        <select
+                                            value={newTaskAssignee}
+                                            onChange={(e) => setNewTaskAssignee(e.target.value)}
+                                            className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all cursor-pointer"
+                                            required
+                                        >
+                                            <option value="">Select Personnel...</option>
+                                            {profiles
+                                                .filter(p => p.department === profile?.department && !p.is_manager && p.role !== 'ceo')
+                                                .map((s) => (
+                                                    <option key={s.id} value={s.id}>
+                                                        {s.full_name} ({s.designation || s.role || 'Staff'})
+                                                    </option>
+                                                ))
+                                            }
+                                        </select>
+                                    </div>
+
+                                    {/* Priority Level */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                                            Priority Level
+                                        </label>
+                                        <select
+                                            value={newTaskPriority}
+                                            onChange={(e) => setNewTaskPriority(e.target.value as any)}
+                                            className="w-full h-11 px-3 rounded-xl border border-slate-200 bg-slate-50 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all cursor-pointer"
+                                        >
+                                            <option value="routine">Routine Objective</option>
+                                            <option value="daily">Daily Mission</option>
+                                            <option value="urgent">Urgent Escalation</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </ScrollArea>
+
+                        <div className="px-6 py-4 bg-slate-50 border-t flex gap-3 flex-shrink-0">
+                            <button
+                                type="button"
+                                onClick={() => setIsAssignTaskOpen(false)}
+                                className="flex-1 py-3 border border-slate-200 rounded-xl text-slate-500 font-bold text-xs uppercase tracking-widest hover:bg-slate-100 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isDeployingTask}
+                                style={{ backgroundColor: brand.orange }}
+                                className="flex-1 py-3 text-white rounded-xl font-black text-xs uppercase tracking-widest shadow-lg shadow-orange-100 flex items-center justify-center gap-2 active:scale-95 transition-all disabled:opacity-50"
+                            >
+                                {isDeployingTask ? (
+                                    <>Deploying...</>
+                                ) : (
+                                    <>
+                                        <Send className="w-3.5 h-3.5" /> Deploy
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </form>
+                </DialogContent>
+            </Dialog>
+
             {/* Leave Request Modal */}
             <LeaveRequestModal
                 isOpen={isLeaveModalOpen}
@@ -2414,8 +2948,70 @@ export default function StaffPortal() {
                 setInteracting={setIsUserInteracting}
             />
 
-            {/* Mobile Bottom Navigation */}
+            {/* Direct Message Reply Modal */}
+            <Dialog open={!!replyingToNotification} onOpenChange={(open) => { if (!open) setReplyingToNotification(null); }}>
+                <DialogContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col">
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-orange-500 to-[#2C2171] z-50" />
+                    
+                    <div className="px-8 pt-8 pb-4 relative flex-shrink-0">
+                        <DialogHeader>
+                            <DialogTitle className="text-lg font-black uppercase tracking-widest flex items-center gap-3">
+                                <div className="p-2 bg-indigo-50 dark:bg-indigo-950/30 rounded-xl">
+                                    <MessageSquare className="h-4 w-4 text-indigo-500" />
+                                </div>
+                                Reply to Command
+                            </DialogTitle>
+                        </DialogHeader>
+                        {replyingToNotification && (
+                            <p className="text-slate-405 dark:text-zinc-505 text-xs mt-3 bg-slate-50 dark:bg-zinc-850 p-3 rounded-xl border border-slate-100 dark:border-zinc-800 italic">
+                                &quot;{parseMessagePayload(replyingToNotification.message).cleanText}&quot;
+                            </p>
+                        )}
+                    </div>
+
+                    <div className="px-8 py-4 space-y-4">
+                        <div className="space-y-2">
+                            <label className="text-[10px] uppercase font-black tracking-widest text-slate-400">
+                                Message Content
+                            </label>
+                            <textarea
+                                placeholder="Type your reply here..."
+                                value={replyMessage}
+                                onChange={(e) => setReplyMessage(e.target.value)}
+                                className="w-full bg-slate-50 dark:bg-zinc-950 border border-slate-200 dark:border-zinc-800 focus:border-indigo-500 rounded-xl h-28 resize-none text-sm p-4 font-semibold shadow-inner transition-all leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="p-6 bg-slate-50 dark:bg-zinc-950 border-t border-slate-150 dark:border-zinc-800 flex justify-end gap-3">
+                        <button
+                            type="button"
+                            onClick={() => setReplyingToNotification(null)}
+                            className="px-5 py-2.5 text-slate-500 hover:text-slate-700 font-bold uppercase tracking-widest text-[10px] rounded-xl border border-slate-200 dark:border-zinc-800 hover:bg-slate-100 dark:hover:bg-zinc-900 transition-colors"
+                        >
+                            Cancel
+                        </button>
+                        <Button
+                            onClick={handleSendReply}
+                            disabled={isSendingReply || !replyMessage.trim()}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-black uppercase tracking-widest text-[10px] px-6 py-2.5 rounded-xl transition-all flex items-center gap-1.5"
+                        >
+                            {isSendingReply ? "Sending..." : "Send Reply"}
+                            <Send className="w-3.5 h-3.5" />
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
             <MobileNavigation currentPage="home" />
+
+            {isMessageDialogOpen && (
+                <MessageDialog
+                    isOpen={isMessageDialogOpen}
+                    onClose={() => setIsMessageDialogOpen(false)}
+                    onSuccess={fetchData}
+                />
+            )}
 
             {/* Profile Settings Modal */}
             {/* Profile Sidebar */}
@@ -2456,10 +3052,10 @@ export default function StaffPortal() {
                                     <div className="absolute inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center">
                                         <div className="animate-spin h-6 w-6 border-2 border-white/20 border-t-white rounded-full" />
                                     </div>
-                                ) : profile?.avatar_url ? (
+                                ) : (profile?.avatar_url && isValidAvatarUrl(profile.avatar_url)) ? (
                                     <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
                                 ) : (
-                                    profile?.full_name?.[0] || profile?.email?.[0] || "U"
+                                    profile?.avatar_url || (profile?.full_name?.[0] || profile?.email?.[0] || "U")
                                 )}
                                 
                                 {/* Overlay Camera Icon on Hover */}
@@ -2475,9 +3071,16 @@ export default function StaffPortal() {
                                                 const file = e.target.files?.[0];
                                                 if (!file) return;
                                                 
-                                                // Validate file size (under 3MB for base64 storage)
-                                                if (file.size > 3 * 1024 * 1024) {
-                                                    toast.error("Photo size must be under 3MB");
+                                                // Validate file format (type verification)
+                                                const validTypes = ["image/jpeg", "image/png", "image/webp"];
+                                                if (!validTypes.includes(file.type)) {
+                                                    toast.error("Invalid image format. Only JPEG, PNG, and WEBP are accepted.");
+                                                    return;
+                                                }
+                                                
+                                                // Validate file size (under 2MB)
+                                                if (file.size > 2 * 1024 * 1024) {
+                                                    toast.error("Max file size exceeded. Image must be under 2MB.");
                                                     return;
                                                 }
                                                 
@@ -2537,6 +3140,11 @@ export default function StaffPortal() {
                                 )}
                             </div>
                         </div>
+
+                        {/* File Size Warning Label */}
+                        <p className="text-[11px] font-medium text-slate-500 dark:text-zinc-400 text-center max-w-[240px] mt-1 select-none">
+                            ⚠️ <span className="font-bold text-amber-600 dark:text-amber-500">Note:</span> Maximum image size is <span className="font-bold text-slate-700 dark:text-slate-200">3MB</span>. Recommended formats: PNG, JPG, or WEBP.
+                        </p>
 
                         {/* Interactive Profile Information List */}
                         <div className="w-full space-y-4">
@@ -2598,6 +3206,11 @@ export default function StaffPortal() {
                                     }}
                                     className="w-full bg-transparent border-none focus:outline-none focus:ring-0 p-0 text-xs font-bold text-slate-900 dark:text-zinc-100 placeholder-slate-350"
                                 />
+                            </div>
+
+                            {/* Mobile Synchronization Card */}
+                            <div className="pt-2 w-full">
+                                <MobileSyncCard userId={profile?.id || ""} size={130} />
                             </div>
                         </div>
                     </div>
@@ -2749,7 +3362,7 @@ export default function StaffPortal() {
                                 <input
                                     type="text"
                                     name="cost"
-                                    placeholder="e.g., $500, 3 Hours, Team of 2"
+                                    placeholder="e.g., ₹5000, 3 Hours, Team of 2"
                                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl focus:ring-2 focus:ring-orange-500 outline-none text-sm font-bold"
                                 />
                             </div>
@@ -2772,7 +3385,15 @@ export default function StaffPortal() {
                 </Modal>
             )}
 
-
+            {/* ===== UA Messenger Drawer — Frosted White Glass (ROOT-LEVEL fixed) ===== */}
+            <UAMessengerDrawer 
+                isOpen={isBellOpen}
+                onClose={() => {
+                    setIsBellOpen(false);
+                    fetchData();
+                }}
+                profile={profile}
+            />
 
         </div>
     );

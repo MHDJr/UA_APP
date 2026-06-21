@@ -1,0 +1,10 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": true,
+  "crons": [
+    {
+      "path": "/api/cron/purge-messages",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

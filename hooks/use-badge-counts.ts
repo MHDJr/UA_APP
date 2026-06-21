@@ -1,34 +1,50 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/lib/auth-context";
 
 export interface BadgeCounts {
   pendingRequests: number;
   victories: number;
+  unreadNotifications: number;
 }
 
 export function useBadgeCounts() {
+  const { user, loading: authLoading } = useAuth();
   const [badgeCounts, setBadgeCounts] = useState<BadgeCounts>({
     pendingRequests: 0,
     victories: 0,
+    unreadNotifications: 0,
   });
   const [loading, setLoading] = useState(true);
   const subscriptionsRef = useRef<any[]>([]);
 
-  const fetchBadgeCounts = async (isMounted: boolean = true) => {
+  const fetchBadgeCounts = useCallback(async (isMounted: boolean = true) => {
     try {
       // Fetch data in parallel
       const today = new Date().toISOString().split('T')[0];
-      const [pendingRes, victoriesRes] = await Promise.all([
-        supabase.from("requests").select("*", { count: "exact", head: true }).eq("status", "pending").eq("signal_cleared", false),
-        supabase.from("tasks").select("*", { count: "exact", head: true }).eq("status", "completed").gte("updated_at", today)
-      ]);
+      const queries: any[] = [
+        supabase.from("requests").select("id", { count: "exact" }).eq("status", "pending").eq("signal_cleared", false),
+        supabase.from("tasks").select("id", { count: "exact" }).eq("status", "completed").gte("updated_at", today)
+      ];
+
+      if (user?.id) {
+        queries.push(
+          supabase.from("ideas").select("id", { count: "exact" }).eq("status", "active")
+        );
+      }
+
+      const results = await Promise.all(queries);
+      const pendingRes = results[0];
+      const victoriesRes = results[1];
+      const ideasRes = user?.id ? results[2] : { count: 0 };
 
       if (isMounted) {
         setBadgeCounts({
           pendingRequests: pendingRes.count || 0,
           victories: victoriesRes.count || 0,
+          unreadNotifications: ideasRes?.count || 0,
         });
       }
     } catch (error) {
@@ -36,9 +52,13 @@ export function useBadgeCounts() {
     } finally {
       if (isMounted) setLoading(false);
     }
-  };
+  }, [user?.id]);
 
   useEffect(() => {
+    if (authLoading || !user) {
+      return;
+    }
+
     let isMounted = true;
     let debounceTimer: NodeJS.Timeout;
 
@@ -54,25 +74,37 @@ export function useBadgeCounts() {
       if (subscriptionsRef.current && subscriptionsRef.current.length > 0) {
         subscriptionsRef.current.forEach(s => {
           if (s) {
-            supabase.removeChannel(s).catch(e => {
-              console.warn("Failed to remove old badge channel reference:", e);
-            });
+            try {
+              supabase.removeChannel(s).catch(err => {
+                console.warn("Failed to remove old badge channel:", err);
+              });
+            } catch (e) {
+              console.error("Failed to remove old badge channel reference:", e);
+            }
           }
         });
+        subscriptionsRef.current = [];
       }
       
-      console.log('Setting up badge count realtime subscriptions...');
+      const instanceId = Math.random().toString(36).substring(7);
+      console.log(`Setting up badge count realtime subscriptions (instance: ${instanceId})...`);
+      
       const requestsSub = supabase
-        .channel("badge-requests-changes")
+        .channel(`badge-requests-changes-${instanceId}`)
         .on("postgres_changes", { event: "*", schema: "public", table: "requests" }, debouncedFetch)
         .subscribe();
 
       const tasksSub = supabase
-        .channel("badge-tasks-changes")
+        .channel(`badge-tasks-changes-${instanceId}`)
         .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, debouncedFetch)
         .subscribe();
         
-      subscriptionsRef.current = [requestsSub, tasksSub];
+      const ideasSub = supabase
+        .channel(`badge-ideas-changes-${instanceId}`)
+        .on("postgres_changes", { event: "*", schema: "public", table: "ideas" }, debouncedFetch)
+        .subscribe();
+        
+      subscriptionsRef.current = [requestsSub, tasksSub, ideasSub];
     };
 
     fetchBadgeCounts(isMounted);
@@ -115,9 +147,13 @@ export function useBadgeCounts() {
       if (subscriptionsRef.current && subscriptionsRef.current.length > 0) {
         subscriptionsRef.current.forEach(s => {
           if (s) {
-            supabase.removeChannel(s).catch(e => {
-              console.warn("Failed to clean up badge channel on unmount:", e);
-            });
+            try {
+              supabase.removeChannel(s).catch(err => {
+                // Silently swallow cleanup rejections
+              });
+            } catch (e) {
+              console.error("Failed to clean up badge channel on unmount:", e);
+            }
           }
         });
       }
@@ -129,7 +165,11 @@ export function useBadgeCounts() {
         window.removeEventListener("supabase-channels-reset", handleChannelsReset);
       }
     };
-  }, []);
+  }, [user, authLoading, fetchBadgeCounts]);
 
-  return { badgeCounts, loading, refetch: fetchBadgeCounts };
+  return React.useMemo(() => ({ 
+    badgeCounts, 
+    loading, 
+    refetch: fetchBadgeCounts 
+  }), [badgeCounts, loading]);
 }

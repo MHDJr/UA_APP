@@ -4,13 +4,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase, Idea } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 
-export function useIdeas() {
+const EMPTY_ARRAY: any[] = [];
+
+export function useIdeas(options: any = {}) {
     const { userRole, profile } = useAuth();
     const queryClient = useQueryClient();
 
     // 1. Fetch all records from the ideas table (ordered by created_at descending)
     const {
-        data: ideas = [],
+        data: ideasData,
         isLoading,
         error,
         isFetching,
@@ -25,8 +27,6 @@ export function useIdeas() {
                 .eq("archived", false)
                 .order("created_at", { ascending: false });
 
-            // Apply role-based filtering if needed (mirroring current ExecutiveCommand logic)
-            // However, the request asked for "all records", but if we want to respect the separation:
             const { data, error } = await query;
 
             if (error) {
@@ -34,8 +34,7 @@ export function useIdeas() {
                 throw new Error(error.message);
             }
 
-            // Filter ideas based on user role (as implemented in ExecutiveCommand)
-            if (!userRole) return [];
+            if (!userRole) return EMPTY_ARRAY;
             
             return data.filter((idea: any) => {
                 const creatorRole = idea.profiles?.role;
@@ -49,11 +48,12 @@ export function useIdeas() {
                 return false;
             });
         },
-        // TanStack Query configuration
-        refetchOnWindowFocus: true, // Re-validate on window focus
-        staleTime: 0, // Mark data as stale immediately for background refresh
-        // placeholderData: (prev) => prev, // This is handled in QueryProvider defaults
+        staleTime: 1000 * 60 * 2,
+        ...options,
+        enabled: (options.enabled !== undefined ? options.enabled : true) && !!profile?.id && !!userRole
     });
+
+    const ideas = ideasData || EMPTY_ARRAY;
 
     // 2. Mutation for toggling completion
     const toggleIdeaMutation = useMutation({
@@ -88,7 +88,7 @@ export function useIdeas() {
     return {
         ideas,
         isLoading,
-        isFetching, // Useful for showing background sync indicators
+        isFetching,
         error,
         refetch,
         toggleIdea: toggleIdeaMutation.mutate,

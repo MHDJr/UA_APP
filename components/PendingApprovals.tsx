@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { cn, isValidAvatarUrl } from "@/lib/utils";
 import {
     Shield,
     Calendar,
@@ -53,6 +53,7 @@ interface PendingApprovalsProps {
     requests: PendingRequest[];
     onApprove: (requestId: string) => void;
     onDecline: (requestId: string) => void;
+    isCeo?: boolean;
     className?: string;
 }
 
@@ -267,11 +268,13 @@ const RequestRow = ({
     onApprove,
     onDecline,
     isProcessing,
+    isCeo = false,
 }: {
     request: PendingRequest;
     onApprove: (id: string) => void;
     onDecline: (id: string) => void;
     isProcessing: boolean;
+    isCeo?: boolean;
 }) => {
     const config = requestTypeConfig[request.requestType];
     const Icon = config.icon;
@@ -280,6 +283,35 @@ const RequestRow = ({
     const isLeave = request.requestType === "leave";
     const isBudget = request.requestType === "budget" || request.requestType === "expense";
     const isAccessOrPermission = request.requestType === "access_elevation" || request.requestType === "permission";
+
+    const renderActionControls = () => {
+        if (!isCeo) {
+            return (
+                <div className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-zinc-800/80 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-500 border border-slate-200/50 dark:border-zinc-700/30">
+                    <Shield className="w-3.5 h-3.5 text-slate-400" />
+                    <span>CEO Approval Only</span>
+                </div>
+            );
+        }
+        return (
+            <>
+                <button
+                    onClick={() => onDecline(request.id)}
+                    disabled={isProcessing}
+                    className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                >
+                    Reject
+                </button>
+                <button
+                    onClick={() => onApprove(request.id)}
+                    disabled={isProcessing}
+                    className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
+                >
+                    Approve
+                </button>
+            </>
+        );
+    };
 
     // 1. Variant A: LEAVE REQUEST LAYOUT
     if (isLeave) {
@@ -298,15 +330,17 @@ const RequestRow = ({
                     <div className="flex-1 min-w-0">
                         {/* Top Row: Avatar + Name Stack */}
                         <div className="flex items-start gap-4">
-                            <Avatar className="w-11 h-11 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
-                                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
-                                <AvatarFallback
-                                    className="text-white text-xs font-semibold"
-                                    style={{ backgroundColor: BRAND_COLORS.indigo }}
-                                >
-                                    {request.staffInitials}
-                                </AvatarFallback>
-                            </Avatar>
+                             <Avatar className="w-11 h-11 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
+                                 <AvatarImage src={isValidAvatarUrl(request.staffAvatar) ? request.staffAvatar : undefined} alt={request.staffName} />
+                                 <AvatarFallback
+                                     className="text-white text-xs font-semibold"
+                                     style={{ backgroundColor: BRAND_COLORS.indigo }}
+                                 >
+                                     {request.staffAvatar && !isValidAvatarUrl(request.staffAvatar)
+                                         ? request.staffAvatar
+                                         : request.staffInitials}
+                                 </AvatarFallback>
+                             </Avatar>
 
                             <div className="flex-1 min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
@@ -348,20 +382,7 @@ const RequestRow = ({
 
                     {/* Right Column: Isolated button controls centered vertically with the card layout */}
                     <div className="flex items-center gap-3 self-end lg:self-center flex-shrink-0 w-full lg:w-auto justify-end">
-                        <button
-                            onClick={() => onDecline(request.id)}
-                            disabled={isProcessing}
-                            className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            Reject
-                        </button>
-                        <button
-                            onClick={() => onApprove(request.id)}
-                            disabled={isProcessing}
-                            className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            Approve
-                        </button>
+                        {renderActionControls()}
                     </div>
                 </div>
             </div>
@@ -390,12 +411,14 @@ const RequestRow = ({
                         {/* Left Side: Avatar & Name details */}
                         <div className="flex items-center gap-3">
                             <Avatar className="w-10 h-10 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
-                                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                                <AvatarImage src={isValidAvatarUrl(request.staffAvatar) ? request.staffAvatar : undefined} alt={request.staffName} />
                                 <AvatarFallback
                                     className="text-white text-xs font-semibold"
                                     style={{ backgroundColor: BRAND_COLORS.indigo }}
                                 >
-                                    {request.staffInitials}
+                                    {request.staffAvatar && !isValidAvatarUrl(request.staffAvatar)
+                                        ? request.staffAvatar
+                                        : request.staffInitials}
                                 </AvatarFallback>
                             </Avatar>
                             <div className="min-w-0">
@@ -432,20 +455,7 @@ const RequestRow = ({
 
                             {/* Buttons */}
                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => onDecline(request.id)}
-                                    disabled={isProcessing}
-                                    className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                                >
-                                    Reject
-                                </button>
-                                <button
-                                    onClick={() => onApprove(request.id)}
-                                    disabled={isProcessing}
-                                    className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                                >
-                                    Approve
-                                </button>
+                                {renderActionControls()}
                             </div>
                         </div>
                     </div>
@@ -481,12 +491,14 @@ const RequestRow = ({
                         {/* Header Line */}
                         <div className="flex items-center gap-3">
                             <Avatar className="w-10 h-10 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
-                                <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                                <AvatarImage src={isValidAvatarUrl(request.staffAvatar) ? request.staffAvatar : undefined} alt={request.staffName} />
                                 <AvatarFallback
                                     className="text-white text-xs font-semibold"
                                     style={{ backgroundColor: BRAND_COLORS.indigo }}
                                 >
-                                    {request.staffInitials}
+                                    {request.staffAvatar && !isValidAvatarUrl(request.staffAvatar)
+                                        ? request.staffAvatar
+                                        : request.staffInitials}
                                 </AvatarFallback>
                             </Avatar>
                             <div className="flex flex-wrap items-center gap-2">
@@ -499,7 +511,7 @@ const RequestRow = ({
                                 <span className="text-slate-300 dark:text-zinc-700">·</span>
                                 <div
                                     className={cn(
-                                        "inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                                        "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold",
                                         config.bgColor,
                                         config.color
                                     )}
@@ -536,20 +548,7 @@ const RequestRow = ({
 
                     {/* Right Column: Action Buttons */}
                     <div className="flex items-center gap-3 self-end lg:self-center flex-shrink-0 w-full lg:w-auto justify-end">
-                        <button
-                            onClick={() => onDecline(request.id)}
-                            disabled={isProcessing}
-                            className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            Reject
-                        </button>
-                        <button
-                            onClick={() => onApprove(request.id)}
-                            disabled={isProcessing}
-                            className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                        >
-                            Approve
-                        </button>
+                        {renderActionControls()}
                     </div>
                 </div>
             </div>
@@ -572,12 +571,14 @@ const RequestRow = ({
                 <div className="flex-1 min-w-0">
                     <div className="flex items-start gap-4">
                         <Avatar className="w-10 h-10 border border-slate-100 dark:border-zinc-800 shadow-sm flex-shrink-0">
-                            <AvatarImage src={request.staffAvatar} alt={request.staffName} />
+                            <AvatarImage src={isValidAvatarUrl(request.staffAvatar) ? request.staffAvatar : undefined} alt={request.staffName} />
                             <AvatarFallback
                                 className="text-white text-xs font-semibold"
                                 style={{ backgroundColor: BRAND_COLORS.indigo }}
                             >
-                                {request.staffInitials}
+                                {request.staffAvatar && !isValidAvatarUrl(request.staffAvatar)
+                                    ? request.staffAvatar
+                                    : request.staffInitials}
                             </AvatarFallback>
                         </Avatar>
 
@@ -613,20 +614,7 @@ const RequestRow = ({
 
                 {/* Tactical Action Buttons */}
                 <div className="flex items-center gap-3 self-end md:self-center flex-shrink-0 mt-3 md:mt-0 w-full md:w-auto justify-end">
-                    <button
-                        onClick={() => onDecline(request.id)}
-                        disabled={isProcessing}
-                        className="bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400 hover:bg-rose-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        Reject
-                    </button>
-                    <button
-                        onClick={() => onApprove(request.id)}
-                        disabled={isProcessing}
-                        className="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100/80 font-semibold px-4 py-2 rounded-lg text-xs tracking-wider transition-all active:scale-95 disabled:opacity-50"
-                    >
-                        Approve
-                    </button>
+                    {renderActionControls()}
                 </div>
             </div>
         </div>
@@ -657,6 +645,7 @@ export function PendingApprovals({
     requests,
     onApprove,
     onDecline,
+    isCeo = false,
     className,
 }: PendingApprovalsProps) {
     const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
@@ -759,6 +748,7 @@ export function PendingApprovals({
                                     onApprove={handleApprove}
                                     onDecline={handleDecline}
                                     isProcessing={processingIds.has(request.id)}
+                                    isCeo={isCeo}
                                 />
                             </div>
                         ))}

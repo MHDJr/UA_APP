@@ -8,6 +8,7 @@ interface LoaderOverlayProps {
     isVisible: boolean;
     message?: string;
     type?: "default" | "initialization";
+    setIsLoading?: (loading: boolean) => void;
 }
 
 const INITIALIZATION_STEPS = [
@@ -22,9 +23,26 @@ export function LoaderOverlay({
     isVisible,
     message,
     type = "default",
+    setIsLoading,
 }: LoaderOverlayProps) {
     const [stepIndex, setStepIndex] = useState(0);
     const [progress, setProgress] = useState(0);
+    const [forceHidden, setForceHidden] = useState(false);
+
+    useEffect(() => {
+        if (isVisible) {
+            setForceHidden(false);
+            const emergencyTimer = setTimeout(() => {
+                console.warn("Emergency Escape Hatch triggered: Force-killing loader freeze.");
+                setForceHidden(true);
+                if (setIsLoading) {
+                    setIsLoading(false);
+                }
+            }, 15000);
+
+            return () => clearTimeout(emergencyTimer);
+        }
+    }, [isVisible, setIsLoading]);
 
     useEffect(() => {
         if (isVisible && type === "initialization") {
@@ -32,14 +50,14 @@ export function LoaderOverlay({
                 setStepIndex((prev) =>
                     prev < INITIALIZATION_STEPS.length - 1 ? prev + 1 : prev,
                 );
-            }, 800);
+            }, 400); // Reduced from 800ms
 
             const progressInterval = setInterval(() => {
                 setProgress((prev) => {
                     if (prev >= 100) return 100;
-                    return prev + 100 / (INITIALIZATION_STEPS.length * 4);
+                    return prev + 100 / (INITIALIZATION_STEPS.length * 2);
                 });
-            }, 200);
+            }, 100); // Reduced from 200ms
 
             return () => {
                 clearInterval(stepInterval);
@@ -54,7 +72,7 @@ export function LoaderOverlay({
     if (type === "default") {
         return (
             <AnimatePresence>
-                {isVisible && (
+                {isVisible && !forceHidden && (
                     <motion.div
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
@@ -80,7 +98,7 @@ export function LoaderOverlay({
 
     return (
         <AnimatePresence>
-            {isVisible && (
+            {isVisible && !forceHidden && (
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -100,6 +118,7 @@ export function LoaderOverlay({
                             }}
                             className="mb-12"
                         >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src="/images/usthadacademylogo2.svg"
                                 alt="UA Logo"

@@ -44,9 +44,11 @@ import { toast } from "sonner";
 import MobileNavigation from "@/components/mobile-navigation";
 import { MonthlyProgressGauge } from "@/components/monthly-progress-gauge";
 import { MonthlyConversionTracker } from "@/components/monthly-conversion-tracker";
-import { SetMonthlyTargetModal } from "@/components/set-monthly-target-modal";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
+import { ProfileModal } from "@/components/ProfileModal";
+import { isValidAvatarUrl } from "@/lib/utils";
+
 
 // Brand colors matching Staff Hub exactly
 const BRAND = {
@@ -136,7 +138,7 @@ interface MonthlyTarget {
     achievement_percentage: number;
 }
 
-export function SalesReportingPage() {
+export function SalesReportingPage({ backPath = "/staff" }: { backPath?: string }) {
     const { profile, user } = useAuth();
     const [time, setTime] = useState("");
     const [vibe, setVibe] = useState("Focused");
@@ -148,6 +150,7 @@ export function SalesReportingPage() {
     const [hasSubmittedToday, setHasSubmittedToday] = useState(false);
     const [todayReportId, setTodayReportId] = useState<string | null>(null);
     const [monthlyTarget, setMonthlyTarget] = useState<MonthlyTarget | null>(null);
+    const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
 
     // Form states with localStorage persistence
     const [totalLeads, setTotalLeads] = useState(() => {
@@ -360,6 +363,7 @@ export function SalesReportingPage() {
         };
 
         checkTodaySubmission();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user, profile]);
 
     // Daily reset at midnight
@@ -424,6 +428,7 @@ export function SalesReportingPage() {
         const qualityWeight = (leadQuality[0] / 10) * 20;
         
         return Math.round(convWeight + evalWeight + qualityWeight);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [totalLeads, conversions, evaluations, leadQuality]);
 
     const handleTransmitReport = async () => {
@@ -543,21 +548,29 @@ export function SalesReportingPage() {
 
             // Only update daily report if it has been submitted today
             if (hasSubmittedToday && todayReportId) {
+                const total = parseInt(totalLeads) || 0;
+                const nextConversions = currentConversions + count;
+                const nextConversionRate = total > 0 ? Math.round((nextConversions / total) * 100) : 0;
+                
+                const evals = parseInt(evaluations) || 0;
+                const nextEfficiencyScore = total > 0 ? Math.round(
+                    (nextConversions / total) * 50 +
+                    (evals / total) * 30 +
+                    (leadQuality[0] / 10) * 20
+                ) : 0;
+
                 const { error: updateError } = await supabase
                     .from("daily_reports")
                     .update({
-                        conversions: currentConversions + count,
-                        conversion_rate: Math.round(((currentConversions + count) / parseInt(totalLeads || "1")) * 100),
-                        efficiency_score: Math.round(
-                            ((currentConversions + count) / parseInt(totalLeads || "1")) * 50 +
-                            (parseInt(evaluations) / parseInt(totalLeads || "1")) * 30 +
-                            (leadQuality[0] / 10) * 20
-                        ),
+                        conversions: nextConversions,
+                        conversion_rate: nextConversionRate,
+                        efficiency_score: nextEfficiencyScore,
                     })
                     .eq("id", todayReportId);
 
                 if (updateError) {
                     console.error("Update report error:", updateError);
+                    toast.error("Failed to update daily report conversions: " + updateError.message);
                 }
             }
 
@@ -586,6 +599,7 @@ export function SalesReportingPage() {
             <header className="md:hidden h-16 bg-white/90 backdrop-blur-xl border-b border-slate-200 flex items-center justify-between px-4 sticky top-0 z-50">
                 <div className="flex items-center gap-3">
                     <div className="relative h-10 w-10">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                             src="/images/usthadacademylogo2.svg"
                             alt="UA Logo"
@@ -604,10 +618,15 @@ export function SalesReportingPage() {
                         <p className="text-[8px] text-slate-400 font-bold uppercase">{agentName}</p>
                     </div>
                     <div
+                        onClick={() => setIsProfileModalOpen(true)}
                         style={{ backgroundColor: BRAND.navy }}
-                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shadow-md"
+                        className="w-9 h-9 rounded-xl flex items-center justify-center text-white text-sm font-bold shadow-md overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-300"
                     >
-                        {profile?.full_name?.[0] || profile?.email?.[0] || "U"}
+                        {profile?.avatar_url && isValidAvatarUrl(profile.avatar_url) ? (
+                            <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            profile?.avatar_url || (profile?.full_name?.[0] || profile?.email?.[0] || "U")
+                        )}
                     </div>
                 </div>
             </header>
@@ -619,6 +638,7 @@ export function SalesReportingPage() {
                         {/* Logo */}
                         <div className="relative">
                             <div className="relative h-12 w-12">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
                                 <img
                                     src="/images/usthadacademylogo2.svg"
                                     alt="UA Logo"
@@ -627,6 +647,7 @@ export function SalesReportingPage() {
                             </div>
                         </div>
                         <div className="hidden md:block h-12 relative w-48">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                                 src="/images/verticallogo.svg"
                                 alt="Usthad Academy"
@@ -646,7 +667,7 @@ export function SalesReportingPage() {
 
                 <div className="flex items-center gap-6">
                     {/* Mobile: Back to Hub Link */}
-                    <Link href="/staff" className="md:hidden">
+                    <Link href={backPath} className="md:hidden">
                         <button className="flex items-center gap-2 px-3 py-2 rounded-xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all text-[9px] font-black uppercase tracking-wider text-slate-600">
                             <ChevronLeft className="w-3 h-3" />
                             Hub
@@ -654,7 +675,7 @@ export function SalesReportingPage() {
                     </Link>
 
                     {/* Desktop: Back to Hub Link */}
-                    <Link href="/staff" className="hidden md:block">
+                    <Link href={backPath} className="hidden md:block">
                         <button className="flex items-center gap-2 px-4 py-2 rounded-2xl border border-slate-200 hover:border-slate-300 hover:bg-slate-50 transition-all text-[10px] font-black uppercase tracking-widest text-slate-600">
                             <ChevronLeft className="w-4 h-4" />
                             Back to Hub
@@ -670,10 +691,15 @@ export function SalesReportingPage() {
                         </p>
                     </div>
                     <div
+                        onClick={() => setIsProfileModalOpen(true)}
                         style={{ backgroundColor: BRAND.navy }}
-                        className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold shadow-md"
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-bold shadow-md overflow-hidden cursor-pointer hover:scale-105 transition-transform duration-300"
                     >
-                        {profile?.full_name?.[0] || profile?.email?.[0] || "U"}
+                        {profile?.avatar_url && isValidAvatarUrl(profile.avatar_url) ? (
+                            <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover" />
+                        ) : (
+                            profile?.avatar_url || (profile?.full_name?.[0] || profile?.email?.[0] || "U")
+                        )}
                     </div>
                 </div>
             </header>
@@ -684,19 +710,7 @@ export function SalesReportingPage() {
                 {/* LEFT COLUMN: Data Tracking & Core Inputs */}
                 <div className="col-span-1 lg:col-span-8 flex flex-col gap-6">
                     
-                    {/* Monthly Conversion Tracker */}
-                    {profile && (
-                        <div className="w-full">
-                            <MonthlyConversionTracker 
-                                currentMonthConversions={parseInt(conversions) || 0}
-                                profile={profile}
-                                onTargetUpdated={() => {
-                                    // Refresh monthly target data
-                                    fetchSalesMonthlyTarget().then(setMonthlyTarget);
-                                }}
-                            />
-                        </div>
-                    )}
+
                     
                     {/* Daily Metrics Input Card */}
                     <div className="bg-white/80 backdrop-blur-md border border-slate-100 shadow-[0_8px_30px_rgba(0,0,0,0.015)] rounded-2xl p-6">
@@ -706,7 +720,7 @@ export function SalesReportingPage() {
                                     Daily Metrics
                                     <Target className="w-5 h-5" style={{ color: BRAND.orange }} />
                                 </h2>
-                                <p className="text-xs text-slate-400 font-medium">Record today's performance data</p>
+                                <p className="text-xs text-slate-400 font-medium">Record today&apos;s performance data</p>
                             </div>
                             <Badge
                                 variant="outline"
@@ -979,6 +993,11 @@ export function SalesReportingPage() {
 
             {/* Spacer for mobile bottom nav */}
             <div className="md:hidden h-20"></div>
+
+            <ProfileModal
+                isOpen={isProfileModalOpen}
+                onClose={() => setIsProfileModalOpen(false)}
+            />
         </div>
     );
 }

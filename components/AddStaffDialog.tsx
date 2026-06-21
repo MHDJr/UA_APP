@@ -29,13 +29,13 @@ import {
     Megaphone,
 } from "lucide-react";
 import { toast } from "sonner";
-import { createClient } from "@supabase/supabase-js";
+import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { useQueryClient } from "@tanstack/react-query";
+import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 interface AddStaffDialogProps {
     open: boolean;
@@ -206,10 +206,18 @@ export default function AddStaffDialog({
                 }, 100);
             };
 
-            await Promise.race([
-                executeCreation(),
-                new Promise((_, reject) => setTimeout(() => reject(new Error("Network timeout: Operation took too long. Please try again.")), 15000))
-            ]);
+            const creationPromise = executeCreation();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(() => reject(new Error("Network timeout: Operation took too long. Please try again.")), 15000)
+            );
+
+            // Catch potential unhandled rejections if either promise settles after the race completes
+            creationPromise.catch((err) => {
+                console.warn("Staff creation finished after timeout with error:", err);
+            });
+            timeoutPromise.catch(() => {});
+
+            await Promise.race([creationPromise, timeoutPromise]);
         } catch (error: any) {
             console.error("Staff creation error:", error);
             toast.error(error.message || "Failed to create staff account");

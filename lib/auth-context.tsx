@@ -31,21 +31,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const [userRole, setUserRole] = useState<'CEO' | 'MANAGER' | null>(null);
     const router = useRouter();
 
-    const getFallbackProfile = (userId: string, email: string, metadata: any): Profile => {
-        const role = metadata?.role || (email === 'saleemsaquafi@gmail.com' ? 'ceo' : 'staff');
-        return {
-            id: userId,
-            email: email,
-            full_name: metadata?.full_name || email.split('@')[0] || "Operative",
-            role: role as any,
-            department: metadata?.department || (email === 'saleemsaquafi@gmail.com' ? 'Executive' : 'Sales'),
-            is_manager: metadata?.is_manager || (role === 'manager'),
-            status: 'online',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-        };
-    };
-
     const lastCheckedUserIdRef = useRef<string | null>(null);
     const isInitialCheckDoneRef = useRef(false);
     const isMountedRef = useRef(true);
@@ -73,7 +58,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Fetch profile helper with a 3.5s timeout protection
         const loadProfile = async (userId: string) => {
             const profileTimeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3500));
-            let data = null;
             try {
                 const profilePromise = supabase
                     .from("profiles")
@@ -85,33 +69,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                         return data;
                     });
                     
-                data = await Promise.race([profilePromise, profileTimeout]);
-            } catch (err) {
-                console.error("Error fetching profile, using fallback:", err);
-            }
+                const data = await Promise.race([profilePromise, profileTimeout]);
 
-            if (!isEffectMounted) return null;
+                if (!isEffectMounted) return null;
 
-            if (data) {
-                const p = data as Profile;
-                if (typeof window !== "undefined") {
-                    sessionStorage.setItem("ua_profile", JSON.stringify(p));
-                }
-                return p;
-            } else {
-                try {
-                    const { data: { session } } = await supabase.auth.getSession();
-                    const currentUser = session?.user;
-                    if (currentUser) {
-                        const fallback = getFallbackProfile(userId, currentUser.email || "", currentUser.user_metadata);
-                        if (typeof window !== "undefined") {
-                            sessionStorage.setItem("ua_profile", JSON.stringify(fallback));
-                        }
-                        return fallback;
+                if (data) {
+                    const p = data as Profile;
+                    if (typeof window !== "undefined") {
+                        sessionStorage.setItem("ua_profile", JSON.stringify(p));
                     }
-                } catch (e) {
-                    console.error("Failed to retrieve session for fallback profile:", e);
+                    return p;
                 }
+            } catch (err) {
+                console.error("Error fetching profile:", err);
             }
             return null;
         };
@@ -328,48 +298,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 } else {
                     setUserRole(null);
                 }
-            } else {
-                console.warn("fetchProfile failed, trying fallback. error:", error);
-                const { data: { session } } = await supabase.auth.getSession();
-                const currentUser = session?.user;
-                if (currentUser) {
-                    const fallback = getFallbackProfile(userId, currentUser.email || "", currentUser.user_metadata);
-                    setProfile(fallback);
-                    if (typeof window !== "undefined") {
-                        sessionStorage.setItem("ua_profile", JSON.stringify(fallback));
-                    }
-                    if (fallback.role === 'ceo') {
-                        setUserRole('CEO');
-                    } else if (fallback.is_manager || fallback.role === 'manager') {
-                        setUserRole('MANAGER');
-                    } else {
-                        setUserRole(null);
-                    }
-                }
             }
         } catch (err: any) {
             if (err?.name === "AbortError") return;
-            console.error("Error fetching profile, trying fallback:", err);
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                const currentUser = session?.user;
-                if (currentUser) {
-                    const fallback = getFallbackProfile(userId, currentUser.email || "", currentUser.user_metadata);
-                    setProfile(fallback);
-                    if (typeof window !== "undefined") {
-                        sessionStorage.setItem("ua_profile", JSON.stringify(fallback));
-                    }
-                    if (fallback.role === 'ceo') {
-                        setUserRole('CEO');
-                    } else if (fallback.is_manager || fallback.role === 'manager') {
-                        setUserRole('MANAGER');
-                    } else {
-                        setUserRole(null);
-                    }
-                }
-            } catch (e) {
-                console.error("Failed to generate fallback profile:", e);
-            }
+            console.error("Error fetching profile:", err);
         }
     };
 

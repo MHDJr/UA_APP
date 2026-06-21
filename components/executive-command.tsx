@@ -33,6 +33,7 @@ import {
 } from "@/lib/supabase";
 import { createClient } from "@supabase/supabase-js";
 import { useAuth } from "@/lib/auth-context";
+import { computeVelocityMetrics } from "@/lib/velocity-engine";
 import { useTheme } from "./theme-provider";
 import { Button } from "@/components/ui/button";
 import {
@@ -58,6 +59,7 @@ import {
     RefreshCw,
     Loader2,
     ShieldAlert,
+    ShieldCheck,
     LogOut,
     Wifi,
     Hourglass,
@@ -83,6 +85,7 @@ import {
     Crown,
     Megaphone,
     Send,
+    Eye,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import Link from "next/link";
@@ -127,7 +130,7 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { cn, isValidAvatarUrl } from "@/lib/utils";
 import { format, parseISO, isPast, isToday, isTomorrow } from "date-fns";
 import { useTabResiliency } from "./tab-resiliency-engine";
 import { useIdeas } from "@/hooks/use-ideas";
@@ -139,6 +142,10 @@ import {
     useRequests,
     useMeetings,
     useCeoDirectives,
+    useCeoStaffPresence,
+    useFinancialEntries,
+    useDailyReports,
+    useSalesTargets,
 } from "@/hooks/use-dashboard-data";
 
 // ============================================
@@ -198,35 +205,55 @@ CommandCard.displayName = "CommandCard";
 const ExecutivePerformanceEngine = React.memo(
     ({ tasks, completedTasks }: { tasks: Task[]; completedTasks: Task[] }) => {
         const { userRole } = useAuth();
+        const isV2Enabled = process.env.NEXT_PUBLIC_ENABLE_V2_FEATURES === "true" || (typeof window !== "undefined" && window.localStorage.getItem("ENABLE_V2_FEATURES") === "true");
 
-        // 1. Operational Velocity Calculation
-        const activeTasksCount = tasks.length;
-        const completedTodayCount = completedTasks.filter(
-            (t) => t.updated_at && isToday(parseISO(t.updated_at)),
-        ).length;
-        const totalToday = activeTasksCount + completedTodayCount;
-        const velocity =
-            totalToday > 0
-                ? Math.round((completedTodayCount / totalToday) * 100)
-                : 84;
+        // Optimization: Pre-calculate velocity to avoid complex filtering in render
+        const { velocity, activeTasksCount, completedTodayCount } = useMemo(() => {
+            const activeCount = tasks.length;
+            const completedCount = completedTasks.filter(
+                (t) => t.updated_at && isToday(parseISO(t.updated_at)),
+            ).length;
+            const totalToday = activeCount + completedCount;
+            const v =
+                totalToday > 0
+                    ? Math.round((completedCount / totalToday) * 100)
+                    : 84;
+            return {
+                velocity: v,
+                activeTasksCount: activeCount,
+                completedTodayCount: completedCount,
+            };
+        }, [tasks, completedTasks]);
 
-        // 2. Departmental Load Distribution
-        const departments = [
-            "Administration",
-            "Marketing",
-            "Sales",
-            "Accounts",
-        ];
-        const loadDist = departments.map((dept) => {
-            const count = tasks.filter((t) => {
-                const deptName =
-                    (t as any).assigned_to_user?.department?.toLowerCase() ||
-                    "";
-                return deptName === dept.toLowerCase();
-            }).length;
-            return { name: dept, count };
-        });
-        const maxLoad = Math.max(...loadDist.map((d) => d.count), 1);
+        const v2Metrics = useMemo(() => {
+            if (!isV2Enabled) return null;
+            return computeVelocityMetrics(tasks, completedTasks);
+        }, [tasks, completedTasks, isV2Enabled]);
+
+        const finalVelocity = isV2Enabled && v2Metrics ? v2Metrics.velocityScore : velocity;
+
+        // Optimization: Memoize load distribution
+        const loadDist = useMemo(() => {
+            const departments = [
+                "Administration",
+                "Marketing",
+                "Sales",
+                "Finance",
+            ];
+            return departments.map((dept) => {
+                const deptTasks = tasks.filter((t) => {
+                    const deptName =
+                        (t as any).assigned_to_user?.department?.toLowerCase() ||
+                        "";
+                    return deptName === dept.toLowerCase();
+                });
+                const count = deptTasks.length;
+                const hasEscalated = deptTasks.some((t) => t.is_escalated === true);
+                return { name: dept, count, hasEscalated };
+            });
+        }, [tasks]);
+
+        const maxLoad = useMemo(() => Math.max(...loadDist.map((d) => d.count), 1), [loadDist]);
 
         return (
             <CommandCard className="mt-2">
@@ -258,13 +285,13 @@ const ExecutivePerformanceEngine = React.memo(
                             Operational Velocity
                         </span>
                         <span className="text-sm font-black text-emerald-600 dark:text-emerald-400 tracking-tight">
-                            {velocity}%
+                            {finalVelocity}%
                         </span>
                     </div>
                     <div className="h-2.5 w-full bg-white dark:bg-zinc-900 rounded-full overflow-hidden flex p-0.5 border border-slate-100 dark:border-zinc-800 shadow-sm">
                         <motion.div
                             initial={{ width: 0 }}
-                            animate={{ width: `${velocity}%` }}
+                            animate={{ width: `${finalVelocity}%` }}
                             transition={{ duration: 1, ease: "easeOut" }}
                             className="h-full bg-gradient-to-r from-emerald-600 via-emerald-500 to-emerald-400 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.3)]"
                         />
@@ -285,6 +312,19 @@ const ExecutivePerformanceEngine = React.memo(
                     </div>
                 </div>
 
+                {isV2Enabled && v2Metrics && (
+                    <div className="grid grid-cols-2 gap-4 mb-6 p-4 rounded-2xl bg-slate-50/50 dark:bg-zinc-850/30 border border-slate-200/50 dark:border-zinc-800/30 text-[10px] font-mono shadow-sm">
+                        <div className="flex flex-col">
+                            <span className="text-slate-400 dark:text-zinc-500 uppercase tracking-wider text-[9px] font-black">Avg Read Lag</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5">{v2Metrics.averageReadLagMinutes}m</span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-slate-400 dark:text-zinc-500 uppercase tracking-wider text-[9px] font-black">Execution Speed</span>
+                            <span className="text-xs font-black text-slate-800 dark:text-slate-200 mt-0.5">{v2Metrics.averageExecutionHours}h</span>
+                        </div>
+                    </div>
+                )}
+
                 {/* Departmental Load Distribution */}
                 <div className="mb-2">
                     <div className="flex items-center gap-2 mb-5">
@@ -303,13 +343,15 @@ const ExecutivePerformanceEngine = React.memo(
                                     <span
                                         className={cn(
                                             "w-1.5 h-4 rounded-full transition-all duration-500 shadow-sm",
-                                            dept.name === "Administration"
-                                                ? "bg-slate-400 dark:bg-zinc-500"
-                                                : dept.name === "Marketing"
-                                                  ? "bg-purple-500 dark:bg-purple-600"
-                                                  : dept.name === "Sales"
-                                                    ? "bg-orange-500 dark:bg-orange-600"
-                                                    : "bg-blue-500 dark:bg-blue-600",
+                                            isV2Enabled && (dept as any).hasEscalated
+                                                ? "bg-red-500 dark:bg-red-650 animate-pulse ring-2 ring-red-500/30 shadow-[0_0_10px_rgba(239,68,68,0.8)]"
+                                                : dept.name === "Administration"
+                                                  ? "bg-slate-400 dark:bg-zinc-500"
+                                                  : dept.name === "Marketing"
+                                                    ? "bg-purple-500 dark:bg-purple-600"
+                                                    : dept.name === "Sales"
+                                                      ? "bg-orange-500 dark:bg-orange-600"
+                                                      : "bg-blue-500 dark:bg-blue-600",
                                         )}
                                     />
                                     <span className="text-[11px] font-black text-slate-400 dark:text-zinc-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors uppercase tracking-tight">
@@ -324,14 +366,16 @@ const ExecutivePerformanceEngine = React.memo(
                                                 width: `${(dept.count / maxLoad) * 100}%`,
                                             }}
                                             className={cn(
-                                                "h-full rounded-full opacity-80 shadow-sm",
-                                                dept.name === "Administration"
-                                                    ? "bg-slate-400 dark:bg-zinc-500"
-                                                    : dept.name === "Marketing"
-                                                      ? "bg-purple-500 dark:bg-purple-600"
-                                                      : dept.name === "Sales"
-                                                        ? "bg-orange-500 dark:bg-orange-600"
-                                                        : "bg-blue-500 dark:bg-blue-600",
+                                                "h-full rounded-full opacity-80 shadow-sm transition-all duration-500",
+                                                isV2Enabled && (dept as any).hasEscalated
+                                                    ? "bg-gradient-to-r from-red-600 via-red-500 to-red-400 shadow-[0_0_8px_rgba(239,68,68,0.6)] animate-pulse"
+                                                    : dept.name === "Administration"
+                                                      ? "bg-slate-400 dark:bg-zinc-500"
+                                                      : dept.name === "Marketing"
+                                                        ? "bg-purple-500 dark:bg-purple-600"
+                                                        : dept.name === "Sales"
+                                                          ? "bg-orange-500 dark:bg-orange-600"
+                                                          : "bg-blue-500 dark:bg-blue-600",
                                             )}
                                         />
                                     </div>
@@ -414,7 +458,8 @@ const renderCEOTaskGauge = (t: Task) => {
 
 export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const router = useRouter();
-    const { profile, signOut, userRole } = useAuth();
+    const isV2Enabled = process.env.NEXT_PUBLIC_ENABLE_V2_FEATURES === "true" || (typeof window !== "undefined" && window.localStorage.getItem("ENABLE_V2_FEATURES") === "true");
+    const { profile, signOut, userRole, loading } = useAuth();
     const { theme } = useTheme();
     const queryClient = useQueryClient();
 
@@ -423,38 +468,70 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     // ============================================
 
     // TanStack Query Hooks (Primary Data Source)
+    // Optimization: Disable redundant focus refetching as useWindowSync handles it with throttling
+    const queryOptions = useMemo(() => ({
+        refetchOnWindowFocus: false,
+        staleTime: 1000 * 60 * 5, // 5 minutes
+    }), []);
+
     const {
         activeTasks: tasks = [],
         completedTasks = [],
         isFetching: isTasksFetching,
-    } = useTasks();
-    const { data: staff = [], isFetching: isStaffFetching } = useStaff();
+    } = useTasks(queryOptions);
+    const { data: rawStaff = [], isFetching: isStaffFetching } = useStaff(queryOptions);
+    const { data: presenceData = [], isFetching: isPresenceFetching } = useCeoStaffPresence(queryOptions);
+
+    const staff = useMemo(() => {
+        if (!presenceData || (presenceData as any[]).length === 0) {
+            return rawStaff;
+        }
+        const presenceMap = new Map<string, any>((presenceData as any[]).map((p: any) => [p.user_id, p]));
+        return rawStaff.map((member: any) => {
+            const presence = presenceMap.get(member.id) as any;
+            if (presence) {
+                return {
+                    ...member,
+                    status: presence.status || member.status,
+                    lastActive: presence.updated_at,
+                    sessionStart: presence.session_start,
+                    sessionDuration: presence.session_duration,
+                };
+            }
+            return member;
+        });
+    }, [rawStaff, presenceData]);
     const { data: requests = [], isFetching: isRequestsFetching } =
-        useRequests();
+        useRequests(queryOptions);
     const { data: meetings = [], isFetching: isMeetingsFetching } =
-        useMeetings();
+        useMeetings(queryOptions);
     const { data: ceoDirectives = [], isFetching: isCeoDirectivesFetching } =
-        useCeoDirectives();
-    const { leads, demoRequests, isLoading: isLoadingLeads } = useLeads();
+        useCeoDirectives(queryOptions);
+    const { leads, demoRequests, isLoading: isLoadingLeads } = useLeads(queryOptions);
     const {
         ideas,
         isFetching: isIdeasFetching,
         toggleIdea: toggleIdeaMutation,
         disposeIdea: disposeIdeaMutation,
-    } = useIdeas();
+    } = useIdeas(queryOptions);
+    const { data: financialEntries = [] } = useFinancialEntries(queryOptions);
+    const { data: dailyReports = [] } = useDailyReports(queryOptions);
+    const { data: salesTargets } = useSalesTargets(queryOptions);
 
     // UI & Filter States
     const [taskTab, setTaskTab] = useState<
         "active" | "blocked" | "overdue" | "daily" | "completed"
     >("active");
     const [departmentFilter, setDepartmentFilter] = useState<
-        "ceo" | "administration" | "marketing" | "sales" | "accounts"
+        "ceo" | "administration" | "marketing" | "sales" | "finance"
     >("ceo");
     const [meetingFilter, setMeetingFilter] = useState<
         "upcoming" | "today" | "week"
     >("upcoming");
     const [currentTime, setCurrentTime] = useState(Date.now());
-    const [isRefreshing, setIsRefreshing] = useState(true);
+    const [isRefreshing, setIsRefreshing] = useState(false);
+    // Added for fast branded refresh
+    const [isSystemRefreshing, setIsSystemRefreshing] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
     const [isManageMode, setIsManageMode] = useState(false);
     const [showStaffOverview, setShowStaffOverview] = useState(false);
@@ -493,6 +570,9 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [deletingTaskIds, setDeletingTaskIds] = useState<Set<string>>(
         new Set(),
     );
+    const [escalatingTaskIds, setEscalatingTaskIds] = useState<Set<string>>(
+        new Set(),
+    );
     const [clearedNotifications, setClearedNotifications] = useState<
         Set<string>
     >(new Set());
@@ -513,6 +593,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const isVisibleRef = useRef(true);
     const lastValidProfileIdRef = useRef<string | null>(profile?.id || null);
 
+    // UA Messenger unread count (feeds the header button badge)
+    const [hqUnreadCount, setHqUnreadCount] = useState(0);
+    const [hqIsOpen, setHqIsOpen] = useState(false);
+
     // ============================================
     // 2. DERIVED STATE & MEMOS
     // ============================================
@@ -523,12 +607,63 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         return () => clearInterval(interval);
     }, []);
 
+    // UA Messenger unread count polling
+    useEffect(() => {
+        if (!profile?.id) return;
+        const fetchCount = async () => {
+            try {
+                const { count } = await supabase
+                    .from("notifications")
+                    .select("*", { count: "exact", head: true })
+                    .eq("user_id", profile.id)
+                    .eq("type", "direct")
+                    .eq("read", false);
+                setHqUnreadCount(count ?? 0);
+            } catch {}
+        };
+        fetchCount();
+        
+        // Listen for immediate messenger updates
+        window.addEventListener("hq-messenger-updated", fetchCount);
+        const interval = setInterval(fetchCount, 30000);
+        
+        return () => {
+            clearInterval(interval);
+            window.removeEventListener("hq-messenger-updated", fetchCount);
+        };
+    }, [profile?.id]);
+
+    // Sync hqIsOpen state with external toggle events
+    useEffect(() => {
+        const onToggle = () => setHqIsOpen(prev => !prev);
+        const onOpen = () => setHqIsOpen(true);
+        const onClose = () => setHqIsOpen(false);
+        window.addEventListener("toggle-hq-messenger", onToggle);
+        window.addEventListener("open-hq-messenger", onOpen);
+        window.addEventListener("close-hq-messenger", onClose);
+        return () => {
+            window.removeEventListener("toggle-hq-messenger", onToggle);
+            window.removeEventListener("open-hq-messenger", onOpen);
+            window.removeEventListener("close-hq-messenger", onClose);
+        };
+    }, []);
+
+
     // Update completedIdeas set when ideas change
     useEffect(() => {
         const completedIds = ideas
             .filter((idea: any) => idea.completed)
             .map((idea: any) => idea.id);
-        setCompletedIdeas(new Set(completedIds));
+
+        setCompletedIdeas((prev) => {
+            if (
+                prev.size === completedIds.length &&
+                completedIds.every((id) => prev.has(id))
+            ) {
+                return prev;
+            }
+            return new Set(completedIds);
+        });
     }, [ideas]);
 
     // Update profile ref
@@ -548,41 +683,67 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         });
     }, [ideas, currentTime]);
 
+    const deptFilteredTasks = useMemo(() => {
+        return tasks.filter(t => {
+            if (departmentFilter === "ceo") return true;
+            const assignee = staff.find((s) => s.id === t.assigned_to);
+            if (!assignee) return false;
+            const dept = assignee.department?.toLowerCase() || "";
+            switch (departmentFilter) {
+                case "sales":
+                    return dept === "sales";
+                case "marketing":
+                    return dept === "marketing";
+                case "finance":
+                    return dept === "finance" || dept === "accounts";
+                case "administration":
+                    return dept === "administration" || dept === "admin" || dept === "hr";
+                default:
+                    return false;
+            }
+        });
+    }, [tasks, departmentFilter, staff]);
+
+    const deptFilteredCompletedTasks = useMemo(() => {
+        return completedTasks.filter(t => {
+            if (departmentFilter === "ceo") return true;
+            const assignee = staff.find((s) => s.id === t.assigned_to);
+            if (!assignee) return false;
+            const dept = assignee.department?.toLowerCase() || "";
+            switch (departmentFilter) {
+                case "sales":
+                    return dept === "sales";
+                case "marketing":
+                    return dept === "marketing";
+                case "finance":
+                    return dept === "finance" || dept === "accounts";
+                case "administration":
+                    return dept === "administration" || dept === "admin" || dept === "hr";
+                default:
+                    return false;
+            }
+        });
+    }, [completedTasks, departmentFilter, staff]);
+
+    const deptOverdueCount = useMemo(() => {
+        return deptFilteredTasks.filter(t => t.due_date && new Date(t.due_date) < new Date() && t.status !== "completed").length;
+    }, [deptFilteredTasks]);
+
+    const deptCompletedCount = useMemo(() => {
+        return deptFilteredCompletedTasks.length;
+    }, [deptFilteredCompletedTasks]);
+
     // Optimize displayed tasks
     const displayedTasks = useMemo(() => {
-        if (taskTab === "completed") return completedTasks;
+        if (taskTab === "completed") return deptFilteredCompletedTasks;
 
-        return tasks.filter((t) => {
+        return deptFilteredTasks.filter((t) => {
             if (deletingTaskIds.has(t.id)) return false;
 
             const isOverdue = t.due_date && new Date(t.due_date) < new Date();
             const isDaily = t.is_daily_task === true || t.repeat_daily === true;
 
-            // Department filtering
-            if (departmentFilter !== "ceo") {
-                const assignee = staff.find((s) => s.id === t.assigned_to);
-                if (!assignee) return false;
-
-                const dept = assignee.department?.toLowerCase() || "";
-                switch (departmentFilter) {
-                    case "sales":
-                        return dept === "sales";
-                    case "marketing":
-                        return dept === "marketing";
-                    case "accounts":
-                        return dept === "accounts";
-                    case "administration":
-                        return (
-                            dept === "administration" ||
-                            dept === "admin" ||
-                            dept === "hr"
-                        );
-                    default:
-                        return false;
-                }
-            }
-
-            // CEO/My Tasks filter
+            // CEO/My Tasks filter (only apply if department is ceo)
             if (departmentFilter === "ceo") {
                 if (userRole === "MANAGER") {
                     const currentMe =
@@ -591,11 +752,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     const isAssignedToMe = t.assigned_to === currentMe;
                     if (!isAssignedByCeo || !isAssignedToMe) return false;
                 }
-
-                if (taskTab === "daily") return isDaily;
-                if (taskTab === "overdue") return isOverdue;
-                if (taskTab === "blocked") return t.priority === "urgent";
-                return !isOverdue && t.priority !== "urgent";
             }
 
             if (taskTab === "daily") return isDaily;
@@ -605,11 +761,10 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         });
     }, [
         taskTab,
-        tasks,
-        completedTasks,
+        deptFilteredTasks,
+        deptFilteredCompletedTasks,
         deletingTaskIds,
         departmentFilter,
-        staff,
         userRole,
         profile?.id,
     ]);
@@ -620,11 +775,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     const fetchData = useCallback(
         async (force = false, silent = false) => {
-            if (silent) {
-                console.log("[ExecutiveCommand] Silent background resync active. Refetches handled by query cache and throttled engine.");
-                return;
-            }
-            setIsRefreshing(true);
+            if (!silent) setIsRefreshing(true);
             try {
                 // High-speed parallel invalidation for manual refreshes
                 await queryClient.invalidateQueries({
@@ -634,44 +785,76 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         query.queryKey[0] === "requests" ||
                         query.queryKey[0] === "ideas" ||
                         query.queryKey[0] === "meetings" ||
-                        query.queryKey[0] === "ceo_directives",
+                        query.queryKey[0] === "ceo_directives" ||
+                        query.queryKey[0] === "financial-entries" ||
+                        query.queryKey[0] === "daily-reports" ||
+                        query.queryKey[0] === "sales-targets",
                 });
             } catch (e) {
                 console.error("Telemetry sync failed:", e);
             } finally {
-                setIsRefreshing(false);
+                if (!silent) setIsRefreshing(false);
             }
         },
         [queryClient],
     );
 
     const setupRealtime = useCallback(() => {
-        channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
+        // STRICT CLEANUP: Clear all existing channels before re-subscribing
+        if (channelsRef.current.length > 0) {
+            console.log("[ExecutiveCommand] Cleaning up existing realtime channels...");
+            channelsRef.current.forEach((ch) => {
+                if (ch) supabase.removeChannel(ch);
+            });
+            channelsRef.current = [];
+        }
 
+        // DEBOUNCED INVALIDATION: Prevent rapid-fire re-renders from postgres payloads
+        const invalidationLocks = {
+            tasks: false,
+            requests: false,
+            ideas: false
+        };
+
+        const throttledInvalidate = (key: 'tasks' | 'requests' | 'ideas') => {
+            if (invalidationLocks[key]) return;
+            invalidationLocks[key] = true;
+            
+            queryClient.invalidateQueries({ queryKey: [key] });
+            
+            // Release lock after 2 seconds to prevent overwhelming the UI
+            setTimeout(() => {
+                invalidationLocks[key] = false;
+            }, 2000);
+        };
+
+        const instanceId = Math.random().toString(36).substring(7);
         const taskChannel = supabase
-            .channel("tasks-updates")
+            .channel(`tasks-updates-exec-${instanceId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "tasks" },
-                () => queryClient.invalidateQueries({ queryKey: ["tasks"] }),
+                () => throttledInvalidate("tasks"),
             )
-            .subscribe();
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') console.log("Task Realtime: Subscribed");
+            });
 
         const requestChannel = supabase
-            .channel("requests-updates")
+            .channel(`requests-updates-exec-${instanceId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "requests" },
-                () => queryClient.invalidateQueries({ queryKey: ["requests"] }),
+                () => throttledInvalidate("requests"),
             )
             .subscribe();
 
         const ideaChannel = supabase
-            .channel("ideas-updates")
+            .channel(`ideas-updates-exec-${instanceId}`)
             .on(
                 "postgres_changes",
                 { event: "*", schema: "public", table: "ideas" },
-                () => queryClient.invalidateQueries({ queryKey: ["ideas"] }),
+                () => throttledInvalidate("ideas"),
             )
             .subscribe();
 
@@ -679,16 +862,73 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     }, [queryClient]);
 
     useEffect(() => {
+        if (loading || !profile?.id) {
+            return;
+        }
         setupRealtime();
-        return () =>
-            channelsRef.current.forEach((ch) => supabase.removeChannel(ch));
+        return () => {
+            console.log("[ExecutiveCommand] Unmounting: Removing all realtime channels");
+            if (channelsRef.current.length > 0) {
+                channelsRef.current.forEach((ch) => {
+                    if (ch) supabase.removeChannel(ch);
+                });
+                channelsRef.current = [];
+            }
+        };
+    }, [setupRealtime, loading, profile?.id]);
+
+    // 24/7 Resiliency & Smart Recovery Engine
+    useEffect(() => {
+        const performFullRefresh = () => {
+            console.log("[ExecutiveCommand] Triggering Resiliency Refresh...");
+            setIsSystemRefreshing(true);
+            
+            // Watchdog: Force reload after 3.5s if thread hangs
+            const watchdog = setTimeout(() => {
+                window.location.reload();
+            }, 3500);
+
+            // Give the UI a tiny moment to show the branded overlay
+            setTimeout(() => {
+                window.location.reload();
+            }, 150);
+
+            return () => clearTimeout(watchdog);
+        };
+
+        const handleGlobalError = (event: ErrorEvent | PromiseRejectionEvent) => {
+            const message = (event as any).message || (event as any).reason?.message || "";
+            if (message.includes("ChunkLoadError") || message.includes("Loading chunk")) {
+                performFullRefresh();
+            }
+        };
+
+        window.addEventListener("error", handleGlobalError);
+        window.addEventListener("unhandledrejection", handleGlobalError);
+
+        return () => {
+            window.removeEventListener("error", handleGlobalError);
+            window.removeEventListener("unhandledrejection", handleGlobalError);
+        };
+    }, []);
+
+    const handleResync = useCallback(() => {
+        // Manual refresh if needed, but we rely on query invalidation
+        fetchData(true, true);
+    }, [fetchData]);
+
+    const handleReconnect = useCallback(() => {
+        console.log(
+            "[ExecutiveCommand] Tab Focus: Re-establishing stable realtime connection",
+        );
+        setupRealtime();
     }, [setupRealtime]);
 
     useTabResiliency(
-        () => fetchData(true, true),
+        handleResync,
         isRefreshing,
         setIsRefreshing,
-        () => setupRealtime(),
+        handleReconnect,
     );
 
     // Toggle completion status
@@ -762,35 +1002,38 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const [showAssigneeDropdown, setShowAssigneeDropdown] = useState(false);
 
     // LIVE OPERATIONS DATA
+    // Optimization: Debounce or throttle the activity feed calculation if necessary,
+    // but for now, we'll ensure it only re-calculates on meaningful data changes.
     const activities = useMemo(() => {
-        const items: any[] = [
-            // Escalations (Urgent Tasks)
-            ...tasks
-                .filter(
-                    (t) =>
-                        t.priority === "urgent" && !(t as any).signal_cleared,
-                )
-                .map((t) => ({
+        // Optimization: Use a smaller subset of data if the lists are huge
+        // and only process items that are actually needed for the signal feed.
+        const items: any[] = [];
+        
+        // 1. Escalations (High Priority)
+        tasks.forEach(t => {
+            if ((t.priority === "urgent" || (isV2Enabled && t.is_escalated)) && !(t as any).signal_cleared) {
+                items.push({
                     id: `esc-${t.id}`,
                     category: "escalation",
-                    title: "Operation Escalated",
-                    description: `Urgent: ${t.title}`,
+                    title: t.is_escalated ? "Critical Escalation" : "Operation Escalated",
+                    description: t.is_escalated 
+                        ? `OPERATION ESCALATED: "${t.title}" is critically overdue!` 
+                        : `Urgent: ${t.title}`,
                     time: t.updated_at || t.created_at,
                     icon: AlertCircle,
                     color: "#ef4444",
                     colorType: "red",
                     priority: "high",
-                })),
+                });
+            }
+        });
 
-            // New Staff Members
-            ...staff
-                .filter((s) => {
-                    const createdAt = new Date(s.created_at);
-                    const twoDaysAgo = new Date();
-                    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-                    return createdAt > twoDaysAgo && !(s as any).signal_cleared;
-                })
-                .map((s) => ({
+        // 2. Staff (Recently Joined)
+        const twoDaysAgo = new Date();
+        twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+        staff.forEach(s => {
+            if (new Date(s.created_at) > twoDaysAgo && !(s as any).signal_cleared) {
+                items.push({
                     id: `staff-${s.id}`,
                     category: "staff",
                     title: "New Operative",
@@ -800,17 +1043,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     color: "#06b6d4",
                     colorType: "cyan",
                     priority: "medium",
-                })),
+                });
+            }
+        });
 
-            // Tasks (Normal/Pending) - Show all new assignments
-            ...tasks
-                .filter(
-                    (t) =>
-                        t.priority !== "urgent" &&
-                        t.status === "pending" &&
-                        !(t as any).signal_cleared,
-                )
-                .map((t) => ({
+        // 3. New Task Assignments
+        tasks.forEach(t => {
+            if (t.priority !== "urgent" && t.status === "pending" && !(t as any).signal_cleared) {
+                items.push({
                     id: `task-${t.id}`,
                     category: "task",
                     title: "Task Dispatched",
@@ -820,13 +1060,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     color: "#3b82f6",
                     colorType: "blue",
                     priority: "medium",
-                })),
+                });
+            }
+        });
 
-            // Completed Tasks (Recent)
-            ...completedTasks
-                .filter((t) => !(t as any).signal_cleared)
-                .slice(0, 5)
-                .map((t) => ({
+        // 4. Completed Tasks
+        completedTasks.slice(0, 10).forEach(t => {
+            if (!(t as any).signal_cleared) {
+                items.push({
                     id: `completed-${t.id}`,
                     category: "completed",
                     title: "Mission Complete",
@@ -836,75 +1077,62 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     color: "#10b981",
                     colorType: "green",
                     priority: "low",
-                })),
+                });
+            }
+        });
 
-            // New Leads
-            ...leads
-                .filter((l) => l.status === "new" && !(l as any).signal_cleared)
-                .map((l) => ({
-                    id: `lead-${l.id}`,
-                    category: "lead",
-                    title: "New Lead",
-                    description: `${l.lead_name}`,
-                    time: l.created_at,
-                    icon: UserPlus,
-                    color: "#f59e0b",
-                    colorType: "amber",
-                    priority: "medium",
-                })),
+        // 5. Leads & Conversions
+        leads.forEach(l => {
+            if (!(l as any).signal_cleared) {
+                if (l.status === "new") {
+                    items.push({
+                        id: `lead-${l.id}`,
+                        category: "lead",
+                        title: "New Lead",
+                        description: `${l.lead_name}`,
+                        time: l.created_at,
+                        icon: UserPlus,
+                        color: "#f59e0b",
+                        colorType: "amber",
+                        priority: "medium",
+                    });
+                } else if (l.status === "converted") {
+                    items.push({
+                        id: `pay-${l.id}`,
+                        category: "payment",
+                        title: "Payment Received",
+                        description: `Lead conversion: ${l.lead_name}`,
+                        time: l.updated_at || l.created_at,
+                        icon: DollarSign,
+                        color: "#10b981",
+                        colorType: "green",
+                        priority: "high",
+                    });
+                }
+            }
+        });
 
-            // Payments (Converted Leads)
-            ...leads
-                .filter(
-                    (l) =>
-                        l.status === "converted" && !(l as any).signal_cleared,
-                )
-                .map((l) => ({
-                    id: `pay-${l.id}`,
-                    category: "payment",
-                    title: "Payment Received",
-                    description: `Lead conversion: ${l.lead_name}`,
-                    time: l.updated_at || l.created_at,
-                    icon: DollarSign,
-                    color: "#10b981",
-                    colorType: "green",
-                    priority: "high",
-                })),
-
-            // Leave Requests
-            ...requests
-                .filter((r) => r.type === "leave" && !(r as any).signal_cleared)
-                .map((r) => ({
-                    id: `leave-${r.id}`,
-                    category: "leave",
-                    title: "Leave Requested",
+        // 6. Requests
+        requests.forEach(r => {
+            if (!(r as any).signal_cleared) {
+                items.push({
+                    id: `${r.type === 'leave' ? 'leave' : 'req'}-${r.id}`,
+                    category: r.type === 'leave' ? "leave" : "request",
+                    title: r.type === 'leave' ? "Leave Requested" : "Resource Request",
                     description: `${r.title} by ${staff.find((s) => s.id === r.submitted_by)?.full_name || "Operative"}`,
                     time: r.created_at,
-                    icon: Calendar,
-                    color: "#f97316",
-                    colorType: "orange",
+                    icon: r.type === 'leave' ? Calendar : Package,
+                    color: r.type === 'leave' ? "#f97316" : "#8b5cf6",
+                    colorType: r.type === 'leave' ? "orange" : "purple",
                     priority: "medium",
-                })),
+                });
+            }
+        });
 
-            // Other Requests (Equipment, etc.)
-            ...requests
-                .filter((r) => r.type !== "leave" && !(r as any).signal_cleared)
-                .map((r) => ({
-                    id: `req-${r.id}`,
-                    category: "request",
-                    title: "Resource Request",
-                    description: `${r.title} by ${staff.find((s) => s.id === r.submitted_by)?.full_name || "Operative"}`,
-                    time: r.created_at,
-                    icon: Package,
-                    color: "#8b5cf6",
-                    colorType: "purple",
-                    priority: "medium",
-                })),
-
-            // Ideas
-            ...ideas
-                .filter((i) => !(i as any).signal_cleared)
-                .map((i) => ({
+        // 7. Ideas
+        ideas.forEach(i => {
+            if (!(i as any).signal_cleared) {
+                items.push({
                     id: `idea-${i.id}`,
                     category: "idea",
                     title: "Strategic Idea",
@@ -914,12 +1142,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     color: "#8b5cf6",
                     colorType: "purple",
                     priority: "medium",
-                })),
+                });
+            }
+        });
 
-            // Demo Scheduling
-            ...demoRequests
-                .filter((d) => !(d as any).signal_cleared)
-                .map((d) => ({
+        // 8. Demo Requests
+        demoRequests.forEach(d => {
+            if (!(d as any).signal_cleared) {
+                items.push({
                     id: `demo-${d.id}`,
                     category: "task",
                     title: "Demo Scheduled",
@@ -929,28 +1159,37 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     color: "#3b82f6",
                     colorType: "blue",
                     priority: "medium",
-                })),
-        ];
+                });
+            }
+        });
+
+        // 9. Upcoming Meetings
+        meetings.forEach(m => {
+            if (!(m as any).signal_cleared) {
+                items.push({
+                    id: `meeting-${m.id}`,
+                    category: "meeting",
+                    title: "Strategic Session",
+                    description: m.title,
+                    time: m.scheduled_at,
+                    icon: Video,
+                    color: "#6366f1",
+                    colorType: "indigo",
+                    priority: "medium",
+                });
+            }
+        });
 
         return items
             .filter((item) => !clearedNotifications.has(item.id))
             .sort((a, b) => {
-                // Sort by priority first, then by time
                 const priorityOrder = { high: 3, medium: 2, low: 1 };
-                const aPriority =
-                    priorityOrder[a.priority as keyof typeof priorityOrder] ||
-                    1;
-                const bPriority =
-                    priorityOrder[b.priority as keyof typeof priorityOrder] ||
-                    1;
-
-                if (aPriority !== bPriority) {
-                    return bPriority - aPriority;
-                }
-
+                const aPriority = priorityOrder[a.priority as keyof typeof priorityOrder] || 1;
+                const bPriority = priorityOrder[b.priority as keyof typeof priorityOrder] || 1;
+                if (aPriority !== bPriority) return bPriority - aPriority;
                 return new Date(b.time).getTime() - new Date(a.time).getTime();
             })
-            .slice(0, 50); // Increased from 20 to 50
+            .slice(0, 30);
     }, [
         tasks,
         ideas,
@@ -961,6 +1200,7 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         completedTasks,
         meetings,
         clearedNotifications,
+        isV2Enabled,
     ]);
 
     // Clear Signal Feed
@@ -1066,10 +1306,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         }
     };
 
-    useEffect(() => {
-        if (profile?.id) lastValidProfileIdRef.current = profile.id;
-    }, [profile?.id]);
-
     // Fetch data when view becomes active
     useEffect(() => {
         const isVisible = currentView === "command-center" || !currentView;
@@ -1082,30 +1318,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
 
     // Visibility and Initial Load
     useEffect(() => {
-        let isMounted = true;
-
-        const handleFocusResync = () => {
-            if (!document.hidden && isMounted && isVisibleRef.current) {
-                console.log("Tab focused - triggering silent resync");
-                fetchData(true, true);
-                setupRealtime();
-            }
-        };
-
-        // Initial load
+        // Initial load only
         if (profile?.id) {
+            console.log("[ExecutiveCommand] Initializing dashboard data and realtime channels...");
             fetchData(false, false);
             setupRealtime();
         }
-
-        window.addEventListener("focus", handleFocusResync);
-        document.addEventListener("visibilitychange", handleFocusResync);
-
-        return () => {
-            isMounted = false;
-            window.removeEventListener("focus", handleFocusResync);
-            document.removeEventListener("visibilitychange", handleFocusResync);
-        };
     }, [profile?.id, fetchData, setupRealtime]);
 
     // Listen for FAB actions from mobile FAB component
@@ -1139,93 +1357,133 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     }, []);
 
     // Computed Stats
+    // Optimization: Pre-calculate metrics to avoid multiple passes over large arrays.
     const stats = useMemo(() => {
-        // Sort staff by availability: AVAILABLE ??? BUSY ??? IDLE ??? OFFLINE
+        const todayStr = new Date().toISOString().split("T")[0];
+        const nowTime = new Date().getTime();
+
+        // Single pass over staff
+        let staffOnline = 0;
         const sortedStaff = [...staff].sort((a, b) => {
             const priority = { online: 0, busy: 1, away: 2, offline: 3 };
             return (priority[a.status] ?? 4) - (priority[b.status] ?? 4);
         });
+        
+        sortedStaff.forEach(s => {
+            if (s.status === "online" || s.status === "busy") staffOnline++;
+        });
 
-        const staffOnline = sortedStaff.filter(
-            (s) => s.status === "online" || s.status === "busy",
-        ).length;
-
-        const recentRequests = requests.filter((r) => {
+        // Single pass over requests
+        let decisionsPending = 0;
+        let hasCriticalRequest = false;
+        let leavesRequestedToday = 0;
+        
+        requests.forEach(r => {
             const created = new Date(r.created_at).getTime();
-            const now = new Date().getTime();
-            return now - created < 24 * 60 * 60 * 1000;
+            if (nowTime - created < 24 * 60 * 60 * 1000) {
+                decisionsPending++;
+                if (r.priority === "high" || r.priority === "urgent") hasCriticalRequest = true;
+            }
+            if (r.type === "leave" && r.created_at.startsWith(todayStr)) {
+                leavesRequestedToday++;
+            }
         });
 
         let systemStatus: SystemStatus = "STABLE";
-        if (recentRequests.length > 5) systemStatus = "WARNING";
-        if (
-            recentRequests.some(
-                (r) => r.priority === "high" || r.priority === "urgent",
-            )
-        )
-            systemStatus = "CRITICAL";
+        if (decisionsPending > 5) systemStatus = "WARNING";
+        if (hasCriticalRequest) systemStatus = "CRITICAL";
 
-        // Calculate overdue tasks
-        const allOverdueTasks = tasks.filter(
-            (t) =>
-                t.due_date &&
-                new Date(t.due_date) < new Date() &&
-                t.status !== "completed",
-        );
+        // Single pass over tasks
+        let overdueCount = 0;
+        let tasksAssignedToday = 0;
+        let activeBlockers = 0;
+        
+        tasks.forEach(t => {
+            if (t.due_date && new Date(t.due_date) < new Date() && t.status !== "completed") {
+                overdueCount++;
+            }
+            if (t.created_at.startsWith(todayStr)) {
+                tasksAssignedToday++;
+            }
+            if (t.priority === "urgent" && t.status !== "completed") {
+                activeBlockers++;
+            }
+        });
 
-        const todayStr = new Date().toISOString().split("T")[0];
+        // Leads metrics
+        let paymentsReceivedToday = 0;
+        let newLeadsToday = 0;
+        leads.forEach(l => {
+            const dateStr = (l.updated_at || l.created_at).startsWith(todayStr);
+            if (l.status === "converted" && dateStr) paymentsReceivedToday++;
+            if (l.created_at.startsWith(todayStr)) newLeadsToday++;
+        });
 
-        // Today Summary Metrics
-        const tasksAssignedToday = tasks.filter((t) =>
-            t.created_at.startsWith(todayStr),
-        ).length;
-        const paymentsReceivedToday = leads.filter(
-            (l) =>
-                l.status === "converted" &&
-                (l.updated_at || l.created_at).startsWith(todayStr),
-        ).length;
-        const leavesRequestedToday = requests.filter(
-            (r) => r.type === "leave" && r.created_at.startsWith(todayStr),
-        ).length;
-        const newLeadsToday = leads.filter((l) =>
-            l.created_at.startsWith(todayStr),
-        ).length;
-
-        // Specialized Metrics for Manager
-        const activeBlockers = tasks.filter(
-            (t) => t.priority === "urgent" && t.status !== "completed",
-        ).length;
-
-        // Operational Velocity Calculation
+        // Velocity Calculation
         const completedTodayCount = completedTasks.filter((t) => {
             const updatedDate = new Date(t.updated_at || t.created_at)
                 .toISOString()
                 .split("T")[0];
             return updatedDate === todayStr;
         }).length;
+        
         const totalToday = tasks.length + completedTodayCount;
-        const operationalVelocity =
-            totalToday > 0
-                ? Math.round((completedTodayCount / totalToday) * 100)
-                : 0;
+        
+        // Use v2 velocity aggregation engine if enabled
+        const isV2Enabled = process.env.NEXT_PUBLIC_ENABLE_V2_FEATURES === "true" || (typeof window !== "undefined" && window.localStorage.getItem("ENABLE_V2_FEATURES") === "true");
+        const v2Metrics = isV2Enabled ? computeVelocityMetrics(tasks, completedTasks) : null;
+        const operationalVelocity = v2Metrics 
+            ? v2Metrics.velocityScore 
+            : (totalToday > 0 ? Math.round((completedTodayCount / totalToday) * 100) : 0);
+
+        // Financial metrics (Current calendar month balance)
+        const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
+        const monthEntries = financialEntries.filter((entry: any) =>
+            entry.entry_date.startsWith(currentMonthStr)
+        );
+        const monthUloomx = monthEntries.reduce(
+            (sum: number, entry: any) => sum + (parseFloat(entry.uloomx_income) || 0),
+            0
+        );
+        const monthUsthad = monthEntries.reduce(
+            (sum: number, entry: any) => sum + (parseFloat(entry.usthad_income) || 0),
+            0
+        );
+        const monthExpenses = monthEntries.reduce(
+            (sum: number, entry: any) => sum + (parseFloat(entry.total_expenses) || 0),
+            0
+        );
+        const currentMonthBalance = monthUloomx + monthUsthad - monthExpenses;
+
+        // Sales metrics (Current calendar month conversions)
+        const currentMonthReports = dailyReports.filter((report: any) =>
+            report.report_date.startsWith(currentMonthStr)
+        );
+        const currentMonthConversions = currentMonthReports.reduce(
+            (sum: number, r: any) => sum + (r.conversions || 0),
+            0
+        );
+        const conversionTarget = salesTargets?.conversion_target ?? 15;
 
         return {
             systemStatus,
-            decisionsPending: recentRequests.length,
+            decisionsPending,
             staffOnline,
             staffTotal: staff.length,
             tasksInProgress: tasks.length,
-            recentRequests,
             sortedStaff,
-            overdueCount: allOverdueTasks.length,
+            overdueCount,
             tasksAssignedToday,
             paymentsReceivedToday,
             leavesRequestedToday,
             newLeadsToday,
             activeBlockers,
             operationalVelocity,
+            currentMonthBalance,
+            currentMonthConversions,
+            conversionTarget,
         };
-    }, [staff, requests, tasks, leads, completedTasks]);
+    }, [staff, requests, tasks, leads, completedTasks, financialEntries, dailyReports, salesTargets]);
 
     const disposeIdea = async (id: string) => {
         console.log("Dispose idea called with ID:", id);
@@ -1314,25 +1572,45 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                 if (error) throw error;
             };
 
-            await Promise.race([
-                executeInsert(),
-                new Promise((_, reject) =>
-                    setTimeout(
-                        () =>
-                            reject(
-                                new Error(
-                                    "Network timeout: The server took too long to respond. The task is queued.",
-                                ),
+            const insertPromise = executeInsert();
+            const timeoutPromise = new Promise((_, reject) =>
+                setTimeout(
+                    () =>
+                        reject(
+                            new Error(
+                                "Network timeout: The server took too long to respond. The task is queued.",
                             ),
-                        15000,
-                    ),
+                        ),
+                    15000,
                 ),
-            ]);
+            );
+
+            // Catch potential unhandled rejections if either promise settles after the race completes
+            insertPromise.catch((err) => {
+                console.warn("Task insert finished after timeout with error:", err);
+            });
+            timeoutPromise.catch(() => {});
+
+            await Promise.race([insertPromise, timeoutPromise]);
 
             console.log("Task assigned successfully");
             toast.success(
                 draft ? "DRAFT SAVED" : "✓ Task assigned successfully",
             );
+
+            // Notify assignee of the new task assignment via OneSignal push notification
+            if (!draft && insertPayload.assigned_to && insertPayload.assigned_to !== profile?.id) {
+                fetch("/api/messenger/send", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        recipientId: insertPayload.assigned_to,
+                        messageText: `Assigned new task: "${insertPayload.title}".`,
+                        senderName: "UA Command Link"
+                    })
+                }).catch(err => console.error("OneSignal push notification dispatch failed:", err));
+            }
+
             queryClient.invalidateQueries({ queryKey: ["tasks"] });
             fetchData();
         } catch (error: any) {
@@ -1419,33 +1697,37 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         if (!staffToRemove) return;
 
         try {
-            // 1. Unassign active tasks
-            await supabase
-                .from("tasks")
-                .update({ assigned_to: null })
-                .eq("assigned_to", staffToRemove.id);
+            // 1. Delete avatar from storage if it exists
+            if (staffToRemove.avatar_url && staffToRemove.avatar_url.includes('/storage/v1/object/public/')) {
+                try {
+                    await deleteFile('avatars', staffToRemove.avatar_url);
+                } catch (e) {
+                    console.warn("Failed to delete staff avatar from storage during termination:", e);
+                }
+            }
 
-            // 2. Permanently delete from database
-            const { error } = await supabase
-                .from("profiles")
-                .delete()
-                .eq("id", staffToRemove.id);
+            const uid = staffToRemove.id;
 
-            if (error) {
-                // Fallback to soft delete if FK constraint hits or other issue
-                await supabase
-                    .from("profiles")
-                    .update({ full_name: "[DELETED]", status: "offline" })
-                    .eq("id", staffToRemove.id);
+            // 2. Call the database function to cascade delete the staff profile, auth user, and all relations
+            const { data: rpcSuccess, error: rpcError } = await supabase.rpc('delete_profile_cascade', {
+                profile_uuid: uid
+            });
+
+            if (rpcError) {
+                throw new Error(rpcError.message || "Failed to purge staff records");
             }
 
             toast.success("OPERATIVE TERMINATED & DATA PURGED");
-            queryClient.invalidateQueries({ queryKey: ["staff"] });
             setIsRemoveStaffModalOpen(false);
             setStaffToRemove(null);
             setConfirmName("");
-        } catch (e) {
-            toast.error("Termination failed");
+            
+            // Force refresh all dashboard data
+            queryClient.invalidateQueries();
+            fetchData();
+        } catch (e: any) {
+            console.error("Deletion error:", e);
+            toast.error(e.message || "Failed to delete staff member permanently");
         }
     };
 
@@ -1888,6 +2170,44 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
         }
     };
 
+    const escalateTask = async (id: string) => {
+        try {
+            console.log("Escalating task:", id);
+            setEscalatingTaskIds((prev) => {
+                const next = new Set(prev);
+                next.add(id);
+                return next;
+            });
+
+            const response = await fetch("/api/tasks/escalate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ taskId: id }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || "Failed to escalate task");
+            }
+
+            toast.success("Task escalated to Core operations!");
+            // Invalidate queries to trigger real-time refresh instantly
+            queryClient.invalidateQueries({ queryKey: ["tasks"] });
+            fetchData();
+        } catch (error: any) {
+            console.error("Escalation exception:", error);
+            toast.error(error.message || "Something went wrong escalating the task");
+        } finally {
+            setEscalatingTaskIds((prev) => {
+                const next = new Set(prev);
+                next.delete(id);
+                return next;
+            });
+        }
+    };
+
     const clearAllCompletedTasks = async () => {
         if (
             !confirm(
@@ -1982,17 +2302,37 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
     const sendChatMessage = async () => {
         if (!selectedStaffForChat || !chatMessage.trim()) return;
 
-        await supabase.from("notifications").insert({
-            user_id: selectedStaffForChat.id,
-            title: "URGENT MESSAGE FROM CEO",
-            message: chatMessage.trim(),
-            type: "message",
-        });
+        try {
+            const { data: { session } } = await supabase.auth.getSession();
+            const token = session?.access_token;
 
-        toast.success(`Message sent to ${selectedStaffForChat.full_name}`);
-        setChatMessage("");
-        setIsChatModalOpen(false);
-        setSelectedStaffForChat(null);
+            const response = await fetch("/api/send-message", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { "Authorization": `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                    user_id: selectedStaffForChat.id,
+                    title: `MESSAGE FROM ${profile?.full_name?.toUpperCase() || "CEO"}`,
+                    message: `[sender_id:${profile?.id || ""}] ${chatMessage.trim()}`,
+                    type: "direct",
+                }),
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || "Failed to dispatch message");
+            }
+
+            toast.success(`Message sent to ${selectedStaffForChat.full_name}`);
+            setChatMessage("");
+            setIsChatModalOpen(false);
+            setSelectedStaffForChat(null);
+        } catch (error: any) {
+            console.error("Failed to send message:", error);
+            toast.error(error.message || "Failed to send message");
+        }
     };
 
     const openChatModal = (staff: Profile) => {
@@ -2132,6 +2472,56 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </h1>
                     </div>
 
+                    {/* ✦ UA Messenger Header Button — fires toggle-hq-messenger event */}
+                    {(() => {
+                        const hasUnread = hqUnreadCount > 0;
+                        return (
+                            <>
+                                <style>{`
+                                    @keyframes hq-header-bell {
+                                        0%, 80%, 100% { transform: rotate(0deg); }
+                                        85% { transform: rotate(-12deg); }
+                                        90% { transform: rotate(11deg); }
+                                        95% { transform: rotate(-8deg); }
+                                    }
+                                    .hq-header-bell-shake {
+                                        animation: hq-header-bell 2.5s ease-in-out infinite;
+                                        transform-origin: top center;
+                                    }
+                                `}</style>
+                                <button
+                                    onClick={() => window.dispatchEvent(new CustomEvent("toggle-hq-messenger"))}
+                                    className={`relative hidden md:flex items-center gap-2.5 pl-3.5 pr-4 py-1.5 rounded-full border transition-all duration-300 group shadow-sm hover:scale-[1.03] active:scale-95 ${
+                                        hqIsOpen
+                                            ? 'bg-[#31267D] border-[#31267D] text-white shadow-md shadow-[#31267D]/25'
+                                            : hasUnread
+                                                ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-700 text-[#F14D24] shadow-orange-200/60 dark:shadow-orange-800/30'
+                                                : 'bg-white/60 dark:bg-zinc-800/60 border-white/50 dark:border-zinc-700/60 text-slate-600 dark:text-zinc-300 hover:bg-white dark:hover:bg-zinc-800 hover:border-[#31267D]/30'
+                                    }`}
+                                    title="UA Messenger"
+                                >
+                                    <Bell className={`w-3.5 h-3.5 flex-shrink-0 ${
+                                        hasUnread && !hqIsOpen ? 'hq-header-bell-shake' : ''
+                                    } ${hqIsOpen ? 'text-white' : hasUnread ? 'text-[#F14D24]' : 'text-slate-500 dark:text-zinc-400 group-hover:text-[#31267D]'}`} />
+                                    <span className={`text-[10px] font-black uppercase tracking-[0.15em] whitespace-nowrap ${
+                                        hqIsOpen ? 'text-white' : hasUnread ? 'text-[#F14D24]' : 'text-slate-600 dark:text-zinc-300 group-hover:text-[#31267D]'
+                                    }`}>
+                                        UA Messenger
+                                    </span>
+                                    {hasUnread && (
+                                        <span className={`flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[9px] font-black shadow-sm ${
+                                            hqIsOpen
+                                                ? 'bg-white/25 text-white border border-white/30'
+                                                : 'bg-[#F14D24] text-white shadow-orange-500/30'
+                                        }`}>
+                                            {hqUnreadCount > 9 ? '9+' : hqUnreadCount}
+                                        </span>
+                                    )}
+                                </button>
+                            </>
+                        );
+                    })()}
+
                     <ThemeToggle />
 
                     <Button
@@ -2198,12 +2588,6 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </p>
                         <div className="flex items-baseline gap-1">
                             <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
-                                {stats.staffOnline}
-                            </h2>
-                            <span className="text-slate-300 dark:text-zinc-700 font-bold">
-                                /
-                            </span>
-                            <h2 className="text-xl font-black text-slate-400 dark:text-zinc-500 tracking-tighter">
                                 {stats.staffTotal}
                             </h2>
                         </div>
@@ -2308,13 +2692,15 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </div>
                         <div>
                             <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">
-                                Today's Revenue
+                                Current Month Balance
                             </p>
                             <h2 className="text-2xl font-black text-emerald-600 dark:text-emerald-400 tracking-tighter">
-                                $
-                                {(
-                                    stats.paymentsReceivedToday * 250
-                                ).toLocaleString()}
+                                {new Intl.NumberFormat("en-IN", {
+                                    style: "currency",
+                                    currency: "INR",
+                                    minimumFractionDigits: 0,
+                                    maximumFractionDigits: 0,
+                                }).format(stats.currentMonthBalance)}
                             </h2>
                         </div>
                     </div>
@@ -2368,17 +2754,17 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         </div>
                         <div>
                             <p className="text-[10px] font-black text-slate-400 dark:text-zinc-400 uppercase tracking-[0.2em] mb-1 italic">
-                                Market Conversion
+                                Current Month Conversions
                             </p>
                             <div className="flex items-baseline gap-1">
                                 <h2 className="text-2xl font-black text-slate-900 dark:text-zinc-100 tracking-tighter">
-                                    {stats.newLeadsToday}
+                                    {stats.currentMonthConversions}
                                 </h2>
                                 <span className="text-slate-300 dark:text-zinc-700 font-black">
                                     /
                                 </span>
                                 <h2 className="text-xl font-black text-blue-600 dark:text-blue-400 tracking-tighter">
-                                    {stats.paymentsReceivedToday}
+                                    {stats.conversionTarget}
                                 </h2>
                             </div>
                         </div>
@@ -2588,71 +2974,80 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                         color="bg-amber-500"
                     />
 
-                    {departmentFilter === "ceo" && (
-                        <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1.5 bg-white/40 dark:bg-zinc-800/40 rounded-2xl border border-white/50 dark:border-zinc-700/50 w-full md:w-fit overflow-x-auto scrollbar-hide shadow-inner">
-                            <button
-                                onClick={() => setTaskTab("active")}
-                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                    taskTab === "active"
-                                        ? "bg-theme-bg-white text-theme-inv-text shadow-lg"
-                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
-                                }`}
-                            >
-                                Active
-                            </button>
-                            <button
-                                onClick={() => setTaskTab("blocked")}
-                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                    taskTab === "blocked"
-                                        ? "bg-red-500 text-theme-text shadow-lg shadow-red-500/20"
-                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
-                                }`}
-                            >
-                                Urgent
-                            </button>
-                            <button
-                                onClick={() => setTaskTab("overdue")}
-                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                    taskTab === "overdue"
-                                        ? "bg-amber-500 text-theme-inv-text shadow-lg shadow-amber-500/20"
-                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
-                                }`}
-                            >
-                                Overdue
-                            </button>
-                            <button
-                                onClick={() => setTaskTab("completed")}
-                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 flex items-center gap-2 ${
-                                    taskTab === "completed"
-                                        ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
-                                }`}
-                            >
-                                Completed
-                                {completedTasks.length > 0 && (
-                                    <span
-                                        className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] inline-flex items-center justify-center font-black transition-all ${
-                                            taskTab === "completed"
-                                                ? "bg-white/20 text-white"
-                                                : "bg-blue-600/90 text-white shadow-sm"
-                                        }`}
-                                    >
-                                        {completedTasks.length}
-                                    </span>
-                                )}
-                            </button>
-                            <button
-                                onClick={() => setTaskTab("daily")}
-                                className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                    taskTab === "daily"
-                                        ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
-                                        : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
-                                }`}
-                            >
-                                Daily Tasks
-                            </button>
-                        </div>
-                    )}
+                    <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1.5 bg-white/40 dark:bg-zinc-800/40 rounded-2xl border border-white/50 dark:border-zinc-700/50 w-full md:w-fit overflow-x-auto scrollbar-hide shadow-inner">
+                        <button
+                            onClick={() => setTaskTab("active")}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
+                                taskTab === "active"
+                                    ? "bg-theme-bg-white text-theme-inv-text shadow-lg"
+                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                            }`}
+                        >
+                            Active
+                        </button>
+                        <button
+                            onClick={() => setTaskTab("blocked")}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
+                                taskTab === "blocked"
+                                    ? "bg-red-500 text-theme-text shadow-lg shadow-red-500/20"
+                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                            }`}
+                        >
+                            Urgent
+                        </button>
+                        <button
+                            onClick={() => setTaskTab("overdue")}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 flex items-center gap-2 ${
+                                taskTab === "overdue"
+                                    ? "bg-amber-500 text-theme-inv-text shadow-lg shadow-amber-500/20"
+                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                            }`}
+                        >
+                            Overdue
+                            {deptOverdueCount > 0 && (
+                                <span
+                                    className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] inline-flex items-center justify-center font-black transition-all ${
+                                        taskTab === "overdue"
+                                            ? "bg-white/20 text-theme-inv-text"
+                                            : "bg-red-600/90 text-white shadow-sm"
+                                    }`}
+                                >
+                                    {deptOverdueCount}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setTaskTab("completed")}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 flex items-center gap-2 ${
+                                taskTab === "completed"
+                                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
+                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                            }`}
+                        >
+                            Completed
+                            {deptCompletedCount > 0 && (
+                                <span
+                                    className={`text-[9px] px-1.5 py-0.5 rounded-full min-w-[16px] inline-flex items-center justify-center font-black transition-all ${
+                                        taskTab === "completed"
+                                            ? "bg-white/20 text-white"
+                                            : "bg-blue-600/90 text-white shadow-sm"
+                                    }`}
+                                >
+                                    {deptCompletedCount}
+                                </span>
+                            )}
+                        </button>
+                        <button
+                            onClick={() => setTaskTab("daily")}
+                            className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
+                                taskTab === "daily"
+                                    ? "bg-purple-500 text-white shadow-lg shadow-purple-500/20"
+                                    : "text-theme-text-40 hover:text-theme-text hover:bg-theme-bg-white-10"
+                            }`}
+                        >
+                            Daily Tasks
+                        </button>
+                    </div>
 
                     {/* Department Filters */}
                     <div className="flex flex-wrap gap-1.5 md:gap-2 mb-2 p-1.5 bg-white/40 dark:bg-zinc-800/40 rounded-2xl border border-white/50 dark:border-zinc-700/50 w-full md:w-fit overflow-x-auto scrollbar-hide shadow-inner">
@@ -2699,14 +3094,14 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                             Sales
                         </button>
                         <button
-                            onClick={() => setDepartmentFilter("accounts")}
+                            onClick={() => setDepartmentFilter("finance")}
                             className={`px-3 md:px-4 py-1.5 md:py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap flex-shrink-0 ${
-                                departmentFilter === "accounts"
+                                departmentFilter === "finance"
                                     ? "bg-blue-500 text-white shadow-lg shadow-blue-500/20"
                                     : "text-slate-400 dark:text-zinc-500 hover:text-slate-900 dark:hover:text-zinc-100"
                             }`}
                         >
-                            Accounts
+                            Finance
                         </button>
                     </div>
 
@@ -2740,22 +3135,11 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                   <span>
                                                       {taskTab === "completed"
                                                           ? "Archive cleared"
-                                                          : departmentFilter ===
-                                                              "ceo"
+                                                          : departmentFilter === "ceo"
                                                             ? "No active operations identified"
-                                                            : departmentFilter ===
-                                                                "sales"
-                                                              ? "Sales sector quiet"
-                                                              : departmentFilter ===
-                                                                  "marketing"
-                                                                ? "Marketing sector quiet"
-                                                                : departmentFilter ===
-                                                                    "accounts"
-                                                                  ? "Accounts sector quiet"
-                                                                  : departmentFilter ===
-                                                                      "administration"
-                                                                    ? "Admin sector quiet"
-                                                                    : "Awaiting task deployment..."}
+                                                            : departmentFilter === "finance"
+                                                              ? "Finance sector quiet"
+                                                              : "Awaiting task deployment..."}
                                                   </span>
                                               </div>
                                           );
@@ -2828,6 +3212,41 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                                       )}
                                                                   </Badge>
                                                               )}
+                                                              {t.assigned_to !== profile?.id && (t.created_by === profile?.id || (t as any).assigned_by === profile?.id) && (
+                                                                   <div className="flex items-center gap-1 text-slate-400 dark:text-zinc-500 select-none ml-1 shrink-0">
+                                                                       {t.is_staff_seen && (
+                                                                           <span 
+                                                                               title={`Seen by staff at ${t.staff_seen_at ? new Date(t.staff_seen_at).toLocaleTimeString() : 'unknown time'}`}
+                                                                               className="flex items-center text-indigo-500 dark:text-indigo-400"
+                                                                           >
+                                                                               <Eye className="w-3.5 h-3.5" />
+                                                                           </span>
+                                                                       )}
+                                                                       {isV2Enabled && (() => {
+                                                                           const status = t.status === "completed" || t.status === "reviewed" ? "read" : (t.delivery_status || "sent");
+                                                                           if (status === "sent") {
+                                                                               return <Check className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />;
+                                                                           }
+                                                                           if (status === "delivered") {
+                                                                               return (
+                                                                                   <div className="flex -space-x-1.5">
+                                                                                       <Check className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
+                                                                                       <Check className="w-3.5 h-3.5 text-slate-400 dark:text-zinc-500" />
+                                                                                   </div>
+                                                                               );
+                                                                           }
+                                                                           if (status === "read") {
+                                                                               return (
+                                                                                   <div className="flex -space-x-1.5">
+                                                                                       <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                                                                       <Check className="w-3.5 h-3.5 text-emerald-400" />
+                                                                                   </div>
+                                                                               );
+                                                                           }
+                                                                           return null;
+                                                                       })()}
+                                                                   </div>
+                                                               )}
                                                           </div>
                                                           <p className="text-[10px] text-slate-400 dark:text-zinc-400 font-medium tracking-wide line-clamp-2 leading-relaxed mt-1">
                                                               {t.description ||
@@ -2965,6 +3384,96 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                           )}
                                                       </div>
                                                       <div className="flex items-center gap-2">
+                                                          {(() => {
+                                                              const isAssigner =
+                                                                  t.created_by ===
+                                                                      profile?.id ||
+                                                                  (t as any)
+                                                                      .assigned_by ===
+                                                                      profile?.id;
+                                                              const isCeoOrAssigner =
+                                                                  userRole ===
+                                                                      "CEO" ||
+                                                                  isAssigner;
+                                                              const progressValue =
+                                                                  (
+                                                                      t.status ||
+                                                                      "PENDING"
+                                                                  ).toUpperCase() ===
+                                                                  "COMPLETED"
+                                                                      ? 100
+                                                                      : (t.progress ||
+                                                                            0);
+                                                              const showEscalateButton =
+                                                                  isV2Enabled &&
+                                                                  isCeoOrAssigner &&
+                                                                  isOverdue &&
+                                                                  progressValue <
+                                                                      100;
+
+                                                              if (
+                                                                  !showEscalateButton
+                                                              )
+                                                                  return null;
+
+                                                              const escalatedAtDate = t.escalated_at ? new Date(t.escalated_at) : null;
+                                                              const isCoolingDown = escalatedAtDate && (Math.abs(new Date().getTime() - escalatedAtDate.getTime()) < 5 * 60 * 1000);
+
+                                                              if (isCoolingDown) {
+                                                                  return (
+                                                                      <button
+                                                                          disabled
+                                                                          className="h-8 px-3 text-[9px] font-black uppercase bg-red-500/5 text-red-400/50 border border-red-500/10 cursor-not-allowed flex items-center gap-1.5 shadow-none"
+                                                                      >
+                                                                          <Clock className="w-3.5 h-3.5 text-red-500/40 animate-pulse" />
+                                                                          Escalation Cooling Down...
+                                                                      </button>
+                                                                  );
+                                                              }
+
+                                                              if (t.is_escalated) {
+                                                                  return (
+                                                                      <button
+                                                                          disabled
+                                                                          className="h-8 px-3 text-[9px] font-black uppercase bg-red-500/5 text-red-400/55 border border-red-500/20 rounded-xl cursor-not-allowed flex items-center gap-1.5 shadow-none"
+                                                                      >
+                                                                          <ShieldAlert className="w-3.5 h-3.5 text-red-500/50" />
+                                                                          Escalated to Core
+                                                                      </button>
+                                                                  );
+                                                              }
+
+                                                              return (
+                                                                  <button
+                                                                      onClick={() =>
+                                                                          escalateTask(
+                                                                              t.id,
+                                                                          )
+                                                                      }
+                                                                      disabled={escalatingTaskIds.has(
+                                                                          t.id,
+                                                                      )}
+                                                                      className="h-8 px-3 text-[9px] font-black uppercase bg-red-500/10 text-red-400 border border-red-500/30 hover:bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.2)] animate-pulse rounded-xl transition-all flex items-center gap-1.5 hover:-translate-y-0.5"
+                                                                      title="Escalate Overdue Task"
+                                                                  >
+                                                                      {escalatingTaskIds.has(
+                                                                          t.id,
+                                                                      ) ? (
+                                                                          <>
+                                                                              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                                                                              Escalating...
+                                                                          </>
+                                                                      ) : (
+                                                                          <>
+                                                                              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                                                                              Escalate
+                                                                              to
+                                                                              Core
+                                                                          </>
+                                                                      )}
+                                                                  </button>
+                                                              );
+                                                          })()}
                                                           {((
                                                               t.status || ""
                                                           ).toUpperCase() ===
@@ -3321,25 +3830,18 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                 <Avatar className="h-6 w-6 flex-shrink-0">
                                                     <AvatarImage
                                                         src={
-                                                            staff.find(
-                                                                (s) =>
-                                                                    s.id ===
-                                                                    newTask.assignedTo,
-                                                            )?.avatar_url
+                                                            (() => {
+                                                                const url = staff.find((s) => s.id === newTask.assignedTo)?.avatar_url;
+                                                                return isValidAvatarUrl(url) ? url : undefined;
+                                                            })()
                                                         }
                                                     />
                                                     <AvatarFallback className="bg-[#351e6a] text-white text-[9px] font-black">
-                                                        {staff
-                                                            .find(
-                                                                (s) =>
-                                                                    s.id ===
-                                                                    newTask.assignedTo,
-                                                            )
-                                                            ?.full_name?.substring(
-                                                                0,
-                                                                2,
-                                                            )
-                                                            .toUpperCase()}
+                                                        {(() => {
+                                                            const s = staff.find((s) => s.id === newTask.assignedTo);
+                                                            if (s?.avatar_url && !isValidAvatarUrl(s.avatar_url)) return s.avatar_url;
+                                                            return s?.full_name?.substring(0, 2).toUpperCase();
+                                                        })()}
                                                     </AvatarFallback>
                                                 </Avatar>
                                                 <span className="flex-1 text-sm font-semibold text-[#1a1a2e] dark:text-white truncate">
@@ -3415,16 +3917,13 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                                                 <Avatar className="h-7 w-7 flex-shrink-0">
                                                                                     <AvatarImage
                                                                                         src={
-                                                                                            s.avatar_url
+                                                                                            isValidAvatarUrl(s.avatar_url) ? s.avatar_url : undefined
                                                                                         }
                                                                                     />
                                                                                     <AvatarFallback className="bg-[#2D2A77]/10 text-[#2D2A77] dark:text-white text-[9px] font-black">
-                                                                                        {s.full_name
-                                                                                            ?.substring(
-                                                                                                0,
-                                                                                                2,
-                                                                                            )
-                                                                                            .toUpperCase()}
+                                                                                        {s.avatar_url && !isValidAvatarUrl(s.avatar_url)
+                                                                                            ? s.avatar_url
+                                                                                            : s.full_name?.substring(0, 2).toUpperCase()}
                                                                                     </AvatarFallback>
                                                                                 </Avatar>
                                                                                 <div className="text-left">
@@ -3893,12 +4392,12 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-10 w-10 shadow-sm border border-theme-border-10">
                                                     <AvatarImage
-                                                        src={s.avatar_url}
+                                                        src={isValidAvatarUrl(s.avatar_url) ? s.avatar_url : undefined}
                                                     />
                                                     <AvatarFallback className="bg-theme-bg-white-10 text-theme-text font-black">
-                                                        {s.full_name
-                                                            ?.substring(0, 2)
-                                                            .toUpperCase()}
+                                                        {s.avatar_url && !isValidAvatarUrl(s.avatar_url)
+                                                            ? s.avatar_url
+                                                            : s.full_name?.substring(0, 2).toUpperCase()}
                                                     </AvatarFallback>
                                                 </Avatar>
                                                 <div>
@@ -3968,6 +4467,39 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                     </ScrollArea>
                 </DialogContent>
             </Dialog>
+            {/* Classic Branded Refresh Overlay */}
+            <AnimatePresence>
+                {isSystemRefreshing && (
+                    <motion.div 
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.3 }}
+                        className="fixed inset-0 z-[99999] flex flex-col items-center justify-center bg-white dark:bg-zinc-950 transition-colors duration-300"
+                    >
+                        {/* Logo/Icon Pulsing Effect */}
+                        <div className="relative mb-6 select-none pointer-events-none">
+                            <motion.div 
+                                animate={{ scale: [1, 1.05, 1] }}
+                                transition={{ duration: 1.5, repeat: Infinity, ease: "easeInOut" }}
+                                className="w-16 h-16 rounded-2xl bg-indigo-600 dark:bg-indigo-500 flex items-center justify-center shadow-lg shadow-indigo-500/25 border border-indigo-400/20"
+                            >
+                                <ShieldCheck className="w-8 h-8 text-white animate-pulse" />
+                            </motion.div>
+                            <div className="absolute -inset-1.5 rounded-[1.25rem] border border-indigo-500/30 animate-ping opacity-60 pointer-events-none" />
+                        </div>
+
+                        {/* Loader Typography */}
+                        <h2 className="text-xs font-black uppercase tracking-[0.25em] text-slate-800 dark:text-zinc-100 mb-2 select-none">
+                            Getting your workspace ready
+                        </h2>
+                        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-zinc-500 select-none animate-pulse">
+                            Restoring secure data channels...
+                        </p>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Chat Message Modal */}
             <Dialog open={isChatModalOpen} onOpenChange={setIsChatModalOpen}>
                 <DialogContent className="bg-white dark:bg-zinc-900 border border-slate-200 dark:border-zinc-800 text-slate-900 dark:text-zinc-100 max-w-md rounded-3xl shadow-2xl overflow-hidden p-0 flex flex-col">
@@ -4097,17 +4629,16 @@ export function ExecutiveCommand({ currentView }: { currentView?: string }) {
                                                         <Avatar className="w-11 h-11 border-2 border-white shadow-sm ring-1 ring-slate-100">
                                                             <AvatarImage
                                                                 src={
-                                                                    member.avatar_url
+                                                                    isValidAvatarUrl(member.avatar_url) ? member.avatar_url : undefined
                                                                 }
                                                             />
                                                             <AvatarFallback className="bg-gradient-to-br from-indigo-50 to-slate-100 text-indigo-700 font-bold text-sm">
-                                                                {member.full_name
-                                                                    ?.split(" ")
-                                                                    .map(
-                                                                        (n) =>
-                                                                            n[0],
-                                                                    )
-                                                                    .join("")}
+                                                                {member.avatar_url && !isValidAvatarUrl(member.avatar_url)
+                                                                    ? member.avatar_url
+                                                                    : member.full_name
+                                                                        ?.split(" ")
+                                                                        .map((n) => n[0])
+                                                                        .join("")}
                                                             </AvatarFallback>
                                                         </Avatar>
                                                         <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-green-500 border-2 border-white rounded-full shadow-sm" />
